@@ -1,0 +1,25 @@
+{
+  "appId": "com.pp.desktop",
+  "productName": "PP Desktop",
+  "directories": {
+    "output": "release/electron"
+  },
+  "files": [
+    "dist/desktop/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "dist/desktop/main.cjs"
+  },
+  "asar": true,
+  "win": {
+    "icon": "packaging/windows/assets/pp-icon.ico",
+    "target": ["dir"]
+  },
+  "linux": {
+    "target": ["dir"]
+  },
+  "mac": {
+    "target": ["dir"]
+  }
+}

@@ -48,15 +48,15 @@ export function HeaderActions(props: Props) {
 
   function requestShutdown() {
     props.openConfirm({
-      title: 'Stop the pp UI server?',
-      body: 'This closes the localhost server. You will need to re-run `pp ui` to start it again.',
+      title: 'Quit PP Desktop?',
+      body: 'This closes the desktop app. Background CLI and MCP processes are not affected.',
       destructive: true,
-      confirmLabel: 'Stop server',
+      confirmLabel: 'Quit',
       onConfirm: async () => {
         try {
-          await api('/api/ui/shutdown', { method: 'POST' });
+          await api('/api/app/quit', { method: 'POST' });
         } catch {
-          // server exits, the request will typically hang up before returning.
+          // The app may exit before the confirmation request returns.
         }
       },
     });
@@ -98,6 +98,7 @@ export function HeaderActions(props: Props) {
 
       <button
         type="button"
+        id="theme-toggle"
         className="header-icon-btn"
         title={props.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         aria-label={props.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -132,7 +133,7 @@ export function HeaderActions(props: Props) {
               onClick={() => { props.setHeaderMenuOpen(false); requestShutdown(); }}
             >
               <Icon name="power" size={14} />
-              <span>Stop pp UI server</span>
+              <span>Quit PP Desktop</span>
             </button>
           </div>
         ) : null}

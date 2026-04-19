@@ -1,4 +1,4 @@
-import { expect, test as base, type Page, type Response } from '@playwright/test';
+import { _electron as electron, expect, test as base, type ElectronApplication, type Page, type Response } from '@playwright/test';
 
 type NetworkRecord = {
   method: string;
@@ -16,6 +16,21 @@ type RequestRecord = {
   parseError?: string;
 };
 
+export type DesktopApiMockRule = {
+  method?: string;
+  path: string;
+  bodyApi?: string;
+  bodyPath?: string;
+  status?: number;
+  body: unknown;
+};
+
+export type DesktopApiCall = {
+  path: string;
+  method: string;
+  body?: unknown;
+};
+
 type UiAudit = {
   consoleErrors: string[];
   pageErrors: string[];
@@ -26,7 +41,26 @@ type UiAudit = {
   assertClean: () => Promise<void>;
 };
 
-export const test = base.extend<{ audit: UiAudit }>({
+export const test = base.extend<{ electronApp: ElectronApplication; page: Page; audit: UiAudit }>({
+  electronApp: async ({}, use) => {
+    const args = process.platform === 'linux'
+      ? ['--no-sandbox', 'dist/desktop/main.cjs']
+      : ['dist/desktop/main.cjs'];
+    const app = await electron.launch({
+      args,
+      env: {
+        ...process.env,
+        PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE
+          ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden'),
+      },
+    });
+    await use(app);
+    await app.close();
+  },
+  page: async ({ electronApp }, use) => {
+    const page = await electronApp.firstWindow();
+    await use(page);
+  },
   audit: async ({ page }, use) => {
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
@@ -108,9 +142,9 @@ export const test = base.extend<{ audit: UiAudit }>({
 export { expect };
 
 export async function openApp(page: Page): Promise<void> {
-  await page.goto('/');
   await expect(page.locator('#app-root')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Setup' })).toBeVisible();
+  await page.keyboard.press('Escape').catch(() => undefined);
 }
 
 export async function visitTab(page: Page, tabName: string): Promise<void> {
@@ -134,6 +168,59 @@ export async function clickIfVisible(page: Page, selector: string): Promise<bool
   if (await locator.isDisabled()) return false;
   await locator.click();
   return true;
+}
+
+export async function chooseSelect(page: Page, selector: string, label: string): Promise<void> {
+  const trigger = page.locator(selector);
+  await trigger.click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+}
+
+export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRule[]): Promise<void> {
+  const install = (mockRules: DesktopApiMockRule[]) => {
+    const state = {
+      calls: [] as DesktopApiCall[],
+      rules: mockRules,
+      async request(input: DesktopApiCall) {
+        const call = {
+          path: input.path,
+          method: (input.method || 'GET').toUpperCase(),
+          body: input.body,
+        };
+        state.calls.push(call);
+        const hasSavedRequestsMock = state.rules.some((rule) => rule.path === '/api/ui/saved-requests');
+        if (hasSavedRequestsMock && input.path === '/api/ui/saved-requests') {
+          const savedKey = '__ppDesktopMockSavedRequests';
+          if (call.method === 'GET') {
+            const entries = JSON.parse(window.localStorage.getItem(savedKey) || '[]');
+            return { status: 200, body: { success: true, diagnostics: [], data: entries } };
+          }
+          if (call.method === 'PUT') {
+            const entries = Array.isArray((input.body as any)?.entries) ? (input.body as any).entries : [];
+            window.localStorage.setItem(savedKey, JSON.stringify(entries));
+            return { status: 200, body: { success: true, diagnostics: [], data: entries } };
+          }
+        }
+        const body = input.body && typeof input.body === 'object' ? input.body as Record<string, unknown> : {};
+        const match = state.rules.find((rule) => {
+          if (rule.path !== input.path) return false;
+          if ((rule.method || 'GET').toUpperCase() !== call.method) return false;
+          if (rule.bodyApi !== undefined && body.api !== rule.bodyApi) return false;
+          if (rule.bodyPath !== undefined && body.path !== rule.bodyPath) return false;
+          return true;
+        });
+        if (!match) return undefined;
+        return { status: match.status ?? 200, body: match.body };
+      },
+    };
+    window.ppDesktopTest = state;
+  };
+  await page.addInitScript(install, rules);
+  await page.evaluate(install, rules);
+}
+
+export async function getDesktopApiCalls(page: Page): Promise<DesktopApiCall[]> {
+  return page.evaluate(() => (window.ppDesktopTest as any)?.calls ?? []);
 }
 
 function isAuditedApiResponse(response: Response): boolean {

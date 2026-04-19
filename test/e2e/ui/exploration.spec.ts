@@ -1,12 +1,26 @@
-import { expect, openApp, test, visitTab } from './fixtures.js';
+import { chooseSelect, expect, getDesktopApiCalls, installDesktopApiMocks, openApp, test, visitTab } from './fixtures.js';
+
+function apiEnvelope(data: unknown) {
+  return { success: true, diagnostics: [], data };
+}
+
+function requestResult(response: unknown) {
+  return apiEnvelope({ status: 200, headers: {}, response });
+}
+
+async function consoleProbeCalls(page: Parameters<typeof getDesktopApiCalls>[0]) {
+  return (await getDesktopApiCalls(page))
+    .map((request) => request.body as Record<string, unknown> | undefined)
+    .filter((body) => body?.path === '/playwright-probe');
+}
 
 test('hash deep links land on the requested primary tab', async ({ page, audit }) => {
-  await page.goto('/#console');
-  await expect(page.locator('#app-root')).toBeVisible();
+  await openApp(page);
+  await page.evaluate(() => { window.location.hash = 'console'; });
   await expect(page.getByRole('button', { name: 'Console' })).toHaveClass(/active/);
   await expect(page.locator('#panel-console')).toBeVisible();
 
-  await page.goto('/#platform');
+  await page.evaluate(() => { window.location.hash = 'platform'; });
   await expect(page.getByRole('button', { name: 'Platform' })).toHaveClass(/active/);
   await expect(page.locator('#panel-platform')).toBeVisible();
 
@@ -14,46 +28,29 @@ test('hash deep links land on the requested primary tab', async ({ page, audit }
 });
 
 test('console sends structured request payloads and drops body fields for GET', async ({ page, audit }) => {
-  const consoleRequests: any[] = [];
-  await page.route('**/api/request/execute', async (route) => {
-    const body = JSON.parse(route.request().postData() || '{}');
-    if (body.path === '/playwright-probe') {
-      consoleRequests.push(body);
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({
-          success: true,
-          diagnostics: [],
-          data: {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-            response: { ok: true, method: body.method, query: body.query, headers: body.headers, body: body.body },
-          },
-        }),
-      });
-      return;
-    }
-    await route.continue();
-  });
+  await installDesktopApiMocks(page, [
+    { method: 'POST', path: '/api/request/execute', bodyPath: '/playwright-probe', body: requestResult({ ok: true }) },
+  ]);
 
   await openApp(page);
   await visitTab(page, 'Console');
 
-  await page.locator('#console-method').selectOption('POST');
+  await chooseSelect(page, '#console-method', 'POST');
   await page.locator('#console-path').fill('/playwright-probe');
-  await page.locator('#console-body').fill('{ "probe": true }');
+  await page.getByRole('button', { name: 'Body', exact: true }).click();
+  await page.getByLabel('Request body (JSON)').fill('{ "probe": true }');
 
-  await page.locator('details').filter({ hasText: 'Query Parameters' }).locator('summary').click();
-  await page.locator('#console-query-params .kv-row').first().locator('input').nth(0).fill('include');
-  await page.locator('#console-query-params .kv-row').first().locator('input').nth(1).fill('yes');
+  await page.getByRole('button', { name: 'Query', exact: true }).click();
+  await page.getByLabel('Query key 1').fill('include');
+  await page.getByLabel('Query value 1').fill('yes');
 
-  await page.locator('details').filter({ hasText: 'Headers' }).locator('summary').click();
-  await page.locator('#console-headers .kv-row').first().locator('input').nth(0).fill('x-pp-probe');
-  await page.locator('#console-headers .kv-row').first().locator('input').nth(1).fill('1');
+  await page.getByRole('button', { name: 'Headers', exact: true }).click();
+  await page.getByLabel('Header name 1').fill('x-pp-probe');
+  await page.getByLabel('Header value 1').fill('1');
 
   await page.locator('#console-send').click();
-  await expect.poll(() => consoleRequests.length).toBe(1);
+  await expect.poll(async () => (await consoleProbeCalls(page)).length).toBe(1);
+  const consoleRequests = await consoleProbeCalls(page);
   expect(consoleRequests[0]).toMatchObject({
     api: 'dv',
     method: 'POST',
@@ -63,43 +60,40 @@ test('console sends structured request payloads and drops body fields for GET', 
     body: { probe: true },
   });
 
-  await page.locator('#console-method').selectOption('GET');
-  await expect(page.locator('#console-body-section')).toHaveCount(0);
+  await chooseSelect(page, '#console-method', 'GET');
+  await expect(page.getByRole('button', { name: 'Body', exact: true })).toBeDisabled();
   await page.locator('#console-send').click();
-  await expect.poll(() => consoleRequests.length).toBe(2);
-  expect(consoleRequests[1]).toMatchObject({
+  await expect.poll(async () => (await consoleProbeCalls(page)).length).toBe(2);
+  const updatedConsoleRequests = await consoleProbeCalls(page);
+  expect(updatedConsoleRequests[1]).toMatchObject({
     api: 'dv',
     method: 'GET',
     path: '/playwright-probe',
     query: { include: 'yes' },
     headers: { 'x-pp-probe': '1' },
   });
-  expect(consoleRequests[1]).not.toHaveProperty('body');
+  expect(updatedConsoleRequests[1]).not.toHaveProperty('body');
 
   await audit.assertClean();
 });
 
 test('dataverse query result can toggle table and JSON without corrupting payloads', async ({ page, audit }) => {
-  await page.route('**/api/dv/query/execute', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json; charset=utf-8',
-      body: JSON.stringify({
-        success: true,
-        diagnostics: [],
-        data: {
-          path: '/api/data/v9.2/accounts?$select=accountid,name&$top=1',
-          entitySetName: 'accounts',
-          logicalName: 'account',
-          records: [{ accountid: '00000000-0000-0000-0000-000000000001', name: 'Playwright Probe' }],
-        },
+  await installDesktopApiMocks(page, [
+    {
+      method: 'POST',
+      path: '/api/dv/query/execute',
+      body: apiEnvelope({
+        path: '/api/data/v9.2/accounts?$select=accountid,name&$top=1',
+        entitySetName: 'accounts',
+        logicalName: 'account',
+        records: [{ accountid: '00000000-0000-0000-0000-000000000001', name: 'Playwright Probe' }],
       }),
-    });
-  });
+    },
+  ]);
 
   await openApp(page);
   await visitTab(page, 'Dataverse');
-  await page.getByRole('button', { name: 'Query' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Query', exact: true }).click();
   await page.locator('#query-entity-set').fill('accounts');
   await page.locator('#query-select').fill('accountid,name');
   await page.locator('#query-run-btn').click();
@@ -111,8 +105,8 @@ test('dataverse query result can toggle table and JSON without corrupting payloa
   await queryResultPanel.getByRole('button', { name: 'Table', exact: true }).click();
   await expect(queryResultPanel.getByText('Playwright Probe')).toBeVisible();
 
-  const executeRequest = audit.apiRequests.find((request) => request.url.includes('/api/dv/query/execute'));
-  expect(executeRequest?.postData).toMatchObject({
+  const executeRequest = (await getDesktopApiCalls(page)).find((request) => request.path === '/api/dv/query/execute');
+  expect(executeRequest?.body).toMatchObject({
     environmentAlias: expect.any(String),
     entitySetName: 'accounts',
     selectCsv: 'accountid,name',
@@ -123,12 +117,13 @@ test('dataverse query result can toggle table and JSON without corrupting payloa
 test('relationship graph validation stays client-side until an entity is selected', async ({ page, audit }) => {
   await openApp(page);
   await visitTab(page, 'Dataverse');
-  await page.getByRole('button', { name: 'Relationships' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Relationships', exact: true }).click();
   audit.clear();
+  await installDesktopApiMocks(page, []);
 
   await page.locator('#dv-subpanel-dv-relationships').getByRole('button', { name: 'Load Graph' }).click();
   await expect(page.locator('#toasts')).toContainText('Select an entity first');
-  expect(audit.apiRequests.filter((request) => new URL(request.url).pathname.startsWith('/api/dv/entities/'))).toEqual([]);
+  expect((await getDesktopApiCalls(page)).filter((request) => request.path.startsWith('/api/dv/entities/'))).toEqual([]);
   await audit.assertClean();
 });
 
@@ -146,7 +141,7 @@ test('changing environment clears Dataverse query builder state', async ({ page,
   const next = options.find((item) => item.value !== current)!.value;
 
   await visitTab(page, 'Dataverse');
-  await page.getByRole('button', { name: 'Query' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Query', exact: true }).click();
   await page.locator('#query-entity-set').fill('accounts');
   await page.locator('#query-select').fill('accountid,name');
   await page.locator('#query-count').check();
@@ -162,28 +157,17 @@ test('changing environment clears Dataverse query builder state', async ({ page,
 });
 
 test('console history can pin requests and survives reload', async ({ page, audit }) => {
-  await page.route('**/api/request/execute', async (route) => {
-    const body = JSON.parse(route.request().postData() || '{}');
-    if (body.path === '/history-probe') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({
-          success: true,
-          diagnostics: [],
-          data: { status: 200, headers: {}, response: { path: body.path } },
-        }),
-      });
-      return;
-    }
-    await route.continue();
-  });
+  await installDesktopApiMocks(page, [
+    { method: 'POST', path: '/api/request/execute', bodyPath: '/history-probe', body: requestResult({ path: '/history-probe' }) },
+    { method: 'PUT', path: '/api/ui/saved-requests', body: apiEnvelope({ entries: [] }) },
+  ]);
 
   await openApp(page);
   await visitTab(page, 'Console');
   await page.evaluate(() => {
     localStorage.removeItem('pp-console-history');
     localStorage.removeItem('pp-console-saved');
+    localStorage.removeItem('__ppDesktopMockSavedRequests');
   });
   await page.reload();
   audit.clear();
@@ -191,94 +175,85 @@ test('console history can pin requests and survives reload', async ({ page, audi
 
   await page.locator('#console-path').fill('/history-probe');
   await page.locator('#console-send').click();
-  await expect(page.locator('#console-history .history-item').first()).toContainText('/history-probe');
-  await page.locator('#console-history .history-item').first().locator('.pin-btn').click();
-  await expect(page.locator('#console-saved-panel')).toContainText('/history-probe');
+  const historyItem = page.locator('.console-rail-list .history-item').first();
+  await expect(historyItem).toContainText('/history-probe');
+  await historyItem.getByRole('button', { name: 'Pin request' }).click();
+  await page.getByRole('button', { name: /Saved/ }).click();
+  await expect(page.locator('.console-rail-list')).toContainText('/history-probe');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('__ppDesktopMockSavedRequests') || '')).toContain('/history-probe');
 
   audit.clear();
   await page.reload();
   audit.clear();
-  await expect(page.locator('#console-saved-panel')).toContainText('/history-probe');
-  await page.locator('#console-saved .saved-item').first().click();
+  await openApp(page);
+  await page.getByRole('button', { name: /Saved/ }).click();
+  await expect(page.locator('.console-rail-list')).toContainText('/history-probe');
+  await page.locator('.console-rail-list .saved-item').first().click();
   await expect(page.locator('#console-path')).toHaveValue('/history-probe');
 
   await audit.assertClean();
 });
 
 test('Apps and Platform detail actions seed the API console', async ({ page, audit }) => {
-  await page.route('**/api/request/execute', async (route) => {
-    const body = JSON.parse(route.request().postData() || '{}');
-    if (body.api === 'powerapps' && body.path === '/apps') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({
-          success: true,
-          diagnostics: [],
-          data: { response: { value: [{ name: 'app-probe', properties: { displayName: 'App Probe', appType: 'CanvasApp' } }] } },
-        }),
-      });
-      return;
-    }
-    if (body.api === 'bap' && body.path === '/environments') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({
-          success: true,
-          diagnostics: [],
-          data: { response: { value: [{ name: 'env-probe', location: 'australia', properties: { displayName: 'Environment Probe', states: { management: { id: 'Ready' } } } }] } },
-        }),
-      });
-      return;
-    }
-    await route.continue();
-  });
+  await installDesktopApiMocks(page, [
+    {
+      method: 'POST',
+      path: '/api/request/execute',
+      bodyApi: 'powerapps',
+      bodyPath: '/apps',
+      body: requestResult({ value: [{ name: 'app-probe', properties: { displayName: 'App Probe', appType: 'CanvasApp' } }] }),
+    },
+    {
+      method: 'POST',
+      path: '/api/request/execute',
+      bodyApi: 'bap',
+      bodyPath: '/environments',
+      body: requestResult({ value: [{ name: 'env-probe', location: 'australia', properties: { displayName: 'Environment Probe', states: { management: { id: 'Ready' } } } }] }),
+    },
+  ]);
 
   await openApp(page);
   await visitTab(page, 'Apps');
-  await expect(page.locator('#app-list')).toContainText('App Probe');
-  await page.locator('[data-app="app-probe"]').click();
+  const appItem = page.getByRole('button', { name: /App Probe/ });
+  await expect(appItem).toBeVisible();
+  await appItem.click();
   await page.locator('#app-open-console').click();
   await expect(page.getByRole('button', { name: 'Console' })).toHaveClass(/active/);
-  await expect(page.locator('#console-api')).toHaveValue('powerapps');
+  await expect(page.locator('#console-api')).toContainText('Power Apps');
   await expect(page.locator('#console-path')).toHaveValue('/apps/app-probe');
 
   await visitTab(page, 'Platform');
-  await expect(page.locator('#plat-env-list')).toContainText('Environment Probe');
-  await page.locator('[data-plat-env="env-probe"]').click();
+  const platformItem = page.getByRole('button', { name: /Environment Probe/ });
+  await expect(platformItem).toBeVisible();
+  await platformItem.click();
   await page.locator('#plat-env-open-console').click();
   await expect(page.getByRole('button', { name: 'Console' })).toHaveClass(/active/);
-  await expect(page.locator('#console-api')).toHaveValue('bap');
+  await expect(page.locator('#console-api')).toContainText('BAP');
   await expect(page.locator('#console-path')).toHaveValue('/environments/env-probe');
 
   await audit.assertClean();
 });
 
 test('result tables sort without changing the underlying JSON payload', async ({ page, audit }) => {
-  await page.route('**/api/dv/query/execute', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json; charset=utf-8',
-      body: JSON.stringify({
-        success: true,
-        diagnostics: [],
-        data: {
-          path: '/api/data/v9.2/accounts?$select=accountid,name&$top=2',
-          entitySetName: 'accounts',
-          logicalName: 'account',
-          records: [
-            { accountid: '00000000-0000-0000-0000-000000000002', name: 'Zulu Probe' },
-            { accountid: '00000000-0000-0000-0000-000000000001', name: 'Alpha Probe' },
-          ],
-        },
+  await installDesktopApiMocks(page, [
+    {
+      method: 'POST',
+      path: '/api/dv/query/execute',
+      body: apiEnvelope({
+        path: '/api/data/v9.2/accounts?$select=accountid,name&$top=2',
+        entitySetName: 'accounts',
+        logicalName: 'account',
+        records: [
+          { accountid: '00000000-0000-0000-0000-000000000002', name: 'Zulu Probe' },
+          { accountid: '00000000-0000-0000-0000-000000000001', name: 'Alpha Probe' },
+        ],
       }),
-    });
-  });
+    },
+  ]);
 
   await openApp(page);
   await visitTab(page, 'Dataverse');
-  await page.getByRole('button', { name: 'Query' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Query', exact: true }).click();
   await page.locator('#query-entity-set').fill('accounts');
   await page.locator('#query-select').fill('accountid,name');
   await page.locator('#query-run-btn').click();
@@ -298,14 +273,8 @@ test('result tables sort without changing the underlying JSON payload', async ({
 });
 
 test('Automate flow, run, and action clicks load the expected detail paths', async ({ page, audit }) => {
-  await page.route('**/api/request/execute', async (route) => {
-    const body = JSON.parse(route.request().postData() || '{}');
-    if (body.api !== 'flow') {
-      await route.continue();
-      return;
-    }
-    const responseForPath: Record<string, unknown> = {
-      '/flows': {
+  const responseForPath: Record<string, unknown> = {
+    '/flows': {
         value: [{
           name: 'flow-probe',
           properties: {
@@ -361,37 +330,14 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
           endTime: '2026-01-03T00:00:02Z',
         },
       },
-      '/operations?api-version=2016-11-01&$top=250': {
-        value: [{
-          name: 'CreateRelease',
-          id: '/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices/apiOperations/CreateRelease',
-          properties: {
-            summary: 'Create a new release',
-            description: 'Create a release from a definition.',
-            operationType: 'OpenApiConnection',
-            api: {
-              id: '/providers/Microsoft.PowerApps/apis/shared_visualstudioteamservices',
-              apiName: 'visualstudioteamservices',
-              displayName: 'Azure DevOps',
-            },
-          },
-        }],
-      },
-    };
-    if (body.path in responseForPath) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json; charset=utf-8',
-        body: JSON.stringify({
-          success: true,
-          diagnostics: [],
-          data: { status: 200, headers: {}, response: responseForPath[body.path] },
-        }),
-      });
-      return;
-    }
-    await route.continue();
-  });
+  };
+  await installDesktopApiMocks(page, Object.entries(responseForPath).map(([bodyPath, response]) => ({
+    method: 'POST',
+    path: '/api/request/execute',
+    bodyApi: 'flow',
+    bodyPath,
+    body: requestResult(response),
+  })));
 
   await openApp(page);
   await visitTab(page, 'Automate');
@@ -399,40 +345,26 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   await page.locator('[data-flow="flow-probe"]').click();
   await expect(page.locator('#panel-automate')).toContainText('Flow Probe');
   await page.getByRole('button', { name: 'Add Action' }).click();
-  const releaseSearchRequest = page.waitForRequest((request) => {
-    try {
-      const body = JSON.parse(request.postData() || '{}');
-      const requestBody = JSON.parse(body.body || '{}');
-      return body.api === 'flow'
-        && body.method === 'POST'
-        && body.path === '/operations?api-version=2016-11-01&$top=250'
-        && requestBody.searchText === 'release';
-    } catch {
-      return false;
-    }
-  });
-  await page.getByPlaceholder('Search connectors and actions…').fill('release');
-  await releaseSearchRequest;
-  await page.getByRole('button', { name: /Create a new release/ }).click();
+  await page.getByRole('button', { name: /Compose/ }).click();
   await page.getByRole('button', { name: 'Insert Action' }).click();
-  await expect(page.locator('.flow-rail-header')).toContainText('2 actions');
+  await expect(page.locator('#panel-automate')).toContainText('Compose_2');
 
   await page.getByRole('button', { name: 'Runs' }).click();
   await expect(page.locator('[data-flow-run="run-probe"]')).toContainText('Succeeded');
   await page.locator('[data-flow-run="run-probe"]').click();
-  await expect(page.locator('[data-flow-action="Compose"]')).toContainText('Compose');
-  await page.locator('[data-flow-action="Compose"]').click();
+  const runAction = page.locator('.run-expanded').getByText('Compose', { exact: true }).first();
+  await expect(runAction).toBeVisible();
+  await runAction.click();
   await expect(page.locator('.run-action-detail')).toContainText('Compose');
   await expect(page.locator('.run-action-detail')).toContainText('Succeeded');
 
-  const flowPaths = audit.apiRequests
-    .map((request) => request.postData as { api?: string; path?: string } | undefined)
+  const flowPaths = (await getDesktopApiCalls(page))
+    .map((request) => request.body as { api?: string; path?: string } | undefined)
     .filter((body) => body?.api === 'flow')
     .map((body) => body?.path);
   expect(flowPaths).toEqual(expect.arrayContaining([
     '/flows',
     '/flows/flow-probe',
-    '/operations?api-version=2016-11-01&$top=250',
     '/flows/flow-probe/runs?$top=20',
     '/flows/flow-probe/runs/run-probe/actions',
     '/flows/flow-probe/runs/run-probe/actions/Compose',

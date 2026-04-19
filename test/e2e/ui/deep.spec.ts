@@ -1,28 +1,27 @@
-import { clickIfVisible, expect, openApp, test, visitSetupSubTab, visitTab } from './fixtures.js';
+import { chooseSelect, clickIfVisible, expect, openApp, test, visitSetupSubTab, visitTab } from './fixtures.js';
 
 test('setup account form switches credential modes without leaking stale fields', async ({ page, audit }) => {
   await openApp(page);
   await visitTab(page, 'Setup');
   await visitSetupSubTab(page, 'Accounts');
 
-  const addAccount = page.locator('details.setup-add-section').filter({ hasText: 'Add account' }).first();
-  await addAccount.locator('summary').click();
+  await page.getByRole('button', { name: '+ Add account' }).click();
+  const addAccount = page.locator('.setup-split-detail').filter({ hasText: 'Add account' }).first();
   await expect(addAccount.locator('input[name="name"]')).toBeVisible();
 
   await addAccount.getByRole('tab', { name: /advanced options/i }).click();
-  const kind = addAccount.locator('select[name="kind"]');
 
-  await kind.selectOption('client-secret');
+  await chooseSelect(page, '.setup-split-detail .pp-select:has(input[name="kind"]) .pp-select-trigger', 'Client secret');
   await expect(addAccount.locator('input[name="clientSecretEnv"]')).toBeVisible();
   await expect(addAccount.locator('input[name="environmentVariable"]')).toHaveCount(0);
-  await expect(addAccount.getByRole('button', { name: 'Save and connect' })).toHaveCount(0);
+  await expect(addAccount.getByRole('button', { name: 'Save & log in' })).toHaveCount(0);
 
-  await kind.selectOption('environment-token');
+  await chooseSelect(page, '.setup-split-detail .pp-select:has(input[name="kind"]) .pp-select-trigger', 'Environment token variable');
   await expect(addAccount.locator('input[name="environmentVariable"]')).toBeVisible();
   await expect(addAccount.locator('input[name="clientSecretEnv"]')).toHaveCount(0);
 
-  await kind.selectOption('user');
-  await expect(addAccount.getByRole('button', { name: 'Save and connect' })).toBeVisible();
+  await chooseSelect(page, '.setup-split-detail .pp-select:has(input[name="kind"]) .pp-select-trigger', 'Interactive (browser login)');
+  await expect(addAccount.getByRole('button', { name: 'Save & log in' })).toBeVisible();
   await expect(addAccount.getByText('Platform Admin')).toBeVisible();
 
   await audit.assertClean();
@@ -44,7 +43,7 @@ test('dataverse workspace builders can switch panels and build preview payloads'
   await openApp(page);
   await visitTab(page, 'Dataverse');
 
-  await page.getByRole('button', { name: 'Query' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Query', exact: true }).click();
   await expect(page.locator('#dv-subpanel-dv-query')).toBeVisible();
   const entityInput = page.locator('#query-entity-set');
   if (await entityInput.count()) {
@@ -53,11 +52,11 @@ test('dataverse workspace builders can switch panels and build preview payloads'
     await expect(page.locator('#query-preview')).toContainText('/accounts');
   }
 
-  await page.getByRole('button', { name: 'FetchXML' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'FetchXML', exact: true }).click();
   await expect(page.locator('#dv-subpanel-dv-fetchxml')).toBeVisible();
   await clickIfVisible(page, 'button:has-text("Build from fields")');
 
-  await page.getByRole('button', { name: 'Relationships' }).click();
+  await page.locator('#panel-dataverse').getByRole('button', { name: 'Relationships', exact: true }).click();
   await expect(page.locator('#dv-subpanel-dv-relationships')).toBeVisible();
 
   await audit.assertClean();

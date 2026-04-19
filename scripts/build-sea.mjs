@@ -20,7 +20,6 @@ const sentinelFuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 const entries = [
   { name: 'pp', main: path.join(distDir, 'index.cjs') },
   { name: 'pp-mcp', main: path.join(distDir, 'mcp-server.cjs') },
-  { name: 'pp-ui', main: path.join(distDir, 'ui-launcher.cjs'), windowsSubsystem: 'gui' },
 ];
 
 await mkdir(seaDir, { recursive: true });

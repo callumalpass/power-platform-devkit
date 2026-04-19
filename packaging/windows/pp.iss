@@ -1,5 +1,5 @@
 #ifndef MyAppName
-  #define MyAppName "pp"
+  #define MyAppName "PP"
 #endif
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0"
@@ -11,7 +11,7 @@
   #define MyAppExeName "pp.exe"
 #endif
 #ifndef MyUiExeName
-  #define MyUiExeName "pp-ui.exe"
+  #define MyUiExeName "PP Desktop.exe"
 #endif
 
 [Setup]
@@ -19,8 +19,8 @@ AppId={{E2F0D940-8E80-46B1-91D6-547D097E8DE3}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\pp
-DefaultGroupName=pp
+DefaultDirName={autopf}\PP
+DefaultGroupName=PP
 DisableProgramGroupPage=yes
 SetupIconFile=assets\pp-icon.ico
 UninstallDisplayIcon={app}\pp-icon.ico
@@ -34,21 +34,31 @@ OutputDir=..\..\release\installer
 OutputBaseFilename=pp-setup
 
 [Tasks]
-Name: "addtopath"; Description: "Add pp to PATH"; GroupDescription: "Additional tasks:"; Flags: unchecked
-Name: "desktopicon"; Description: "Create a desktop shortcut for PP UI"; GroupDescription: "Additional tasks:"; Flags: unchecked
+Name: "addtopath"; Description: "Add pp command-line tools to PATH"; GroupDescription: "Additional tasks:"; Flags: unchecked; Components: cli
+Name: "desktopicon"; Description: "Create a desktop shortcut for PP Desktop"; GroupDescription: "Additional tasks:"; Flags: unchecked; Components: desktop
+
+[Types]
+Name: "full"; Description: "Desktop, MCP server, and command-line tools"
+Name: "desktop"; Description: "Desktop app only"
+Name: "custom"; Description: "Custom installation"; Flags: iscustom
+
+[Components]
+Name: "desktop"; Description: "PP Desktop"; Types: full desktop custom; Flags: fixed
+Name: "mcp"; Description: "MCP server for AI clients"; Types: full custom
+Name: "cli"; Description: "Command-line tools"; Types: full custom
 
 [Files]
-Source: "..\..\release\win32-x64\pp.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\release\win32-x64\pp-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\release\win32-x64\pp-ui.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "assets\pp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\release\electron\win-unpacked\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: desktop
+Source: "..\..\release\win32-x64\pp.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: cli
+Source: "..\..\release\win32-x64\pp-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: mcp
+Source: "assets\pp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion; Components: desktop
 
 [Icons]
-Name: "{autoprograms}\PP UI"; Filename: "{app}\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"
-Name: "{autodesktop}\PP UI"; Filename: "{app}\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Tasks: desktopicon
+Name: "{autoprograms}\PP Desktop"; Filename: "{app}\desktop\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Components: desktop
+Name: "{autodesktop}\PP Desktop"; Filename: "{app}\desktop\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Tasks: desktopicon; Components: desktop
 
 [Run]
-Filename: "{app}\{#MyUiExeName}"; Description: "Launch PP UI"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\desktop\{#MyUiExeName}"; Description: "Launch PP Desktop"; Flags: nowait postinstall skipifsilent; Components: desktop
 
 [Code]
 procedure EnvAddPath(Path: string);

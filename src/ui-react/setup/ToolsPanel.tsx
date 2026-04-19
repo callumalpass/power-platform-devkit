@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { api, formDataObject, formatTimeRemaining, optionList } from '../utils.js';
+import { useEffect, useState } from 'react';
+import { api, optionList } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
 import type { ToastFn } from '../ui-types.js';
-import { describeTemporaryTokenMatch, normalizeSharePointWebUrl, shellQuote } from './health.js';
-import { TOOLS_SUB_TAB_LABELS, type TemporaryTokenSummary, type ToolsSubTab } from './types.js';
+import { normalizeSharePointWebUrl, shellQuote } from './health.js';
+import { TOOLS_SUB_TAB_LABELS, type ToolsSubTab } from './types.js';
 
 // ---------------------------------------------------------------------------
 // MCP info
@@ -32,154 +32,6 @@ function McpInfo(props: { shellData: any; toast: ToastFn }) {
           ))}</div>
         </>
       ) : null}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Temporary access tokens
-// ---------------------------------------------------------------------------
-
-function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
-  const { toast } = props;
-  const [tokens, setTokens] = useState<TemporaryTokenSummary[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [matchKind, setMatchKind] = useState('');
-  const [tempApi, setTempApi] = useState('graph');
-
-  useEffect(() => {
-    void loadTokens();
-  }, []);
-
-  async function loadTokens() {
-    try {
-      const payload = await api<any>('/api/temp-tokens');
-      setTokens(payload.data || []);
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = formDataObject(form);
-    setLoading(true);
-    try {
-      await api('/api/temp-tokens', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: values.name,
-          token: values.token,
-          matchKind: values.matchKind,
-          origin: values.origin,
-          api: values.api,
-          audience: values.audience,
-        }),
-      });
-      form.reset();
-      setMatchKind('');
-      await loadTokens();
-      toast('Temporary access token added');
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function removeToken(token: TemporaryTokenSummary) {
-    try {
-      await api(`/api/temp-tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
-      setTokens((current) => current.filter((item) => item.id !== token.id));
-      toast('Temporary access token forgotten');
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
-
-  return (
-    <div className="panel">
-      <h2>Temporary Access Tokens</h2>
-      <p className="desc">Use a short-lived bearer token for an API that <code>pp</code> cannot authenticate to directly. Tokens stay only in this running UI process, are never written to config, and are used only when a CLI request explicitly opts in with <code>--via-ui</code>.</p>
-      <p className="desc" style={{ color: 'var(--danger)' }}>Treat pasted tokens like passwords. Use tokens only from accounts you control, and forget them when the request is complete.</p>
-
-      <form onSubmit={submit} className="setup-add-form">
-        <div className="form-row">
-          <div className="field"><span className="field-label">Name</span><input name="name" placeholder="sharepoint" /></div>
-          <div className="field">
-            <span className="field-label">Match</span>
-            <Select
-              name="matchKind"
-              value={matchKind}
-              onChange={setMatchKind}
-              options={[
-                { value: '', label: 'Infer from token audience' },
-                { value: 'origin', label: 'URL origin' },
-                { value: 'api', label: 'pp API' },
-                { value: 'audience', label: 'Token audience' },
-              ]}
-            />
-          </div>
-        </div>
-        {matchKind === 'origin' ? (
-          <div className="field"><span className="field-label">Origin</span><input name="origin" placeholder="https://contoso.sharepoint.com" /></div>
-        ) : null}
-        {matchKind === 'api' ? (
-          <div className="field">
-            <span className="field-label">API</span>
-            <Select
-              name="api"
-              value={tempApi}
-              onChange={setTempApi}
-              options={[
-                { value: 'graph', label: 'Graph' },
-                { value: 'dv', label: 'Dataverse' },
-                { value: 'flow', label: 'Flow' },
-                { value: 'powerapps', label: 'Power Apps' },
-                { value: 'bap', label: 'Platform Admin' },
-                { value: 'sharepoint', label: 'SharePoint REST' },
-                { value: 'canvas-authoring', label: 'Canvas Authoring' },
-              ]}
-            />
-          </div>
-        ) : null}
-        {matchKind === 'audience' ? (
-          <div className="field"><span className="field-label">Audience</span><input name="audience" placeholder="https://graph.microsoft.com" /></div>
-        ) : null}
-        <div className="field">
-          <span className="field-label">Bearer Token</span>
-          <textarea name="token" required placeholder="Bearer eyJ..." autoComplete="off" spellCheck={false} style={{ minHeight: 96, fontFamily: 'var(--mono)' }}></textarea>
-        </div>
-        <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? 'Adding...' : 'Add temporary access token'}</button>
-      </form>
-
-      <div style={{ marginTop: 18 }}>
-        {tokens.length ? tokens.map((token) => {
-          const expiry = token.expiresAt ? formatTimeRemaining(token.expiresAt) : null;
-          const cli = `pp request --via-ui --temp-token ${shellQuote(token.name)} custom <url> --env ALIAS`;
-          return (
-            <div className="card-item" key={token.id}>
-              <div className="card-item-info">
-                <div className="card-item-title">
-                  {token.name}
-                  {expiry ? <span className={`token-expiry ${expiry.cls || ''}`}> {expiry.text}</span> : null}
-                </div>
-                <div className="card-item-sub">{describeTemporaryTokenMatch(token.match)}</div>
-                {token.audience ? <div className="card-item-sub">aud {token.audience}</div> : null}
-                {token.subject ? <div className="card-item-sub">subject {token.subject}</div> : null}
-                {token.scopes?.length ? <div className="card-item-sub">scopes {token.scopes.join(' ')}</div> : null}
-                {token.roles?.length ? <div className="card-item-sub">roles {token.roles.join(' ')}</div> : null}
-                <div className="card-item-sub copy-inline">
-                  <span className="copy-inline-value">{cli}</span>
-                  <CopyButton value={cli} label="copy CLI" title="Copy CLI command" toast={toast} />
-                </div>
-              </div>
-              <button className="btn btn-ghost" type="button" style={{ color: 'var(--danger)' }} onClick={() => void removeToken(token)}>Forget</button>
-            </div>
-          );
-        }) : <div className="empty">No temporary access tokens.</div>}
-      </div>
     </div>
   );
 }
@@ -216,9 +68,8 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
     setLoading(true);
     setResult(null);
     try {
-      const response = await fetch('/api/request/execute', {
+      const payload = await api<any>('/api/request/execute', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           account,
           api: 'sharepoint',
@@ -226,8 +77,8 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
           path: requestUrl,
           softFail: true,
         }),
+        allowFailure: true,
       });
-      const payload = await response.json();
       setResult(payload);
       toast(payload.success === false ? 'SharePoint check failed' : 'SharePoint is reachable', payload.success === false);
     } catch (error) {
@@ -335,7 +186,6 @@ export function ToolsPanel(props: { accounts: any[]; shellData: any; toast: Toas
       </nav>
       <div>
         {activeTool === 'sharepoint' ? <SharePointPanel accounts={accounts} toast={toast} /> : null}
-        {activeTool === 'temp-tokens' ? <TemporaryAccessTokensPanel toast={toast} /> : null}
         {activeTool === 'mcp' ? <McpInfo shellData={shellData} toast={toast} /> : null}
       </div>
     </div>
