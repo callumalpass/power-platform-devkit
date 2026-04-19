@@ -58,6 +58,7 @@ export function AddFlowActionModal(props: {
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
 }) {
+  const [pickerTab, setPickerTab] = useState<'builtin' | 'connector'>('builtin');
   const [search, setSearch] = useState('');
   const [operations, setOperations] = useState<FlowApiOperation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -92,9 +93,17 @@ export function AddFlowActionModal(props: {
   }, [runAfter, topLevelActions, props.initialRunAfter]);
 
   useEffect(() => {
-    searchRef.current?.focus();
     void doSearch('');
   }, [doSearch]);
+
+  useEffect(() => {
+    if (pickerTab === 'connector') {
+      // Focus the search once the connector tab renders it.
+      const handle = window.setTimeout(() => searchRef.current?.focus(), 0);
+      return () => window.clearTimeout(handle);
+    }
+    return undefined;
+  }, [pickerTab]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -199,73 +208,93 @@ export function AddFlowActionModal(props: {
         </div>
         <div className="rt-modal-body add-action-body">
           <div className="add-action-pane add-action-picker">
-            <div className="add-action-picker-section add-action-picker-builtins">
-              <div className="add-action-section-label">Built-in actions</div>
-              <div className="add-action-section-desc">Workflow primitives that don't need a connector or connection.</div>
-              {BUILT_IN_CATEGORIES.map((group) => {
-                const items = BUILT_IN_ACTION_TEMPLATES.filter((item) => item.category === group.key);
-                if (!items.length) return null;
-                return (
-                  <div key={group.key} className="add-action-subgroup">
-                    <div className="add-action-subgroup-label">
-                      <span>{group.label}</span>
-                      <span className="add-action-subgroup-hint">{group.hint}</span>
+            <div className="add-action-picker-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pickerTab === 'builtin'}
+                className={`add-action-picker-tab ${pickerTab === 'builtin' ? 'active' : ''}`}
+                onClick={() => setPickerTab('builtin')}
+              >Built-in</button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pickerTab === 'connector'}
+                className={`add-action-picker-tab ${pickerTab === 'connector' ? 'active' : ''}`}
+                onClick={() => setPickerTab('connector')}
+              >Connectors</button>
+            </div>
+
+            {pickerTab === 'builtin' ? (
+              <div className="add-action-picker-body add-action-picker-builtins">
+                <div className="add-action-section-desc">Workflow primitives that don't need a connector or connection.</div>
+                {BUILT_IN_CATEGORIES.map((group) => {
+                  const items = BUILT_IN_ACTION_TEMPLATES.filter((item) => item.category === group.key);
+                  if (!items.length) return null;
+                  return (
+                    <div key={group.key} className="add-action-subgroup">
+                      <div className="add-action-subgroup-label">
+                        <span>{group.label}</span>
+                        <span className="add-action-subgroup-hint">{group.hint}</span>
+                      </div>
+                      <div className="add-action-template-row">
+                        {items.map((template) => (
+                          <button
+                            key={template.key}
+                            type="button"
+                            className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
+                            onClick={() => selectTemplate(template)}
+                          >
+                            <span className="add-action-template-label">{template.label}</span>
+                            <span className="add-action-template-desc">{template.desc}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="add-action-template-row">
-                      {items.map((template) => (
-                        <button
-                          key={template.key}
-                          type="button"
-                          className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
-                          onClick={() => selectTemplate(template)}
-                        >
-                          <span className="add-action-template-label">{template.label}</span>
-                          <span className="add-action-template-desc">{template.desc}</span>
-                        </button>
-                      ))}
-                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="add-action-picker-body add-action-picker-connectors">
+                <div className="add-action-picker-search-section">
+                  <div className="add-action-section-desc">
+                    Operations from Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.
+                    {loading ? <span className="add-action-searching" style={{ marginLeft: 8 }}>Searching…</span> : null}
                   </div>
-                );
-              })}
-            </div>
-            <div className="add-action-picker-section add-action-picker-search-section">
-              <div className="add-action-section-label add-action-section-label-row">
-                <span>Connector actions</span>
-                {loading ? <span className="add-action-searching">Searching…</span> : null}
+                  <div className="add-action-search">
+                    <span className="add-action-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
+                    <input
+                      ref={searchRef}
+                      type="text"
+                      value={search}
+                      placeholder="Search connectors and actions…"
+                      onChange={(event) => onSearchChange(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
+                    />
+                  </div>
+                </div>
+                <div className="add-action-results">
+                  {operations.length ? operations.map((operation) => (
+                    <button
+                      key={`${operation.apiId || operation.apiName}:${operation.name}`}
+                      type="button"
+                      className={`add-action-operation ${selectedOperation?.name === operation.name && selectedOperation?.apiId === operation.apiId ? 'active' : ''}`}
+                      onClick={() => selectOperation(operation)}
+                    >
+                      {operation.iconUri ? <img className="add-action-operation-icon" src={operation.iconUri} alt="" /> : <span className="add-action-operation-icon add-action-operation-icon-placeholder" />}
+                      <span className="add-action-operation-text">
+                        <span className="add-action-operation-title">
+                          {operation.summary || operation.name}
+                          {operation.isBuiltIn && !operation.hasConnectorSchema ? <span className="add-action-builtin-badge">Built-in</span> : null}
+                        </span>
+                        <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} &middot; {operation.name}</span>
+                        {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
+                      </span>
+                    </button>
+                  )) : <div className="add-action-results-empty">{loading ? 'Loading operations…' : 'No operations found.'}</div>}
+                </div>
               </div>
-              <div className="add-action-section-desc">Operations exposed by Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.</div>
-              <div className="add-action-search">
-                <span className="add-action-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={search}
-                  placeholder="Search connectors and actions…"
-                  onChange={(event) => onSearchChange(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
-                />
-              </div>
-            </div>
-            <div className="add-action-results">
-              {operations.length ? operations.map((operation) => (
-                <button
-                  key={`${operation.apiId || operation.apiName}:${operation.name}`}
-                  type="button"
-                  className={`add-action-operation ${selectedOperation?.name === operation.name && selectedOperation?.apiId === operation.apiId ? 'active' : ''}`}
-                  onClick={() => selectOperation(operation)}
-                >
-                  {operation.iconUri ? <img className="add-action-operation-icon" src={operation.iconUri} alt="" /> : <span className="add-action-operation-icon add-action-operation-icon-placeholder" />}
-                  <span className="add-action-operation-text">
-                    <span className="add-action-operation-title">
-                      {operation.summary || operation.name}
-                      {operation.isBuiltIn && !operation.hasConnectorSchema ? <span className="add-action-builtin-badge">Built-in</span> : null}
-                    </span>
-                    <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} &middot; {operation.name}</span>
-                    {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
-                  </span>
-                </button>
-              )) : <div className="add-action-results-empty">{loading ? 'Loading operations…' : 'No operations found.'}</div>}
-            </div>
+            )}
           </div>
 
           <div className="add-action-pane add-action-config">

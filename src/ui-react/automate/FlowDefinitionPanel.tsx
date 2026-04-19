@@ -76,6 +76,18 @@ export function FlowDefinitionPanel(props: {
             </div>
           </div>
           <div className="flow-editor-layout">
+            <aside className="flow-outline-rail">
+              <FlowOutlineCanvas
+                items={props.analysis?.outline || []}
+                problems={props.flowProblems}
+                activeKey={props.flowOutlineActiveKey}
+                activePath={props.flowOutlineActivePath}
+                onSelect={props.onSelectOutline}
+                onEditAction={props.onEditAction}
+                onAddAfter={props.onAddAfter}
+                onReorder={props.onReorderAction}
+              />
+            </aside>
             <div className="flow-editor-main">
               <FlowCodeEditor
                 ref={props.flowEditorRef}
@@ -89,18 +101,6 @@ export function FlowDefinitionPanel(props: {
                 toast={props.toast}
               />
             </div>
-            <aside className="flow-outline-rail">
-              <FlowOutlineCanvas
-                items={props.analysis?.outline || []}
-                problems={props.flowProblems}
-                activeKey={props.flowOutlineActiveKey}
-                activePath={props.flowOutlineActivePath}
-                onSelect={props.onSelectOutline}
-                onEditAction={props.onEditAction}
-                onAddAfter={props.onAddAfter}
-                onReorder={props.onReorderAction}
-              />
-            </aside>
           </div>
         </div>
         <div className="flow-summary-grid" style={{ marginTop: 12 }}>

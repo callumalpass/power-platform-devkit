@@ -211,7 +211,7 @@ export function RecordDetailModal(props: {
             <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
           </div>
         </div>
-        <div className="rt-modal-body">
+        <div className="rt-modal-body body-flush">
           {loading ? (
             <div className="rt-modal-loading">Loading record...</div>
           ) : error ? (

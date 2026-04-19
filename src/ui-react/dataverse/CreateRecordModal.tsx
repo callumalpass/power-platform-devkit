@@ -304,7 +304,7 @@ export function CreateRecordModal(props: {
             </button>
           </div>
         </div>
-        <div className="rt-modal-body">
+        <div className="rt-modal-body body-flush">
           <div className="create-record-toolbar">
             <input className="rt-edit-input" type="text" placeholder="Filter fields..." value={fieldFilter} onChange={(e) => setFieldFilter(e.target.value)} />
             <label className="rt-edit-check"><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> Changed only</label>
