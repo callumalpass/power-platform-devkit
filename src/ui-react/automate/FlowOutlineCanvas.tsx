@@ -13,6 +13,7 @@ export function FlowOutlineCanvas(props: {
   emptyMessage?: string;
   filterPlaceholder?: string;
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
+  canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
@@ -40,6 +41,7 @@ export function FlowOutlineCanvas(props: {
             activeKey={props.activeKey || ''}
             activePath={props.activePath || []}
             onSelect={props.onSelect}
+            canSelect={props.canSelect}
             onEditAction={props.onEditAction}
             onAddAfter={props.onAddAfter}
             onReorder={props.onReorder}
@@ -59,6 +61,7 @@ function OutlineNodeList(props: {
   activeKey: string;
   activePath: string[];
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
+  canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
@@ -74,6 +77,7 @@ function OutlineNodeList(props: {
           activeKey={props.activeKey}
           activePath={props.activePath}
           onSelect={props.onSelect}
+          canSelect={props.canSelect}
           onEditAction={props.onEditAction}
           onAddAfter={props.onAddAfter}
           onReorder={props.onReorder}
@@ -92,11 +96,12 @@ function OutlineNode(props: {
   activeKey: string;
   activePath: string[];
   onSelect?: (item: FlowAnalysisOutlineItem) => void;
+  canSelect?: (item: FlowAnalysisOutlineItem) => boolean;
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
-  const { item, depth, problems, activeKey, activePath, onSelect, onEditAction, onAddAfter, onReorder } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onReorder } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
@@ -113,11 +118,15 @@ function OutlineNode(props: {
   const open = manuallyOpen || inActivePath;
   const indent = depth * 16 + 8;
   const title = outlineTitle(item);
-  const typeHint = [item.detail, item.type]
+  const statusBadge = runStatusBadge(item);
+  const typeHint = [statusBadge ? undefined : item.detail, item.type]
     .filter((value): value is string => Boolean(value && value !== title))
     .filter((value, index, values) => values.indexOf(value) === index)
     .join(' · ');
   const editable = Boolean(onEditAction && item.name && item.from !== undefined && item.to !== undefined && item.kind !== 'branch');
+  const selectable = Boolean(onSelect && (!canSelect || canSelect(item)));
+  const notSelectable = Boolean(onSelect && !selectable);
+  const notRun = statusBadge?.className === 'not-run';
 
   const isAction = isActionLikeOutlineItem(item);
   const isActionsContainer = item.kind === 'action' && item.name === 'actions' && hasChildren;
@@ -126,7 +135,16 @@ function OutlineNode(props: {
   const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
   const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);
 
-  const rowClasses = ['flow-outline-row', active && 'active', dragging && 'dragging', draggable && 'draggable'].filter(Boolean).join(' ');
+  const rowClasses = [
+    'flow-outline-row',
+    active && 'active',
+    dragging && 'dragging',
+    draggable && 'draggable',
+    selectable && 'selectable',
+    notSelectable && 'not-selectable',
+    notRun && 'not-run',
+    hasChildren && 'has-children',
+  ].filter(Boolean).join(' ');
 
   return (
     <>
@@ -163,10 +181,11 @@ function OutlineNode(props: {
           setDragOver(null);
         }}
         onClick={() => {
-          onSelect?.(item);
+          if (selectable) onSelect?.(item);
           if (hasChildren) setManuallyOpen(!open);
         }}
         style={{ paddingLeft: indent }}
+        title={notRun ? 'This action did not run in this historical run.' : undefined}
       >
         <span className="flow-outline-toggle">
           {hasChildren ? (open ? '\u25BE' : '\u25B8') : ''}
@@ -183,6 +202,7 @@ function OutlineNode(props: {
         ) : (
           <span className="flow-outline-title">{title}</span>
         )}
+        {statusBadge ? <span className={`flow-outline-status-badge ${statusBadge.className}`}>{statusBadge.label}</span> : null}
         {typeHint ? <span className="flow-outline-type-hint">{typeHint}</span> : null}
         {hasProblem ? (
           <span
@@ -202,10 +222,22 @@ function OutlineNode(props: {
       </div>
       {dragOver === 'after' && <div className="flow-outline-drop-line" />}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onReorder={onReorder} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onReorder={onReorder} />
       )}
     </>
   );
+}
+
+function runStatusBadge(item: FlowAnalysisOutlineItem): { label: string; className: string } | null {
+  const raw = typeof item.inputs?.status === 'string' ? item.inputs.status : item.detail;
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'succeeded') return { label: 'SUCCEEDED', className: 'succeeded' };
+  if (normalized === 'failed') return { label: 'FAILED', className: 'failed' };
+  if (normalized === 'skipped') return { label: 'SKIPPED', className: 'skipped' };
+  if (normalized === 'running') return { label: 'RUNNING', className: 'running' };
+  if (normalized === 'not run') return { label: 'NOT RUN', className: 'not-run' };
+  return null;
 }
 
 function filterOutlineItems(items: FlowAnalysisOutlineItem[], query: string): FlowAnalysisOutlineItem[] {

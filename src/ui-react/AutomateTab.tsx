@@ -26,6 +26,7 @@ import { FlowDetailHeader } from './automate/FlowDetailHeader.js';
 import { FlowInventorySidebar } from './automate/FlowInventorySidebar.js';
 import { FlowOutlinePanel } from './automate/FlowOutlinePanel.js';
 import { FlowRunsPanel } from './automate/FlowRunsPanel.js';
+import { runActionRef, runActionRefForAction } from './automate/flow-run-outline.js';
 import { buildFlowProblems } from './automate/FlowProblemsPanel.js';
 import { buildOutlinePathTo, isActionLikeOutlineItem, outlineKey } from './automate/outline-utils.js';
 import type { AutomateSubTab, FlowActionEditTarget, FlowEditorHandle, FlowOperation, FlowProblem } from './automate/types.js';
@@ -69,8 +70,10 @@ export function AutomateTab(props: {
   const [actionDetail, setActionDetail] = useState<FlowAction | null>(null);
   const [loadingFlows, setLoadingFlows] = useState(false);
   const [loadingActions, setLoadingActions] = useState(false);
+  const [loadingRuns, setLoadingRuns] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const selectedRunRef = useRef<string | undefined>(undefined);
+  const selectedActionRequestRef = useRef(0);
   const flowEditorRef = useRef<FlowEditorHandle | null>(null);
 
   useEffect(() => {
@@ -132,9 +135,11 @@ export function AutomateTab(props: {
       setRuns([]);
       setCurrentRun(null);
       setActions([]);
+      selectedActionRequestRef.current += 1;
       setCurrentAction(null);
       setActionDetail(null);
       setLoadingActions(false);
+      setLoadingRuns(false);
       setFlowDocument('');
       setLoadedFlowDocument('');
       setAnalysis(null);
@@ -152,20 +157,28 @@ export function AutomateTab(props: {
   async function selectFlow(flow: FlowItem) {
     setCurrentFlow(flow);
     setCurrentRun(null);
+    selectedActionRequestRef.current += 1;
     setCurrentAction(null);
     setActionDetail(null);
     setLoadingActions(false);
     selectedRunRef.current = undefined;
     setActions([]);
     setRuns([]);
-    const [document, loadedRuns] = await Promise.all([
-      loadFlowDefinitionDocument(environment, flow),
-      loadFlowRuns(environment, flow).catch(() => []),
-    ]);
-    setFlowDocument(document);
-    setLoadedFlowDocument(document);
-    setFlowValidation(null);
-    setRuns(loadedRuns);
+    setLoadingRuns(true);
+    try {
+      const [document, loadedRuns] = await Promise.all([
+        loadFlowDefinitionDocument(environment, flow),
+        loadFlowRuns(environment, flow).catch(() => []),
+      ]);
+      setFlowDocument(document);
+      setLoadedFlowDocument(document);
+      setFlowValidation(null);
+      setRuns(loadedRuns);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoadingRuns(false);
+    }
   }
 
   async function reloadFlowDefinition() {
@@ -356,6 +369,7 @@ export function AutomateTab(props: {
   async function selectRun(run: FlowRun) {
     if (currentRun?.name === run.name) {
       setCurrentRun(null);
+      selectedActionRequestRef.current += 1;
       setCurrentAction(null);
       setActionDetail(null);
       setActions([]);
@@ -365,10 +379,47 @@ export function AutomateTab(props: {
       return;
     }
     setCurrentRun(run);
+    selectedActionRequestRef.current += 1;
     setCurrentAction(null);
     setActionDetail(null);
-    setActions([]);
-    setRunAnalysis(null);
+    await loadActionsForRun(run, { clearBeforeLoad: true });
+  }
+
+  async function refreshRuns() {
+    if (!currentFlow) return;
+    const selectedRunName = currentRun?.name;
+    const selectedActionRef = currentAction ? runActionRefForAction(currentAction, actions) : '';
+    setLoadingRuns(true);
+    try {
+      const loadedRuns = await loadFlowRuns(environment, currentFlow);
+      setRuns(loadedRuns);
+      const updatedRun = selectedRunName ? loadedRuns.find((run) => run.name === selectedRunName) || null : null;
+      if (selectedRunName && !updatedRun) {
+        setCurrentRun(null);
+        selectedActionRequestRef.current += 1;
+        setCurrentAction(null);
+        setActionDetail(null);
+        setActions([]);
+        setRunAnalysis(null);
+        setLoadingActions(false);
+        selectedRunRef.current = undefined;
+      } else if (updatedRun) {
+        setCurrentRun(updatedRun);
+        await loadActionsForRun(updatedRun, { clearBeforeLoad: false, preserveActionRef: selectedActionRef });
+      }
+      toast(loadedRuns.length ? `Loaded ${loadedRuns.length} recent runs` : 'No recent runs');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setLoadingRuns(false);
+    }
+  }
+
+  async function loadActionsForRun(run: FlowRun, options: { clearBeforeLoad: boolean; preserveActionRef?: string }) {
+    if (options.clearBeforeLoad) {
+      setActions([]);
+      setRunAnalysis(null);
+    }
     setLoadingActions(true);
     selectedRunRef.current = run.name;
     try {
@@ -383,6 +434,14 @@ export function AutomateTab(props: {
       if (selectedRunRef.current === run.name) {
         setActions(loadedActions);
         setRunAnalysis(loadedRunAnalysis);
+        if (options.preserveActionRef !== undefined) {
+          const refreshedAction = options.preserveActionRef
+            ? loadedActions.find((action, index) => runActionRef(action, index) === options.preserveActionRef) || null
+            : null;
+          selectedActionRequestRef.current += 1;
+          setCurrentAction(refreshedAction);
+          setActionDetail(refreshedAction);
+        }
       }
     } catch {
       if (selectedRunRef.current === run.name) {
@@ -395,11 +454,21 @@ export function AutomateTab(props: {
   }
 
   async function selectAction(action: FlowAction) {
+    const requestId = selectedActionRequestRef.current + 1;
+    selectedActionRequestRef.current = requestId;
+    const runName = currentRun?.name;
+    const hasDuplicateActionName = Boolean(action.name && actions.filter((candidate) => candidate.name === action.name).length > 1);
     setCurrentAction(action);
+    setActionDetail(action);
     try {
-      setActionDetail(currentFlow && currentRun ? await loadActionDetail(environment, currentFlow, currentRun, action) : action);
+      const detail = currentFlow && currentRun && !hasDuplicateActionName ? await loadActionDetail(environment, currentFlow, currentRun, action) : action;
+      if (selectedActionRequestRef.current === requestId && selectedRunRef.current === runName) {
+        setActionDetail(detail);
+      }
     } catch {
-      setActionDetail(action);
+      if (selectedActionRequestRef.current === requestId && selectedRunRef.current === runName) {
+        setActionDetail(action);
+      }
     }
   }
 
@@ -494,6 +563,7 @@ export function AutomateTab(props: {
               currentAction={currentAction}
               currentRun={currentRun}
               loadingActions={loadingActions}
+              loadingRuns={loadingRuns}
               runAnalysis={runAnalysis}
               runFilter={runFilter}
               runs={runs}
@@ -502,6 +572,7 @@ export function AutomateTab(props: {
               onActionStatusFilterChange={setActionStatusFilter}
               onRunFilterChange={setRunFilter}
               onRunStatusFilterChange={setRunStatusFilter}
+              onRefreshRuns={() => { void refreshRuns(); }}
               onSelectAction={(action) => { void selectAction(action); }}
               onSelectRun={(run) => { void selectRun(run); }}
             />

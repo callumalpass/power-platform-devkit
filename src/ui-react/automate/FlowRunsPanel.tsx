@@ -9,7 +9,10 @@ import {
   SummaryCard,
   buildRunActionOutlineItems,
   compareRunsByRecency,
+  findOutlineKeyByRunActionRef,
+  findRunActionForOutlineItem,
   formatRunDuration,
+  runActionRefForAction,
   shortId,
   summarizeCounts,
 } from './FlowRunDetails.js';
@@ -24,6 +27,7 @@ export function FlowRunsPanel(props: {
   currentAction: FlowAction | null;
   currentRun: FlowRun | null;
   loadingActions: boolean;
+  loadingRuns: boolean;
   runAnalysis: FlowAnalysis | null;
   runFilter: string;
   runs: FlowRun[];
@@ -32,6 +36,7 @@ export function FlowRunsPanel(props: {
   onActionStatusFilterChange: (value: string) => void;
   onRunFilterChange: (value: string) => void;
   onRunStatusFilterChange: (value: string) => void;
+  onRefreshRuns: () => void;
   onSelectAction: (action: FlowAction) => void;
   onSelectRun: (run: FlowRun) => void;
 }) {
@@ -52,7 +57,9 @@ export function FlowRunsPanel(props: {
     () => buildRunActionOutlineItems(props.runAnalysis?.outline || props.analysis?.outline || [], props.actions, props.actionStatusFilter),
     [props.runAnalysis?.outline, props.analysis?.outline, props.actions, props.actionStatusFilter],
   );
-  const runActionActiveKey = props.currentAction?.name ? findOutlineKeyByName(runActionOutlineItems, props.currentAction.name) : '';
+  const currentActionRef = props.currentAction ? runActionRefForAction(props.currentAction, props.actions) : '';
+  const runActionActiveKey = (currentActionRef ? findOutlineKeyByRunActionRef(runActionOutlineItems, currentActionRef) : '')
+    || (props.currentAction?.name ? findOutlineKeyByName(runActionOutlineItems, props.currentAction.name) : '');
   const runActionActivePath = runActionActiveKey ? buildOutlinePathTo(runActionOutlineItems, runActionActiveKey) : [];
   const actionCounts = summarizeCounts(props.actions);
 
@@ -61,7 +68,12 @@ export function FlowRunsPanel(props: {
       <div className="panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2>Runs</h2>
-          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Newest first</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{props.loadingRuns ? 'Refreshing...' : 'Newest first'}</div>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={props.onRefreshRuns} disabled={props.loadingRuns}>
+              {props.loadingRuns ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
         </div>
         <div className="run-toolbar">
           <input type="text" placeholder="Filter runs…" value={props.runFilter} onChange={(event) => props.onRunFilterChange(event.target.value)} />
@@ -152,8 +164,9 @@ export function FlowRunsPanel(props: {
                           activePath={runActionActivePath}
                           emptyMessage={props.actionStatusFilter ? 'No actions match this status.' : 'No actions in this run.'}
                           filterPlaceholder="Filter actions..."
+                          canSelect={(item) => Boolean(findRunActionForOutlineItem(item, props.actions))}
                           onSelect={(item: FlowAnalysisOutlineItem) => {
-                            const action = props.actions.find((candidate) => candidate.name === item.name);
+                            const action = findRunActionForOutlineItem(item, props.actions);
                             if (action) props.onSelectAction(action);
                           }}
                         />
@@ -189,7 +202,7 @@ export function FlowRunsPanel(props: {
                 ) : null}
               </div>
             );
-          }) : <div className="empty">No recent runs.</div>}
+          }) : <div className="empty">{props.loadingRuns ? 'Loading runs...' : 'No recent runs.'}</div>}
         </div>
       </div>
     </div>
