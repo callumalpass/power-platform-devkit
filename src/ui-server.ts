@@ -7,7 +7,7 @@ import { networkInterfaces } from 'node:os';
 import { spawn } from 'node:child_process';
 import { createDiagnostic, fail } from './diagnostics.js';
 import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
-import { getConfigDir, getUiStatePath } from './config.js';
+import { getConfigDir, getUiPreferredPortPath, getUiStatePath } from './config.js';
 import { sendJson } from './ui-http.js';
 import { AuthSessionStore } from './ui-auth-sessions.js';
 import { CanvasSessionStore } from './ui-canvas-sessions.js';
@@ -68,6 +68,8 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   const explicitPort = options.port !== undefined;
   const allowInteractiveAuth = options.allowInteractiveAuth ?? true;
   const statePath = getUiStatePath(configOptions);
+  const preferredPortPath = getUiPreferredPortPath(configOptions);
+  const rememberedPort = explicitPort ? undefined : await readRememberedPort(preferredPortPath);
 
   if (options.reuseExisting !== false && !options.lan && !options.pair) {
     const existing = await findExistingUiInstance(statePath, configDir);
@@ -92,7 +94,8 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   const instanceId = randomUUID();
   const cliSecret = randomBytes(32).toString('base64url');
   const pairing = options.pair ? createPairingState() : undefined;
-  const initialPort = explicitPort ? preferredPort : DEFAULT_UI_PORT;
+  const initialPort = explicitPort ? preferredPort : (rememberedPort ?? DEFAULT_UI_PORT);
+  const portCandidates = buildPortCandidates({ explicit: explicitPort, preferred: preferredPort, remembered: rememberedPort });
   const server = await listenWithFallback(
     () => createUiServer({
       configOptions,
@@ -117,8 +120,7 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
       },
     }),
     host,
-    preferredPort,
-    explicitPort,
+    portCandidates,
   );
 
   const address = server.address();
@@ -144,6 +146,9 @@ export async function startPpUi(options: PpUiOptions = {}): Promise<PpUiHandle> 
   };
 
   await persistUiState(statePath, state);
+  if (!options.lan && !options.pair) {
+    await persistRememberedPort(preferredPortPath, resolvedPort);
+  }
   process.stdout.write(`pp UI listening at ${url}\n`);
   if (host === '0.0.0.0') {
     for (const lanUrl of getLanUrls(resolvedPort)) {
@@ -434,10 +439,9 @@ function randomInt(min: number, max: number): number {
   return min + (randomBytes(4).readUInt32BE(0) % range);
 }
 
-async function listenWithFallback(create: () => Server, host: string, preferredPort: number, strictPort: boolean): Promise<Server> {
-  const attempts = strictPort ? [preferredPort] : [preferredPort, 0];
-  let lastError: unknown;
-  for (const port of attempts) {
+async function listenWithFallback(create: () => Server, host: string, candidates: number[]): Promise<Server> {
+  let lastError: unknown = new Error('No ports attempted.');
+  for (const port of candidates) {
     const server = create();
     try {
       await new Promise<void>((resolve, reject) => {
@@ -461,6 +465,42 @@ async function listenWithFallback(create: () => Server, host: string, preferredP
     }
   }
   throw lastError;
+}
+
+function buildPortCandidates(input: { explicit: boolean; preferred: number; remembered: number | undefined }): number[] {
+  if (input.explicit) return [input.preferred];
+  const list: number[] = [];
+  if (input.remembered !== undefined) list.push(input.remembered);
+  list.push(input.preferred);
+  for (let offset = 1; offset <= 9; offset++) list.push(input.preferred + offset);
+  list.push(0);
+  const seen = new Set<number>();
+  return list.filter((port) => {
+    if (seen.has(port)) return false;
+    seen.add(port);
+    return true;
+  });
+}
+
+async function readRememberedPort(filePath: string): Promise<number | undefined> {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as { port?: unknown };
+    const port = typeof parsed.port === 'number' && Number.isInteger(parsed.port) ? parsed.port : Number.NaN;
+    if (Number.isFinite(port) && port > 0 && port < 65536) return port;
+  } catch {
+    // Missing or unreadable file is fine — fall back to the default range.
+  }
+  return undefined;
+}
+
+async function persistRememberedPort(filePath: string, port: number): Promise<void> {
+  try {
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify({ version: 1, port }, null, 2) + '\n', { encoding: 'utf8' });
+  } catch {
+    // Non-fatal — next run falls back to the default candidate list.
+  }
 }
 
 function isAddressInUseError(error: unknown): boolean {

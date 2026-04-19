@@ -1,0 +1,51 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+type Options = { min: number; max: number; initial: number };
+
+export function useResizableWidth(storageKey: string, options: Options) {
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      const parsed = saved ? Number.parseInt(saved, 10) : NaN;
+      if (Number.isFinite(parsed)) return clamp(parsed, options.min, options.max);
+    } catch {
+      // ignore
+    }
+    return options.initial;
+  });
+
+  const widthRef = useRef(width);
+  widthRef.current = width;
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, String(width)); } catch { /* ignore quota */ }
+  }, [storageKey, width]);
+
+  const startDrag = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = widthRef.current;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    function onMove(ev: MouseEvent) {
+      // drag-left → wider (handle sits on left edge of the right column)
+      const delta = startX - ev.clientX;
+      const next = clamp(startWidth + delta, options.min, options.max);
+      setWidth(next);
+    }
+    function onUp() {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [options.min, options.max]);
+
+  return { width, startDrag };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}

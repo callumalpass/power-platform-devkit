@@ -115,6 +115,14 @@ export function getUiStatePath(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'ui-state.json');
 }
 
+export function getUiPreferredPortPath(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'ui-preferred-port.json');
+}
+
+export function getSavedRequestsPath(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'saved-requests.json');
+}
+
 export function getCanvasSessionsPath(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'canvas-sessions.json');
 }

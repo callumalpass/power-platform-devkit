@@ -11,11 +11,12 @@ import type { UiJobStore } from './ui-jobs.js';
 import { handleAccountBrowserProfileGet, handleAccountBrowserProfileOpen, handleAccountBrowserProfileReset, handleAccountBrowserProfileVerify, handleAccountCreate, handleAccountDelete, handleAccountLogin, handleAccountLoginJob, handleAccountTokenStatus, handleAccountUpdate, handleAuthSessionCancel, handleAuthSessionCreate, handleAuthSessionEvents, handleAuthSessionGet, handleJobDelete, handleJobGet } from './ui-route-accounts.js';
 import { handleUiAssetRoute, loadUiState } from './ui-route-assets.js';
 import { handleDataverseQueryExecute, handleDataverseQueryPreview, handleDataverseRecordCreate, handleEntityDetail, handleEntityList, handleFetchXmlExecute, handleFetchXmlIntellisense, handleFetchXmlPreview } from './ui-route-dataverse.js';
-import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
+import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handleEnvironmentUpdate, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
 import { handleCanvasRequest, handleCanvasSessionCreate, handleCanvasSessionDelete, handleCanvasSessionEvents, handleCanvasSessionGet, handleCanvasSessionList, handleCanvasSessionProbe, handleCanvasYamlFetch, handleCanvasYamlValidate } from './ui-route-canvas.js';
 import { handleFlowLanguageAnalyze } from './ui-route-flow-language.js';
 import { handleCliRequestExecute, handleRequestExecute } from './ui-route-requests.js';
 import { handleTemporaryTokenCreate, handleTemporaryTokenDelete, handleTemporaryTokenList } from './ui-route-temp-tokens.js';
+import { handleSavedRequestsList, handleSavedRequestsReplace } from './ui-route-saved-requests.js';
 import type { TemporaryTokenStore } from './temporary-tokens.js';
 
 export interface UiRequestContext {
@@ -63,6 +64,7 @@ export async function handleUiRequest(
     if (/^\/api\/auth\/sessions\/[^/]+\/events$/.test(url.pathname)) return handleAuthSessionEvents(url, response, context);
     if (/^\/api\/auth\/sessions\/[^/]+$/.test(url.pathname)) return handleAuthSessionGet(url, response, context);
     if (url.pathname === '/api/temp-tokens') return handleTemporaryTokenList(response, context);
+    if (url.pathname === '/api/ui/saved-requests') return handleSavedRequestsList(response, context);
     if (url.pathname === '/api/canvas/sessions') return handleCanvasSessionList(url, response, context);
     if (/^\/api\/canvas\/sessions\/[^/]+\/events$/.test(url.pathname)) return handleCanvasSessionEvents(url, response, context);
     if (/^\/api\/canvas\/sessions\/[^/]+$/.test(url.pathname)) return handleCanvasSessionGet(url, response, context);
@@ -107,6 +109,14 @@ export async function handleUiRequest(
 
   if (method === 'PUT' && /^\/api\/accounts\/[^/]+$/.test(url.pathname)) {
     return handleAccountUpdate(request, response, url, context);
+  }
+
+  if (method === 'PUT' && /^\/api\/environments\/[^/]+$/.test(url.pathname)) {
+    return handleEnvironmentUpdate(request, response, url, context);
+  }
+
+  if (method === 'PUT' && url.pathname === '/api/ui/saved-requests') {
+    return handleSavedRequestsReplace(request, response, context);
   }
 
   if (method === 'DELETE') {
