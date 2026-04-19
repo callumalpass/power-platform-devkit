@@ -101,14 +101,20 @@ function readConsoleHistory(): ConsoleHistoryEntry[] {
   }
 }
 
-function readConsoleSaved(): ConsoleSavedEntry[] {
+function readLegacyConsoleSaved(): ConsoleSavedEntry[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem('pp-console-saved') || '[]');
+    const raw = localStorage.getItem('pp-console-saved');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.map(sanitizeSavedEntry).filter((entry): entry is ConsoleSavedEntry => Boolean(entry)).slice(0, 30);
+    return parsed.map(sanitizeSavedEntry).filter((entry): entry is ConsoleSavedEntry => Boolean(entry));
   } catch {
     return [];
   }
+}
+
+function clearLegacyConsoleSaved() {
+  try { localStorage.removeItem('pp-console-saved'); } catch { /* ignore */ }
 }
 
 function persistConsoleItems(key: string, items: Array<ConsoleHistoryEntry | ConsoleSavedEntry>, limit: number) {
@@ -210,7 +216,9 @@ export function ConsoleTab(props: { active: boolean; environment: string; seed: 
   const [railTab, setRailTab] = useState<ConsoleRailTab>('history');
   const [responseHeadersOpen, setResponseHeadersOpen] = useState(false);
   const [history, setHistory] = useState<ConsoleHistoryEntry[]>(readConsoleHistory);
-  const [saved, setSaved] = useState<ConsoleSavedEntry[]>(readConsoleSaved);
+  const [saved, setSaved] = useState<ConsoleSavedEntry[]>([]);
+  const savedHydratedRef = useRef(false);
+  const savedPersistSeqRef = useRef(0);
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [responseFilter, setResponseFilter] = useState('');
@@ -259,8 +267,52 @@ export function ConsoleTab(props: { active: boolean; environment: string; seed: 
     persistConsoleItems('pp-console-history', history, 50);
   }, [history]);
   useEffect(() => {
-    persistConsoleItems('pp-console-saved', saved, 30);
-  }, [saved]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await api<any>('/api/ui/saved-requests');
+        const serverEntries = Array.isArray(payload.data) ? payload.data.map(sanitizeSavedEntry).filter(Boolean) as ConsoleSavedEntry[] : [];
+        const legacy = readLegacyConsoleSaved();
+        if (serverEntries.length === 0 && legacy.length) {
+          try {
+            await api<any>('/api/ui/saved-requests', {
+              method: 'PUT',
+              body: JSON.stringify({ entries: legacy }),
+            });
+            if (!cancelled) setSaved(legacy);
+          } catch {
+            if (!cancelled) setSaved(legacy);
+          }
+          clearLegacyConsoleSaved();
+        } else {
+          if (legacy.length) clearLegacyConsoleSaved();
+          if (!cancelled) setSaved(serverEntries);
+        }
+      } catch {
+        // Fall back to legacy localStorage so pins don't appear lost if the server is briefly unreachable.
+        if (!cancelled) setSaved(readLegacyConsoleSaved());
+      } finally {
+        if (!cancelled) savedHydratedRef.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!savedHydratedRef.current) return;
+    const seq = ++savedPersistSeqRef.current;
+    const entries = saved;
+    const handle = window.setTimeout(() => {
+      if (seq !== savedPersistSeqRef.current) return;
+      void api<any>('/api/ui/saved-requests', {
+        method: 'PUT',
+        body: JSON.stringify({ entries }),
+      }).catch((error) => {
+        toast(error instanceof Error ? `Failed to save pinned requests: ${error.message}` : 'Failed to save pinned requests.', true);
+      });
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [saved, toast]);
 
   useEffect(() => {
     if (!seed || !active) return;
