@@ -23,6 +23,9 @@ import { EmptyState } from './EmptyState.js';
 import { InventorySidebar } from './InventorySidebar.js';
 import { JsonViewer } from './JsonViewer.js';
 import { Icon } from './Icon.js';
+import { ShortcutHelpModal } from './ShortcutHelpModal.js';
+import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
+import { touchEnvironmentRecency } from './env-recency.js';
 
 type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
@@ -152,6 +155,10 @@ export function App() {
   const [globalEnvironment, setGlobalEnvironment] = useState('');
   const [stateLoading, setStateLoading] = useState(true);
   const [envPickerOpen, setEnvPickerOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const envPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const envPickerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const confirm = useConfirm();
 
   const [consoleSeed, setConsoleSeed] = useState<any | null>(null);
 
@@ -235,7 +242,25 @@ export function App() {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        envPickerReturnFocusRef.current = (document.activeElement as HTMLElement) || null;
         setEnvPickerOpen(true);
+        return;
+      }
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        const digit = Number.parseInt(event.key, 10);
+        if (Number.isInteger(digit) && digit >= 1 && digit <= TAB_ORDER.length) {
+          event.preventDefault();
+          setActiveTab(TAB_ORDER[digit - 1]);
+        }
+      }
+      if (event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const target = event.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const editable = target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+        if (!editable) {
+          event.preventDefault();
+          setShortcutHelpOpen((current) => !current);
+        }
       }
     };
     window.addEventListener('keydown', handler);
@@ -448,12 +473,6 @@ export function App() {
     }
   }
 
-  const meta = useMemo(() => {
-    const accountCount = shellData?.accounts?.length || 0;
-    const environmentCount = shellData?.environments?.length || 0;
-    return `${accountCount} accounts · ${environmentCount} envs`;
-  }, [shellData]);
-
   const currentEnvData = useMemo(() => {
     if (!globalEnvironment || !shellData?.environments) return undefined;
     return shellData.environments.find((e: any) => e.alias === globalEnvironment);
@@ -481,14 +500,20 @@ export function App() {
 
       <header className="header">
         <div className="header-inner">
-          <span className="logo"><svg width="24" height="24" viewBox="46 43 172 174" aria-label="pp"><mask id="pp-m"><rect x="46" y="43" width="172" height="174" fill="white"/><circle cx="100" cy="88" r="18" fill="black"/><circle cx="164" cy="88" r="18" fill="black"/></mask><g fill="currentColor" mask="url(#pp-m)"><rect x="64" y="52" width="18" height="156" rx="9"/><circle cx="100" cy="88" r="36"/><rect x="128" y="52" width="18" height="156" rx="9"/><circle cx="164" cy="88" r="36"/></g></svg></span>
+          <span className="logo" aria-label="pp">
+            <span className="logo-mark">pp</span>
+          </span>
           <div className="header-env">
-            <label>ENV</label>
+            <label htmlFor="global-environment">Environment</label>
             <button
               type="button"
               id="global-environment"
+              ref={envPickerTriggerRef}
               className="env-trigger"
-              onClick={() => setEnvPickerOpen(true)}
+              onClick={() => {
+                envPickerReturnFocusRef.current = envPickerTriggerRef.current;
+                setEnvPickerOpen(true);
+              }}
               title="Switch active environment (Ctrl+K)"
             >
               <span className="env-trigger-text">
@@ -498,21 +523,13 @@ export function App() {
                     {currentEnvData?.account ? <span className="env-trigger-account">{currentEnvData.account}</span> : null}
                   </>
                 ) : (
-                  <span className="env-trigger-placeholder">Select environment…</span>
+                  <span className="env-trigger-placeholder">Select…</span>
                 )}
               </span>
               <span className="env-trigger-chevron" aria-hidden="true">▾</span>
             </button>
           </div>
-          <button
-            type="button"
-            className="header-meta header-meta-button"
-            id="meta"
-            title="Open Setup"
-            onClick={() => setActiveTab('setup')}
-          >
-            {meta}
-          </button>
+          <div className="header-flex-spacer" aria-hidden="true" />
           <HeaderActions
             theme={theme}
             onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
@@ -522,6 +539,8 @@ export function App() {
             setToastTrayOpen={setToastTrayOpen}
             headerMenuOpen={headerMenuOpen}
             setHeaderMenuOpen={setHeaderMenuOpen}
+            openConfirm={confirm.open}
+            openShortcutHelp={() => setShortcutHelpOpen(true)}
           />
         </div>
       </header>
@@ -626,38 +645,71 @@ export function App() {
         </div>
       </div>
 
-      {stateLoading ? null : null}
+      {stateLoading ? <div className="app-loading-bar" aria-hidden="true"><span /></div> : null}
 
       {envPickerOpen ? (
         <EnvironmentPickerModal
           environments={shellData?.environments || []}
           accounts={shellData?.accounts || []}
           current={globalEnvironment}
-          onSelect={(alias) => setGlobalEnvironment(alias)}
-          onClose={() => setEnvPickerOpen(false)}
+          toast={pushToast}
+          onSelect={(alias) => {
+            setGlobalEnvironment(alias);
+            touchEnvironmentRecency(alias);
+          }}
+          onClose={() => {
+            setEnvPickerOpen(false);
+            const target = envPickerReturnFocusRef.current;
+            envPickerReturnFocusRef.current = null;
+            if (target && typeof target.focus === 'function') {
+              window.setTimeout(() => target.focus(), 0);
+            }
+          }}
         />
       ) : null}
+
+      {shortcutHelpOpen ? (
+        <ShortcutHelpModal onClose={() => setShortcutHelpOpen(false)} />
+      ) : null}
+
+      <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </>
   );
 }
 
+
+const TAB_LABELS: Record<TabName, string> = {
+  setup: 'setup',
+  console: 'console',
+  dataverse: 'dataverse',
+  automate: 'automate',
+  apps: 'apps',
+  canvas: 'canvas',
+  platform: 'platform',
+};
+
+const TAB_ORDER: TabName[] = ['setup', 'console', 'dataverse', 'automate', 'apps', 'canvas', 'platform'];
+
+function tabNumber(tabName: TabName): string {
+  const n = TAB_ORDER.indexOf(tabName) + 1;
+  return n.toString().padStart(2, '0');
+}
+
 function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabName; setActiveTab: (tab: TabName) => void }) {
   const { index, tabName, activeTab, setActiveTab } = props;
-  const labels: Record<TabName, string> = {
-    setup: 'Setup',
-    console: 'Console',
-    dataverse: 'Dataverse',
-    automate: 'Automate',
-    apps: 'Apps',
-    canvas: 'Canvas',
-    platform: 'Platform',
-  };
   const needsSep = index === 2;
+  const number = tabNumber(tabName);
   return (
     <>
       {needsSep ? <div className="tab-sep"></div> : null}
-      <button className={`tab ${activeTab === tabName ? 'active' : ''}`} data-tab={tabName} onClick={() => setActiveTab(tabName)}>
-        {labels[tabName]}
+      <button
+        className={`tab ${activeTab === tabName ? 'active' : ''}`}
+        data-tab={tabName}
+        onClick={() => setActiveTab(tabName)}
+        title={`${TAB_LABELS[tabName]} (Alt+${TAB_ORDER.indexOf(tabName) + 1})`}
+      >
+        <span className="tab-num" aria-hidden="true">{number}</span>
+        <span className="tab-label">{TAB_LABELS[tabName]}</span>
       </button>
     </>
   );
@@ -666,7 +718,7 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
 type ConsoleRequestTab = 'query' | 'headers' | 'body';
 type ConsoleRailTab = 'history' | 'saved';
 type ConsoleHistoryEntry = { api: string; method: string; path: string; status: number; elapsed: number };
-type ConsoleSavedEntry = { api: string; method: string; path: string };
+type ConsoleSavedEntry = { api: string; method: string; path: string; name?: string };
 type ConsoleResponsePreview = {
   text: string;
   truncated: boolean;
@@ -732,13 +784,15 @@ function sanitizeSavedEntry(value: any): ConsoleSavedEntry | undefined {
   const method = typeof value.method === 'string' ? value.method : '';
   const path = typeof value.path === 'string' ? value.path : '';
   if (!api || !method || !path) return undefined;
-  return { api, method, path };
+  const entry: ConsoleSavedEntry = { api, method, path };
+  if (typeof value.name === 'string' && value.name.trim()) entry.name = value.name.trim().slice(0, 120);
+  return entry;
 }
 
 function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
   if (preview && typeof preview.text === 'string') {
     const notice = preview.truncated
-      ? `\n\n/* pp preview: response truncated to ${formatBytes(preview.shownBytes)} of ${formatBytes(preview.originalBytes)}. Narrow the request with $top/$select or use CLI jq for the full payload. */`
+      ? `\n\n/* pp preview: response truncated to ${formatBytes(preview.shownBytes)} of ${formatBytes(preview.originalBytes)}. Use “Load full response” to fetch everything, or narrow with $top/$select. */`
       : '';
     return {
       body: `${preview.text}${notice}`,
@@ -760,8 +814,36 @@ function truncateConsoleText(text: string): { body: string; bytes: number; trunc
   }
   const shownBytes = bytes.slice(0, CONSOLE_RESPONSE_PREVIEW_BYTES);
   const preview = new TextDecoder().decode(shownBytes);
-  const notice = `\n\n/* pp preview: response truncated to ${formatBytes(shownBytes.byteLength)} of ${formatBytes(bytes.byteLength)}. Narrow the request with $top/$select or use CLI jq for the full payload. */`;
+  const notice = `\n\n/* pp preview: response truncated to ${formatBytes(shownBytes.byteLength)} of ${formatBytes(bytes.byteLength)}. Use “Load full response” to fetch everything, or narrow with $top/$select. */`;
   return { body: `${preview}${notice}`, bytes: shownBytes.byteLength, truncated: true, originalBytes: bytes.byteLength };
+}
+
+function filterResponseBody(body: string, query: string): { text: string; matches: number } {
+  if (!query) return { text: body, matches: 0 };
+  const lines = body.split('\n');
+  const needle = query.toLowerCase();
+  const matches: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().includes(needle)) matches.push(i);
+  }
+  if (!matches.length) return { text: '', matches: 0 };
+  const contextRange = 2;
+  const keep = new Set<number>();
+  for (const idx of matches) {
+    for (let offset = -contextRange; offset <= contextRange; offset++) {
+      const target = idx + offset;
+      if (target >= 0 && target < lines.length) keep.add(target);
+    }
+  }
+  const sorted = Array.from(keep).sort((a, b) => a - b);
+  const output: string[] = [];
+  let prev = -1;
+  for (const idx of sorted) {
+    if (prev >= 0 && idx !== prev + 1) output.push('…');
+    output.push(lines[idx]);
+    prev = idx;
+  }
+  return { text: output.join('\n'), matches: matches.length };
 }
 
 function ConsoleTab(props: { active: boolean; environment: string; seed: any; clearSeed: () => void; toast: (message: string, isError?: boolean) => void }) {
@@ -777,6 +859,12 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
   const [responseHeadersOpen, setResponseHeadersOpen] = useState(false);
   const [history, setHistory] = useState<ConsoleHistoryEntry[]>(readConsoleHistory);
   const [saved, setSaved] = useState<ConsoleSavedEntry[]>(readConsoleSaved);
+  const [renameIndex, setRenameIndex] = useState<number | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [responseFilter, setResponseFilter] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loadingFull, setLoadingFull] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [response, setResponse] = useState<ConsoleResponseState>({
     status: '',
     elapsed: '',
@@ -787,6 +875,33 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
   });
 
   const currentApi = APIS.find((item) => item.key === apiKey) || APIS[0];
+  const supportsBody = method !== 'GET' && method !== 'DELETE';
+
+  const bodyParseError = useMemo(() => {
+    if (!body.trim() || !supportsBody) return null;
+    try {
+      JSON.parse(body);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }, [body, supportsBody]);
+
+  function findDuplicateKeys(rows: Array<{ key: string; value: string }>): string[] {
+    const seen = new Map<string, number>();
+    const dupes: string[] = [];
+    for (const row of rows) {
+      const key = row.key.trim();
+      if (!key) continue;
+      const count = (seen.get(key) || 0) + 1;
+      seen.set(key, count);
+      if (count === 2) dupes.push(key);
+    }
+    return dupes;
+  }
+
+  const queryDupes = useMemo(() => findDuplicateKeys(queryRows), [queryRows]);
+  const headerDupes = useMemo(() => findDuplicateKeys(headerRows), [headerRows]);
 
   useEffect(() => {
     persistConsoleItems('pp-console-history', history, 50);
@@ -803,7 +918,24 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
     clearSeed();
   }, [active, clearSeed, seed]);
 
-  async function sendRequest() {
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  function cancelInFlight() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  }
+
+  async function sendRequest(options?: { fullResponse?: boolean }) {
+    if (sending) {
+      cancelInFlight();
+      return;
+    }
     if (!environment) {
       toast('Select an environment first.', true);
       return;
@@ -812,16 +944,18 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
       toast('Enter a request path.', true);
       return;
     }
+    if (bodyParseError) {
+      toast(`Request body is not valid JSON: ${bodyParseError}`, true);
+      return;
+    }
     const query = Object.fromEntries(queryRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
     const headers = Object.fromEntries(headerRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
-    let parsedBody: any = undefined;
-    if (body.trim() && method !== 'GET' && method !== 'DELETE') {
-      try {
-        parsedBody = JSON.parse(body);
-      } catch {
-        parsedBody = body;
-      }
-    }
+    const parsedBody = body.trim() && supportsBody ? JSON.parse(body) : undefined;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const fullResponse = !!options?.fullResponse;
+    setSending(true);
+    if (fullResponse) setLoadingFull(true);
     const started = performance.now();
     try {
       const payload = await api<any>('/api/request/execute', {
@@ -834,9 +968,11 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           query: Object.keys(query).length ? query : undefined,
           headers: Object.keys(headers).length ? headers : undefined,
           body: parsedBody,
-          maxResponseBytes: CONSOLE_RESPONSE_PREVIEW_BYTES,
+          maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES,
         }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const elapsed = Math.round(performance.now() - started);
       const bodyValue = payload.data?.response;
       const preview = payload.data?.responsePreview as ConsoleResponsePreview | undefined;
@@ -855,7 +991,12 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
       });
       setHistory((current) => [{ api: apiKey, method, path, status: payload.data?.status || 200, elapsed }, ...current].slice(0, 50));
       if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
+      else if (fullResponse) toast(`Loaded full response (${formatBytes(bodyResult.bytes)}).`, false);
     } catch (error) {
+      if (controller.signal.aborted) {
+        toast('Request cancelled.', false);
+        return;
+      }
       const elapsed = Math.round(performance.now() - started);
       const message = error instanceof Error ? error.message : String(error);
       setResponse({
@@ -868,10 +1009,54 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
       });
       setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
       toast(message, true);
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setSending(false);
+      setLoadingFull(false);
     }
   }
 
-  const supportsBody = method !== 'GET' && method !== 'DELETE';
+  useEffect(() => {
+    if (!active) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape' && sending) {
+        event.preventDefault();
+        cancelInFlight();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        const target = event.target as HTMLElement | null;
+        const panel = target?.closest?.('.console-main');
+        if (panel) {
+          event.preventDefault();
+          void sendRequest();
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, sending, environment, apiKey, method, path, body, queryRows, headerRows, bodyParseError]);
+
+  function togglePinHistory(entry: ConsoleHistoryEntry) {
+    setSaved((current) => {
+      const existingIndex = current.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
+      if (existingIndex >= 0) return current.filter((_, itemIndex) => itemIndex !== existingIndex);
+      return [{ api: entry.api, method: entry.method, path: entry.path }, ...current];
+    });
+  }
+
+  function commitRename(index: number) {
+    const trimmed = renameDraft.trim();
+    setSaved((current) => current.map((item, i) => i === index ? { ...item, name: trimmed || undefined } : item));
+    setRenameIndex(null);
+    setRenameDraft('');
+  }
+
+  const filteredResponseBody = useMemo(() => {
+    if (!responseFilter.trim()) return { text: response.body, matches: 0 };
+    return filterResponseBody(response.body, responseFilter.trim());
+  }, [response.body, responseFilter]);
+
   const effectiveRequestTab: ConsoleRequestTab = !supportsBody && requestTab === 'body' ? 'query' : requestTab;
 
   return (
@@ -892,7 +1077,21 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
               {currentApi.presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label} — {preset.description}</option>)}
             </select>
           </div>
+          <div className={`console-scope-banner ${currentApi.scope}`}>
+            {currentApi.scope === 'account' ? (
+              <>
+                <span className="console-scope-badge account">account-scoped</span>
+                <span className="console-scope-description">Uses the environment’s account for auth; requests go directly to {currentApi.label}. The environment selector isn’t used as a routing prefix.</span>
+              </>
+            ) : (
+              <>
+                <span className="console-scope-badge env">environment-scoped</span>
+                <span className="console-scope-description">Requests go through <strong>{environment || 'the selected environment'}</strong>.</span>
+              </>
+            )}
+          </div>
           <div className="console-bar">
+            <label htmlFor="console-api" className="sr-only">API</label>
             <select id="console-api" value={apiKey} onChange={(event) => {
               const nextApi = APIS.find((item) => item.key === event.target.value) || APIS[0];
               setApiKey(nextApi.key);
@@ -900,60 +1099,86 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
             }}>
               {APIS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
+            <label htmlFor="console-method" className="sr-only">HTTP method</label>
             <select id="console-method" value={method} onChange={(event) => setMethod(event.target.value)} style={{ color: METHOD_COLORS[method] || 'var(--ink)' }}>
               {METHODS.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
-            <input type="text" id="console-path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
+            <label htmlFor="console-path" className="sr-only">Request path</label>
+            <input type="text" id="console-path" aria-label="Request path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
             <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
-            <button className="btn btn-primary" id="console-send" onClick={() => void sendRequest()}>Send</button>
+            {sending ? (
+              <button className="btn btn-danger" id="console-send" type="button" onClick={cancelInFlight}>Cancel</button>
+            ) : (
+              <button className="btn btn-primary" id="console-send" type="button" onClick={() => void sendRequest()}>Send</button>
+            )}
           </div>
-          <div className="console-scope-hint">
-            {currentApi.scope === 'account'
-              ? <><span className="console-scope-badge account">account-scoped</span> Uses environment’s account for auth, requests go to {currentApi.label} endpoints</>
-              : <><span className="console-scope-badge env">environment-scoped</span> Requests go through the selected environment</>}
+          <div className="console-bar-hint">
+            <kbd>⏎</kbd> send · <kbd>Ctrl</kbd>+<kbd>⏎</kbd> send from any field · <kbd>Esc</kbd> cancel while sending · <kbd>?</kbd> all shortcuts
           </div>
           <div className="console-request-tabs">
-            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'query' ? 'active' : ''}`} onClick={() => setRequestTab('query')}>
+            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'query' ? 'active' : ''} ${queryDupes.length ? 'has-warning' : ''}`} onClick={() => setRequestTab('query')}>
               Query{queryRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{queryRows.filter((row) => row.key.trim()).length}</span> : null}
+              {queryDupes.length ? <span className="console-request-tab-warn" aria-label="Duplicate keys">!</span> : null}
             </button>
-            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'headers' ? 'active' : ''}`} onClick={() => setRequestTab('headers')}>
+            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'headers' ? 'active' : ''} ${headerDupes.length ? 'has-warning' : ''}`} onClick={() => setRequestTab('headers')}>
               Headers{headerRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{headerRows.filter((row) => row.key.trim()).length}</span> : null}
+              {headerDupes.length ? <span className="console-request-tab-warn" aria-label="Duplicate keys">!</span> : null}
             </button>
             <button
               type="button"
-              className={`console-request-tab ${effectiveRequestTab === 'body' ? 'active' : ''}`}
+              className={`console-request-tab ${effectiveRequestTab === 'body' ? 'active' : ''} ${bodyParseError ? 'has-warning' : ''}`}
               disabled={!supportsBody}
               onClick={() => supportsBody && setRequestTab('body')}
               title={supportsBody ? '' : `${method} requests do not include a body.`}
             >
               Body{body.trim() && supportsBody ? <span className="console-request-tab-dot" aria-hidden="true" /> : null}
+              {bodyParseError ? <span className="console-request-tab-warn" aria-label="Invalid JSON">!</span> : null}
             </button>
           </div>
           <div className="console-request-panel">
             {effectiveRequestTab === 'query' ? (
               <div className="kv-list">
-                {queryRows.map((row, index) => (
-                  <div key={index} className="kv-row">
-                    <input placeholder="key" value={row.key} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-                    <input placeholder="value" value={row.value} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-                    <button type="button" className="condition-remove" onClick={() => setQueryRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
-                  </div>
-                ))}
+                {queryDupes.length ? (
+                  <div className="console-field-warning">Duplicate parameter {queryDupes.length === 1 ? 'key' : 'keys'}: <code>{queryDupes.join(', ')}</code>. Only the last value per key is sent.</div>
+                ) : null}
+                {queryRows.map((row, index) => {
+                  const trimmed = row.key.trim();
+                  const isDupe = trimmed && queryDupes.includes(trimmed);
+                  return (
+                    <div key={index} className={`kv-row ${isDupe ? 'kv-row-dupe' : ''}`}>
+                      <input aria-label={`Query key ${index + 1}`} placeholder="key" value={row.key} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
+                      <input aria-label={`Query value ${index + 1}`} placeholder="value" value={row.value} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setQueryRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                    </div>
+                  );
+                })}
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => setQueryRows((current) => [...current, { key: '', value: '' }])}>+ Add parameter</button>
               </div>
             ) : effectiveRequestTab === 'headers' ? (
               <div className="kv-list">
-                {headerRows.map((row, index) => (
-                  <div key={index} className="kv-row">
-                    <input placeholder="key" value={row.key} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-                    <input placeholder="value" value={row.value} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-                    <button type="button" className="condition-remove" onClick={() => setHeaderRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
-                  </div>
-                ))}
+                {headerDupes.length ? (
+                  <div className="console-field-warning">Duplicate header {headerDupes.length === 1 ? 'name' : 'names'}: <code>{headerDupes.join(', ')}</code>. Only the last value per name is sent.</div>
+                ) : null}
+                {headerRows.map((row, index) => {
+                  const trimmed = row.key.trim();
+                  const isDupe = trimmed && headerDupes.includes(trimmed);
+                  return (
+                    <div key={index} className={`kv-row ${isDupe ? 'kv-row-dupe' : ''}`}>
+                      <input aria-label={`Header name ${index + 1}`} placeholder="key" value={row.key} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
+                      <input aria-label={`Header value ${index + 1}`} placeholder="value" value={row.value} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setHeaderRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                    </div>
+                  );
+                })}
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => setHeaderRows((current) => [...current, { key: '', value: '' }])}>+ Add header</button>
               </div>
             ) : (
-              <textarea rows={8} placeholder='{ "key": "value" }' value={body} onChange={(event) => setBody(event.target.value)} />
+              <div className="console-body-editor">
+                <textarea aria-label="Request body (JSON)" rows={8} placeholder='{ "key": "value" }' value={body} onChange={(event) => setBody(event.target.value)} />
+                {bodyParseError ? (
+                  <div className="console-field-error">Invalid JSON: {bodyParseError}</div>
+                ) : null}
+              </div>
             )}
           </div>
         </div>
@@ -984,12 +1209,39 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
           ) : null}
           {response.truncated ? (
             <div className="console-response-warning">
-              Response preview truncated. Showing {response.size}{response.originalSize ? ` of ${response.originalSize}` : ''}.
+              <span className="console-response-warning-text">Response preview truncated. Showing {response.size}{response.originalSize ? ` of ${response.originalSize}` : ''}.</span>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                disabled={loadingFull || sending}
+                onClick={() => void sendRequest({ fullResponse: true })}
+              >
+                {loadingFull ? 'Loading…' : 'Load full response'}
+              </button>
+            </div>
+          ) : null}
+          {response.body && response.body !== 'Send a request to see the response.' ? (
+            <div className="console-response-filter">
+              <input
+                type="text"
+                aria-label="Filter response body"
+                placeholder="Filter response (substring across lines, shows context)…"
+                value={responseFilter}
+                onChange={(event) => setResponseFilter(event.target.value)}
+              />
+              {responseFilter ? (
+                <>
+                  <span className="console-response-filter-count">
+                    {filteredResponseBody.matches} match{filteredResponseBody.matches === 1 ? '' : 'es'}
+                  </span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResponseFilter('')}>Clear</button>
+                </>
+              ) : null}
             </div>
           ) : null}
           <div className="console-response-viewer">
             {response.body && response.body !== 'Send a request to see the response.' ? (
-              <JsonViewer value={response.body} />
+              <JsonViewer value={filteredResponseBody.text || (responseFilter ? `/* No matches for "${responseFilter}". */` : response.body)} />
             ) : (
               <EmptyState icon={<Icon name="refresh" size={18} />} title="No response yet" description="Pick an API, method and path above, then Send." compact />
             )}
@@ -1012,39 +1264,98 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
               history.length ? history.slice(0, 20).map((entry, index) => {
                 const pinned = saved.some((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
                 return (
-                  <div key={index} className="history-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
-                    <div className="history-item-main">
-                      <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
-                      <span className="history-path">{entry.path}</span>
-                    </div>
-                    <div className="history-item-meta">
-                      <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
-                      <span className="history-time">{entry.elapsed}ms</span>
-                      <button className={`pin-btn ${pinned ? 'pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={(event) => {
-                        event.stopPropagation();
-                        setSaved((current) => {
-                          const existingIndex = current.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
-                          if (existingIndex >= 0) return current.filter((_, itemIndex) => itemIndex !== existingIndex);
-                          return [{ api: entry.api, method: entry.method, path: entry.path }, ...current];
-                        });
-                      }}><Icon name={pinned ? 'star-filled' : 'star'} size={14} /></button>
+                  <div key={index} className="history-item">
+                    <button
+                      type="button"
+                      className="history-item-trigger"
+                      onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}
+                      title={`Load ${entry.method} ${entry.path}`}
+                    >
+                      <div className="history-item-main">
+                        <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                        <span className="history-path">{entry.path}</span>
+                      </div>
+                      <div className="history-item-meta">
+                        <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
+                        <span className="history-time">{entry.elapsed}ms</span>
+                      </div>
+                    </button>
+                    <div className="history-item-actions">
+                      <button
+                        type="button"
+                        className={`pin-btn ${pinned ? 'pinned' : ''}`}
+                        title={pinned ? 'Unpin' : 'Pin to saved'}
+                        aria-label={pinned ? 'Unpin request' : 'Pin request'}
+                        onClick={() => togglePinHistory(entry)}
+                      >
+                        <Icon name={pinned ? 'star-filled' : 'star'} size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="pin-btn"
+                        title="Remove from history"
+                        aria-label="Remove from history"
+                        onClick={() => setHistory((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >×</button>
                     </div>
                   </div>
                 );
               }) : <EmptyState icon={<Icon name="reply" size={18} />} title="No requests yet" description="Send a request to see history." compact />
             ) : (
-              saved.length ? saved.map((entry, index) => (
-                <div key={index} className="saved-item" onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}>
-                  <div className="saved-item-main">
-                    <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
-                    <span className="saved-item-name">{entry.path}</span>
+              saved.length ? saved.map((entry, index) => {
+                const isRenaming = renameIndex === index;
+                return (
+                  <div key={index} className="saved-item">
+                    {isRenaming ? (
+                      <div className="saved-item-main saved-item-rename">
+                        <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                        <input
+                          autoFocus
+                          className="saved-item-rename-input"
+                          aria-label="Rename saved request"
+                          value={renameDraft}
+                          placeholder={entry.path}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') { event.preventDefault(); commitRename(index); }
+                            else if (event.key === 'Escape') { event.preventDefault(); setRenameIndex(null); setRenameDraft(''); }
+                          }}
+                          onBlur={() => commitRename(index)}
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="history-item-trigger saved-item-main"
+                        onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}
+                        title={`Load ${entry.method} ${entry.path}`}
+                      >
+                        <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                        <span className="saved-item-name">{entry.name || entry.path}</span>
+                        {entry.name ? <span className="saved-item-path-hint">{entry.path}</span> : null}
+                      </button>
+                    )}
+                    <div className="history-item-actions">
+                      <button
+                        type="button"
+                        className="pin-btn"
+                        title={entry.name ? 'Rename' : 'Name this request'}
+                        aria-label="Rename saved request"
+                        onClick={() => { setRenameIndex(index); setRenameDraft(entry.name || ''); }}
+                      >
+                        <Icon name="pencil" size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="pin-btn pinned"
+                        title="Unpin"
+                        aria-label="Unpin saved request"
+                        onClick={() => setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >✖</button>
+                    </div>
                   </div>
-                  <button className="pin-btn pinned" title="Remove" onClick={(event) => {
-                    event.stopPropagation();
-                    setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                  }}>✖</button>
-                </div>
-              )) : <EmptyState icon={<Icon name="star" size={18} />} title="No saved requests" description="Pin requests from history to keep them here." compact />
+                );
+              }) : <EmptyState icon={<Icon name="star" size={18} />} title="No saved requests" description="Pin requests from history to keep them here." compact />
             )}
           </div>
         </div>
@@ -1594,27 +1905,40 @@ function DataverseTab(props: {
               const flags = [];
               if (entity.isCustomEntity) flags.push(<span key="custom" className="entity-item-flag">custom</span>);
               if (entity.isActivity) flags.push(<span key="activity" className="entity-item-flag">activity</span>);
+              const isActive = dataverse.currentEntity?.logicalName === entity.logicalName;
               return (
-                <div key={entity.logicalName} className={`entity-item ${dataverse.currentEntity?.logicalName === entity.logicalName ? 'active' : ''}`} data-entity={entity.logicalName} onClick={() => void loadEntityDetail(entity.logicalName)}>
+                <button
+                  type="button"
+                  key={entity.logicalName}
+                  className={`entity-item ${isActive ? 'active' : ''}`}
+                  data-entity={entity.logicalName}
+                  aria-pressed={isActive}
+                  onClick={() => void loadEntityDetail(entity.logicalName)}
+                >
                   <div className="entity-item-name">{entity.displayName || entity.logicalName}</div>
                   <div className="entity-item-logical">{entity.logicalName}</div>
                   <div className="entity-item-badges">
                     {entity.entitySetName ? <span className="entity-item-set">{entity.entitySetName}</span> : null}
                     {flags}
                   </div>
-                </div>
+                </button>
               );
             }) : (
-              <div className="entity-loading">
-                {dataverse.entitiesLoadError ? (
-                  <>
-                    <div>{dataverse.entitiesLoadError}</div>
-                    <button className="btn btn-ghost btn-sm" type="button" style={{ marginTop: 10 }} onClick={() => void loadEntities()}>Retry</button>
-                  </>
-                ) : (
-                  'Select an environment to load entities.'
-                )}
-              </div>
+              dataverse.entitiesLoadError ? (
+                <div className="error-banner" role="alert">
+                  <div className="error-banner-header">
+                    <Icon name="circle" size={14} />
+                    <span>Could not load entities</span>
+                  </div>
+                  <div className="error-banner-body">{dataverse.entitiesLoadError}</div>
+                  <div className="error-banner-actions">
+                    <button className="btn btn-sm btn-secondary" type="button" onClick={() => void loadEntities()}>Retry</button>
+                    <CopyButton value={dataverse.entitiesLoadError} label="Copy error" title="Copy error message" toast={toast} />
+                  </div>
+                </div>
+              ) : (
+                <div className="entity-loading">Select an environment to load entities.</div>
+              )
             )}
           </div>
         </div>

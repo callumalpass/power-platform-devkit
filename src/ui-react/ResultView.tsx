@@ -78,9 +78,14 @@ function Cell(props: {
       <td className="rt-cell rt-cell-guid" title={display}>
         <span className="copy-inline">
           {clickable ? (
-            <span className="record-link" onClick={(e) => { e.stopPropagation(); onRecordClick!(target!, display); }}>
+            <button
+              type="button"
+              className="record-link"
+              data-entity={target}
+              onClick={(e) => { e.stopPropagation(); onRecordClick!(target!, display); }}
+            >
               {lookupLabel || `${short}...`}
-            </span>
+            </button>
           ) : (
             <span className="rt-guid-value">
               {lookupLabel ? <>{lookupLabel} <span style={{ color: 'var(--muted)' }}>({short}...)</span></> : `${short}...`}

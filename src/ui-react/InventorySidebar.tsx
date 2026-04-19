@@ -38,13 +38,15 @@ export function InventorySidebar<T>(props: Props<T>) {
         <div className="entity-count">{props.items.length ? `${filtered.length} of ${props.items.length} ${props.countLabel}` : ''}</div>
         <div className="entity-list">
           {props.items.length ? filtered.length ? filtered.map((item) => (
-            <div
+            <button
+              type="button"
               key={props.itemKey(item)}
               className={`entity-item ${props.isSelected(item) ? 'active' : ''}`}
+              aria-pressed={props.isSelected(item)}
               onClick={() => props.onSelect(item)}
             >
               {props.renderItem(item)}
-            </div>
+            </button>
           )) : <div className="entity-loading">No matches.</div> : (
             <div className="entity-loading">{props.emptyHint}</div>
           )}

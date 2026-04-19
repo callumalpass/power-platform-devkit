@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { api } from './utils.js';
 import { Icon } from './Icon.js';
+import type { ConfirmRequest } from './setup/ConfirmDialog.js';
 
 type ToastLogItem = { id: number; message: string; isError: boolean; timestamp: number };
 
@@ -13,6 +14,8 @@ type Props = {
   setToastTrayOpen: (next: boolean) => void;
   headerMenuOpen: boolean;
   setHeaderMenuOpen: (next: boolean) => void;
+  openConfirm: (request: ConfirmRequest) => void;
+  openShortcutHelp: () => void;
 };
 
 function relativeTime(timestamp: number): string {
@@ -43,9 +46,20 @@ export function HeaderActions(props: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [props.toastTrayOpen, props.headerMenuOpen, props.setToastTrayOpen, props.setHeaderMenuOpen]);
 
-  async function shutdown() {
-    if (!confirm('Stop the pp UI server?')) return;
-    try { await api('/api/ui/shutdown', { method: 'POST' }); } catch { /* server exits */ }
+  function requestShutdown() {
+    props.openConfirm({
+      title: 'Stop the pp UI server?',
+      body: 'This closes the localhost server. You will need to re-run `pp ui` to start it again.',
+      destructive: true,
+      confirmLabel: 'Stop server',
+      onConfirm: async () => {
+        try {
+          await api('/api/ui/shutdown', { method: 'POST' });
+        } catch {
+          // server exits, the request will typically hang up before returning.
+        }
+      },
+    });
   }
 
   return (
@@ -106,8 +120,16 @@ export function HeaderActions(props: Props) {
           <div className="header-popover header-menu">
             <button
               type="button"
+              className="header-menu-item"
+              onClick={() => { props.setHeaderMenuOpen(false); props.openShortcutHelp(); }}
+            >
+              <span className="header-menu-item-icon" aria-hidden="true"><kbd>?</kbd></span>
+              <span>Keyboard shortcuts</span>
+            </button>
+            <button
+              type="button"
               className="header-menu-item danger"
-              onClick={() => { props.setHeaderMenuOpen(false); void shutdown(); }}
+              onClick={() => { props.setHeaderMenuOpen(false); requestShutdown(); }}
             >
               <Icon name="power" size={14} />
               <span>Stop pp UI server</span>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './Icon.js';
+import { CopyButton } from './CopyButton.js';
+import { readEnvironmentRecency } from './env-recency.js';
 
 type EnvironmentEntry = {
   alias: string;
@@ -25,6 +27,7 @@ type Props = {
   current: string;
   onSelect: (alias: string) => void;
   onClose: () => void;
+  toast?: (message: string, isError?: boolean) => void;
 };
 
 function score(query: string, value: string): number {
@@ -78,12 +81,13 @@ function hostFromUrl(url: string | undefined): string {
   }
 }
 
-export function EnvironmentPickerModal({ environments, accounts, current, onSelect, onClose }: Props) {
+export function EnvironmentPickerModal({ environments, accounts, current, onSelect, onClose, toast }: Props) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const accountsByName = useMemo(() => {
     const map = new Map<string, AccountEntry>();
@@ -91,22 +95,29 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
     return map;
   }, [accounts]);
 
+  const recency = useMemo(() => readEnvironmentRecency(), []);
+
   const ranked = useMemo(() => {
     const q = query.trim();
     const list = (environments || []).map((env) => ({
       env,
       account: accountsByName.get(env.account || ''),
       score: rankEnvironment(env, accountsByName.get(env.account || ''), q),
+      lastUsed: recency[env.alias] || 0,
     }));
     const filtered = q ? list.filter((entry) => entry.score >= 0) : list;
     filtered.sort((a, b) => {
-      if (q) return b.score - a.score;
+      if (q) {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.lastUsed - a.lastUsed;
+      }
       if (a.env.alias === current) return -1;
       if (b.env.alias === current) return 1;
+      if (a.lastUsed !== b.lastUsed) return b.lastUsed - a.lastUsed;
       return a.env.alias.localeCompare(b.env.alias);
     });
     return filtered;
-  }, [environments, accountsByName, query, current]);
+  }, [environments, accountsByName, query, current, recency]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -144,11 +155,49 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
       setActiveIndex((current) => Math.max(current - 1, 0));
       return;
     }
+    if (event.key === 'Home') {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+    if (event.key === 'End') {
+      event.preventDefault();
+      setActiveIndex(Math.max(ranked.length - 1, 0));
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       commit(activeIndex);
     }
   }
+
+  useEffect(() => {
+    function trap(event: KeyboardEvent) {
+      if (event.key !== 'Tab') return;
+      const modal = modalRef.current;
+      if (!modal) return;
+      const focusables = modal.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        if (active === first || !modal.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    window.addEventListener('keydown', trap);
+    return () => window.removeEventListener('keydown', trap);
+  }, []);
 
   return (
     <div
@@ -158,7 +207,7 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
       ref={backdropRef}
       onClick={(event) => { if (event.target === backdropRef.current) onClose(); }}
     >
-      <div className="rt-modal env-picker-modal">
+      <div className="rt-modal env-picker-modal" ref={modalRef}>
         <div className="env-picker-search">
           <span className="env-picker-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
           <input
@@ -180,27 +229,42 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
             const isActive = index === activeIndex;
             const isCurrent = env.alias === current;
             const accountLabel = account?.accountUsername || account?.loginHint || env.account || 'no account';
-            const accountKind = account?.kind ? ` · ${account.kind}` : '';
+            const recentlyUsed = entry.lastUsed > 0 && !query.trim();
             return (
-              <button
-                type="button"
+              <div
                 key={env.alias}
                 data-index={index}
                 className={`env-picker-item ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}
                 onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => commit(index)}
               >
-                <div className="env-picker-item-main">
-                  <span className="env-picker-alias">{env.alias}</span>
-                  {env.displayName ? <span className="env-picker-display">{env.displayName}</span> : null}
-                  {isCurrent ? <span className="env-picker-badge">active</span> : null}
-                  {env.access?.mode === 'read-only' ? <span className="env-picker-badge readonly">read-only</span> : null}
-                </div>
-                <div className="env-picker-item-meta">
-                  <span className="env-picker-host">{hostFromUrl(env.url)}</span>
-                  <span className="env-picker-account">{accountLabel}{accountKind}</span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  className="env-picker-item-select"
+                  aria-label={`Switch to ${env.alias}`}
+                  onClick={() => commit(index)}
+                >
+                  <div className="env-picker-item-main">
+                    <span className="env-picker-alias">{env.alias}</span>
+                    {env.displayName ? <span className="env-picker-display">{env.displayName}</span> : null}
+                    {env.access?.mode === 'read-only' ? <span className="env-picker-badge readonly">read-only</span> : null}
+                    {recentlyUsed && !isCurrent ? <span className="env-picker-badge recent">recent</span> : null}
+                  </div>
+                  <div className="env-picker-item-meta">
+                    <span className="env-picker-host">{hostFromUrl(env.url)}</span>
+                    <span className="env-picker-account">{accountLabel}</span>
+                  </div>
+                </button>
+                {env.url ? (
+                  <CopyButton
+                    value={env.url}
+                    label=""
+                    title="Copy environment URL"
+                    className="env-picker-item-copy"
+                    toast={toast}
+                    stopPropagation
+                  />
+                ) : null}
+              </div>
             );
           })}
         </div>

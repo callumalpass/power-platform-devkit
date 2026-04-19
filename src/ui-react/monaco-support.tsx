@@ -29,6 +29,8 @@ export function applyMonacoAppTheme() {
   const muted = cssColor(computed, '--muted', '#6b7280');
   const border = cssColor(computed, '--border', '#e5e7eb');
   const accent = cssColor(computed, '--accent', '#2563eb');
+  const accentSoft = cssColor(computed, '--accent-soft', '#eff6ff');
+  const highlight = cssColor(computed, '--highlight', accent);
   const danger = cssColor(computed, '--danger', '#dc2626');
   const isDark = document.documentElement.classList.contains('dark');
 
@@ -53,9 +55,9 @@ export function applyMonacoAppTheme() {
       'editorLineNumber.foreground': muted,
       'editorLineNumber.activeForeground': ink,
       'editorCursor.foreground': ink,
-      'editor.selectionBackground': rgbaHex(accent, isDark ? 0.32 : 0.18),
-      'editor.inactiveSelectionBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
-      'editor.lineHighlightBackground': isDark ? '#1c1c1f' : '#f3f4f6',
+      'editor.selectionBackground': rgbaHex(highlight, isDark ? 0.32 : 0.22),
+      'editor.inactiveSelectionBackground': rgbaHex(highlight, isDark ? 0.18 : 0.12),
+      'editor.lineHighlightBackground': isDark ? '#1f1a15' : '#f0e9dc',
       'editorLineNumber.dimmedForeground': muted,
       'editorGutter.background': bg,
       'editorWidget.background': surface,
@@ -64,16 +66,42 @@ export function applyMonacoAppTheme() {
       'input.background': bg,
       'input.foreground': ink,
       'input.border': border,
-      'list.hoverBackground': rgbaHex(accent, isDark ? 0.18 : 0.10),
-      'list.activeSelectionBackground': rgbaHex(accent, isDark ? 0.28 : 0.14),
+      'list.hoverBackground': rgbaHex(highlight, isDark ? 0.10 : 0.08),
+      'list.hoverForeground': ink,
+      'list.activeSelectionBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
       'list.activeSelectionForeground': ink,
-      'list.focusBackground': rgbaHex(accent, isDark ? 0.22 : 0.12),
+      'list.activeSelectionIconForeground': ink,
+      'list.focusBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
+      'list.focusForeground': ink,
+      'list.focusOutline': 'transparent',
+      'list.inactiveSelectionBackground': rgbaHex(highlight, isDark ? 0.14 : 0.10),
+      'list.inactiveSelectionForeground': ink,
+      'list.highlightForeground': highlight,
+      'list.focusHighlightForeground': highlight,
+      'quickInputList.focusBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
+      'quickInputList.focusForeground': ink,
+      'editorSuggestWidget.background': surface,
+      'editorSuggestWidget.foreground': ink,
+      'editorSuggestWidget.border': border,
+      'editorSuggestWidget.selectedBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
+      'editorSuggestWidget.selectedForeground': ink,
+      'editorSuggestWidget.selectedIconForeground': ink,
+      'editorSuggestWidget.focusHighlightForeground': highlight,
+      'editorSuggestWidget.highlightForeground': highlight,
+      'editorHoverWidget.background': surface,
+      'editorHoverWidget.foreground': ink,
+      'editorHoverWidget.border': border,
+      'menu.background': surface,
+      'menu.foreground': ink,
+      'menu.selectionBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
+      'menu.selectionForeground': ink,
+      'menu.separatorBackground': border,
       'scrollbarSlider.background': rgbaHex(muted, isDark ? 0.30 : 0.20),
       'scrollbarSlider.hoverBackground': rgbaHex(muted, isDark ? 0.42 : 0.32),
       'scrollbarSlider.activeBackground': rgbaHex(muted, isDark ? 0.52 : 0.42),
       'editorError.foreground': danger,
       'editorWarning.foreground': isDark ? '#fbbf24' : '#d97706',
-      'editorInfo.foreground': accent,
+      'editorInfo.foreground': highlight,
     },
   });
   monaco.editor.setTheme('pp-app');

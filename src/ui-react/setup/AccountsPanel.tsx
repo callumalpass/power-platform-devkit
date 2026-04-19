@@ -319,7 +319,7 @@ export function AddAccountForm(props: {
 
       <div className="form-row">
         <div className="field"><span className="field-label">Name</span><input name="name" required placeholder="my-work-account" /></div>
-        <div className="field"><span className="field-label">Login Hint</span><input name="loginHint" placeholder="user@example.com" /></div>
+        <div className="field"><span className="field-label">Login Hint<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="The username pre-filled at sign-in. Required for device-code and silent refresh; optional but recommended for interactive login to skip the account picker.">?</span></span><input name="loginHint" placeholder="user@example.com" /></div>
       </div>
       <div className="form-row">
         <div className="field"><span className="field-label">Description</span><input name="description" placeholder="Optional" /></div>
@@ -379,9 +379,9 @@ export function AddAccountForm(props: {
             </>
           ) : null}
 
-          {accountKind === 'client-secret' ? <div className="field"><span className="field-label">Client Secret Env Var</span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET" /></div> : null}
-          {accountKind === 'environment-token' ? <div className="field"><span className="field-label">Token Env Var</span><input name="environmentVariable" placeholder="MY_TOKEN_VAR" /></div> : null}
-          {accountKind === 'static-token' ? <div className="field"><span className="field-label">Static Token</span><textarea name="token" placeholder="Paste token"></textarea></div> : null}
+          {accountKind === 'client-secret' ? <div className="field"><span className="field-label">Client Secret Env Var<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="The name of an environment variable (on the machine running pp) whose value holds the client secret. pp reads it at login time — the secret itself is never stored on disk.">?</span></span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET" /></div> : null}
+          {accountKind === 'environment-token' ? <div className="field"><span className="field-label">Token Env Var<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="Environment variable name that contains a pre-issued bearer token pp will send as-is. Useful for CI or when you already have a token from another tool.">?</span></span><input name="environmentVariable" placeholder="MY_TOKEN_VAR" /></div> : null}
+          {accountKind === 'static-token' ? <div className="field"><span className="field-label">Static Token<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="A bearer token stored directly in pp config. Avoid in shared repos — prefer environment-token.">?</span></span><textarea name="token" placeholder="Paste token"></textarea></div> : null}
         </div>
       ) : null}
 
