@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api, formatDate, formatDateShort, highlightJson, prop } from './utils.js';
 import { Icon } from './Icon.js';
+import { Select } from './Select.js';
 import {
   analyzeFlowDocument,
   buildFlowDocument,
@@ -644,13 +645,20 @@ export function AutomateTab(props: {
                 </div>
                 <div className="run-toolbar">
                   <input type="text" placeholder="Filter runs…" value={runFilter} onChange={(event) => setRunFilter(event.target.value)} />
-                  <select value={runStatusFilter} onChange={(event) => setRunStatusFilter(event.target.value)}>
-                    <option value="">all statuses</option>
-                    <option value="Succeeded">Succeeded</option>
-                    <option value="Failed">Failed</option>
-                    <option value="Running">Running</option>
-                    <option value="Skipped">Skipped</option>
-                  </select>
+                  <div style={{ width: 180 }}>
+                    <Select
+                      aria-label="Run status filter"
+                      value={runStatusFilter}
+                      onChange={setRunStatusFilter}
+                      options={[
+                        { value: '', label: 'all statuses' },
+                        { value: 'Succeeded', label: 'Succeeded' },
+                        { value: 'Failed', label: 'Failed' },
+                        { value: 'Running', label: 'Running' },
+                        { value: 'Skipped', label: 'Skipped' },
+                      ]}
+                    />
+                  </div>
                 </div>
                 <div className="card-list">
                   {filteredRuns.length ? filteredRuns.map((run) => {
@@ -695,13 +703,20 @@ export function AutomateTab(props: {
                               </div>
                             ) : null}
                             <div className="action-toolbar">
-                              <select value={actionStatusFilter} onChange={(event) => setActionStatusFilter(event.target.value)}>
-                                <option value="">all statuses</option>
-                                <option value="Succeeded">Succeeded</option>
-                                <option value="Failed">Failed</option>
-                                <option value="Running">Running</option>
-                                <option value="Skipped">Skipped</option>
-                              </select>
+                              <div style={{ width: 180 }}>
+                                <Select
+                                  aria-label="Action status filter"
+                                  value={actionStatusFilter}
+                                  onChange={setActionStatusFilter}
+                                  options={[
+                                    { value: '', label: 'all statuses' },
+                                    { value: 'Succeeded', label: 'Succeeded' },
+                                    { value: 'Failed', label: 'Failed' },
+                                    { value: 'Running', label: 'Running' },
+                                    { value: 'Skipped', label: 'Skipped' },
+                                  ]}
+                                />
+                              </div>
                             </div>
                             <div className="run-summary-grid" style={{ marginBottom: 12 }}>
                               <SummaryCard label="Actions" value={loadingActions ? 'Loading…' : String(actions.length)} />
@@ -1584,10 +1599,15 @@ function AddFlowActionModal(props: {
                   </label>
                   <label>
                     <span>Run after</span>
-                    <select value={runAfter} onChange={(event) => setRunAfter(event.target.value)}>
-                      <option value="">none</option>
-                      {topLevelActions.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </select>
+                    <Select
+                      aria-label="Run after"
+                      value={runAfter}
+                      onChange={setRunAfter}
+                      options={[
+                        { value: '', label: 'none' },
+                        ...topLevelActions.map((name) => ({ value: name, label: name })),
+                      ]}
+                    />
                   </label>
                 </div>
 
@@ -2145,10 +2165,15 @@ function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text
   const kind = props.kind || (isObject(props.value) || Array.isArray(props.value) ? 'json' : 'text');
   const valueText = valueToEditText(props.value, kind);
   const content = kind === 'select' ? (
-    <select value={String(props.value ?? '')} onChange={(event) => props.onChange(event.target.value)}>
-      <option value="">not set</option>
-      {(props.options || []).map((item) => <option key={optionValue(item)} value={optionValue(item)}>{optionLabel(item)}</option>)}
-    </select>
+    <Select
+      aria-label={props.label || 'Value'}
+      value={String(props.value ?? '')}
+      onChange={(next) => props.onChange(next)}
+      options={[
+        { value: '', label: 'not set' },
+        ...(props.options || []).map((item) => ({ value: optionValue(item), label: optionLabel(item) })),
+      ]}
+    />
   ) : kind === 'json' ? (
     <textarea
       value={valueText}

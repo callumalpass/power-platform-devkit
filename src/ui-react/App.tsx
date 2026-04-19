@@ -23,6 +23,7 @@ import { EmptyState } from './EmptyState.js';
 import { InventorySidebar } from './InventorySidebar.js';
 import { JsonViewer } from './JsonViewer.js';
 import { Icon } from './Icon.js';
+import { Select } from './Select.js';
 import { ShortcutHelpModal } from './ShortcutHelpModal.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { touchEnvironmentRecency } from './env-recency.js';
@@ -1118,17 +1119,24 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
         <div className="panel">
           <div className="console-toolbar-row">
             <h2>API Console</h2>
-            <select className="console-preset-select" onChange={(event) => {
-              const preset = currentApi.presets.find((item) => item.label === event.target.value);
-              if (!preset) return;
-              setMethod(preset.method);
-              setPath(preset.path);
-              setBody('body' in preset ? String((preset as any).body || '') : '');
-              event.target.value = '';
-            }}>
-              <option value="">Presets…</option>
-              {currentApi.presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label} — {preset.description}</option>)}
-            </select>
+            <Select
+              className="console-preset-select"
+              aria-label="Load preset"
+              value=""
+              placeholder="Presets…"
+              onChange={(label) => {
+                const preset = currentApi.presets.find((item) => item.label === label);
+                if (!preset) return;
+                setMethod(preset.method);
+                setPath(preset.path);
+                setBody('body' in preset ? String((preset as any).body || '') : '');
+              }}
+              options={currentApi.presets.map((preset) => ({
+                value: preset.label,
+                label: preset.label,
+                description: preset.description,
+              }))}
+            />
           </div>
           <div className={`console-scope-banner ${currentApi.scope}`}>
             {currentApi.scope === 'account' ? (
@@ -1144,18 +1152,25 @@ function ConsoleTab(props: { active: boolean; environment: string; seed: any; cl
             )}
           </div>
           <div className="console-bar">
-            <label htmlFor="console-api" className="sr-only">API</label>
-            <select id="console-api" value={apiKey} onChange={(event) => {
-              const nextApi = APIS.find((item) => item.key === event.target.value) || APIS[0];
-              setApiKey(nextApi.key);
-              setPath(nextApi.defaultPath);
-            }}>
-              {APIS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-            </select>
-            <label htmlFor="console-method" className="sr-only">HTTP method</label>
-            <select id="console-method" value={method} onChange={(event) => setMethod(event.target.value)} style={{ color: METHOD_COLORS[method] || 'var(--ink)' }}>
-              {METHODS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <Select
+              id="console-api"
+              aria-label="API"
+              value={apiKey}
+              onChange={(next) => {
+                const nextApi = APIS.find((item) => item.key === next) || APIS[0];
+                setApiKey(nextApi.key);
+                setPath(nextApi.defaultPath);
+              }}
+              options={APIS.map((item) => ({ value: item.key, label: item.label }))}
+            />
+            <Select
+              id="console-method"
+              aria-label="HTTP method"
+              value={method}
+              onChange={setMethod}
+              triggerStyle={{ color: METHOD_COLORS[method] || 'var(--ink)' }}
+              options={METHODS.map((item) => ({ value: item, label: item }))}
+            />
             <label htmlFor="console-path" className="sr-only">Request path</label>
             <input type="text" id="console-path" aria-label="Request path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
             <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
@@ -1567,9 +1582,13 @@ function CreateRecordModal(props: {
         <div style={{ display: 'grid', gap: 6 }}>
           <div style={{ display: 'grid', gridTemplateColumns: targets.length > 1 ? 'minmax(120px, 0.8fr) minmax(160px, 1.2fr)' : '1fr', gap: 6 }}>
             {targets.length > 1 ? (
-              <select className="rt-edit-input" value={selectedTarget} onChange={(e) => { updateLookup(attr, e.target.value, id); updateLookupSearch(key, { target: e.target.value, results: [] }); }} {...commonProps}>
-                {targets.map((target: string) => <option key={target} value={target}>{target}</option>)}
-              </select>
+              <Select
+                className="rt-edit-input"
+                value={selectedTarget}
+                onChange={(next) => { updateLookup(attr, next, id); updateLookupSearch(key, { target: next, results: [] }); }}
+                {...commonProps}
+                options={targets.map((target: string) => ({ value: target, label: target }))}
+              />
             ) : null}
             <input
               className="rt-edit-input"
@@ -1609,21 +1628,31 @@ function CreateRecordModal(props: {
     }
     if (Array.isArray(attr.optionValues) && attr.optionValues.length) {
       return (
-        <select className="rt-edit-input" value={val === undefined ? '' : String(val)} onChange={(e) => updateValue(key, e.target.value === '' ? null : Number(e.target.value))} {...commonProps}>
-          <option value="">Select value...</option>
-          {attr.optionValues.map((option: any) => (
-            <option key={option.value} value={option.value}>{option.label ? `${option.label} (${option.value})` : option.value}</option>
-          ))}
-        </select>
+        <Select
+          className="rt-edit-input"
+          value={val === undefined ? '' : String(val)}
+          onChange={(next) => updateValue(key, next === '' ? null : Number(next))}
+          {...commonProps}
+          options={[
+            { value: '', label: 'Select value...' },
+            ...attr.optionValues.map((option: any) => ({ value: String(option.value), label: option.label ? `${option.label} (${option.value})` : String(option.value) })),
+          ]}
+        />
       );
     }
     if (typeName === 'booleantype' || typeName === 'boolean') {
       return (
-        <select className="rt-edit-input" value={val === undefined ? '' : String(val)} onChange={(e) => updateValue(key, e.target.value === '' ? null : e.target.value === 'true')} {...commonProps}>
-          <option value="">Use default</option>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </select>
+        <Select
+          className="rt-edit-input"
+          value={val === undefined ? '' : String(val)}
+          onChange={(next) => updateValue(key, next === '' ? null : next === 'true')}
+          {...commonProps}
+          options={[
+            { value: '', label: 'Use default' },
+            { value: 'true', label: 'Yes' },
+            { value: 'false', label: 'No' },
+          ]}
+        />
       );
     }
     if (typeName.includes('integer') || typeName.includes('decimal') || typeName.includes('double') || typeName.includes('money') || typeName.includes('bigint')) {

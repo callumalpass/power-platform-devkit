@@ -7,6 +7,7 @@ import type { useConfirm } from './ConfirmDialog.js';
 import { DetailPanel } from './DetailPanel.js';
 import { OverflowMenu } from './OverflowMenu.js';
 import { useResizableWidth } from './use-resizable-width.js';
+import { Select } from '../Select.js';
 import { CopyButton } from '../CopyButton.js';
 
 type DrawerState =
@@ -126,9 +127,13 @@ function EditEnvironmentBody(props: {
         <div className="form-row">
           <div className="field">
             <span className="field-label">Account<span className="field-required" aria-label="required">*</span></span>
-            <select name="account" value={draft.account} onChange={(e) => setDraft((c) => ({ ...c, account: e.target.value }))} required>
-              {accounts.map((a: any) => <option key={a.name} value={a.name}>{a.name}</option>)}
-            </select>
+            <Select
+              name="account"
+              value={draft.account}
+              onChange={(next) => setDraft((c) => ({ ...c, account: next }))}
+              required
+              options={accounts.map((a: any) => ({ value: a.name, label: a.name }))}
+            />
           </div>
           <div className="field">
             <span className="field-label">Display Name</span>
@@ -142,10 +147,15 @@ function EditEnvironmentBody(props: {
           </div>
           <div className="field">
             <span className="field-label">Access</span>
-            <select name="accessMode" value={draft.accessMode} onChange={(e) => setDraft((c) => ({ ...c, accessMode: e.target.value }))}>
-              <option value="">read-write (default)</option>
-              <option value="read-only">read-only</option>
-            </select>
+            <Select
+              name="accessMode"
+              value={draft.accessMode}
+              onChange={(next) => setDraft((c) => ({ ...c, accessMode: next }))}
+              options={[
+                { value: '', label: 'read-write (default)' },
+                { value: 'read-only', label: 'read-only' },
+              ]}
+            />
           </div>
         </div>
         <div className="btn-group"><button type="submit" className="btn btn-primary btn-sm">Save changes</button></div>
@@ -281,11 +291,15 @@ export function AddEnvironmentForm(props: {
         <div className="form-row">
           <div className="field">
             <span className="field-label">Account</span>
-            <select value={selectedDiscoveryAccount} onChange={(e) => setSelectedDiscoveryAccount(e.target.value)}>
-              {optionList(accounts.map((a: any) => a.name), 'select account').map((option) => (
-                <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <Select
+              aria-label="Account"
+              value={selectedDiscoveryAccount}
+              onChange={setSelectedDiscoveryAccount}
+              options={optionList(accounts.map((a: any) => a.name), 'select account').map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+            />
           </div>
           <div className="field" style={{ alignSelf: 'end' }}>
             <button type="button" className="btn btn-secondary btn-sm" disabled={discovering || !selectedDiscoveryAccount} onClick={() => void handleDiscover()}>
@@ -327,9 +341,13 @@ export function AddEnvironmentForm(props: {
             </div>
             <div className="field">
               <span className="field-label">Account<span className="field-required" aria-label="required">*</span></span>
-              <select name="account" value={draft.account} onChange={(e) => setDraft((c) => ({ ...c, account: e.target.value }))} required>
-                {accounts.map((a: any) => <option key={a.name} value={a.name}>{a.name}</option>)}
-              </select>
+              <Select
+                name="account"
+                value={draft.account}
+                onChange={(next) => setDraft((c) => ({ ...c, account: next }))}
+                required
+                options={accounts.map((a: any) => ({ value: a.name, label: a.name }))}
+              />
             </div>
           </div>
           <div className="form-row">
@@ -344,10 +362,15 @@ export function AddEnvironmentForm(props: {
           </div>
           <div className="field">
             <span className="field-label">Access</span>
-            <select name="accessMode" value={draft.accessMode} onChange={(e) => setDraft((c) => ({ ...c, accessMode: e.target.value }))}>
-              <option value="">read-write (default)</option>
-              <option value="read-only">read-only</option>
-            </select>
+            <Select
+              name="accessMode"
+              value={draft.accessMode}
+              onChange={(next) => setDraft((c) => ({ ...c, accessMode: next }))}
+              options={[
+                { value: '', label: 'read-write (default)' },
+                { value: 'read-only', label: 'read-only' },
+              ]}
+            />
           </div>
           <div className="btn-group"><button type="submit" className="btn btn-primary btn-sm">Save environment</button></div>
         </form>

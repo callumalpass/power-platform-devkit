@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api, formDataObject, formatTimeRemaining, optionList } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
+import { Select } from '../Select.js';
 import type { ToastFn } from '../ui-types.js';
 import { describeTemporaryTokenMatch, normalizeSharePointWebUrl, shellQuote } from './health.js';
 import { TOOLS_SUB_TAB_LABELS, type TemporaryTokenSummary, type ToolsSubTab } from './types.js';
@@ -44,6 +45,7 @@ function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
   const [tokens, setTokens] = useState<TemporaryTokenSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [matchKind, setMatchKind] = useState('');
+  const [tempApi, setTempApi] = useState('graph');
 
   useEffect(() => {
     void loadTokens();
@@ -107,12 +109,17 @@ function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
           <div className="field"><span className="field-label">Name</span><input name="name" placeholder="sharepoint" /></div>
           <div className="field">
             <span className="field-label">Match</span>
-            <select name="matchKind" value={matchKind} onChange={(event) => setMatchKind(event.target.value)}>
-              <option value="">Infer from token audience</option>
-              <option value="origin">URL origin</option>
-              <option value="api">pp API</option>
-              <option value="audience">Token audience</option>
-            </select>
+            <Select
+              name="matchKind"
+              value={matchKind}
+              onChange={setMatchKind}
+              options={[
+                { value: '', label: 'Infer from token audience' },
+                { value: 'origin', label: 'URL origin' },
+                { value: 'api', label: 'pp API' },
+                { value: 'audience', label: 'Token audience' },
+              ]}
+            />
           </div>
         </div>
         {matchKind === 'origin' ? (
@@ -121,15 +128,20 @@ function TemporaryAccessTokensPanel(props: { toast: ToastFn }) {
         {matchKind === 'api' ? (
           <div className="field">
             <span className="field-label">API</span>
-            <select name="api">
-              <option value="graph">Graph</option>
-              <option value="dv">Dataverse</option>
-              <option value="flow">Flow</option>
-              <option value="powerapps">Power Apps</option>
-              <option value="bap">Platform Admin</option>
-              <option value="sharepoint">SharePoint REST</option>
-              <option value="canvas-authoring">Canvas Authoring</option>
-            </select>
+            <Select
+              name="api"
+              value={tempApi}
+              onChange={setTempApi}
+              options={[
+                { value: 'graph', label: 'Graph' },
+                { value: 'dv', label: 'Dataverse' },
+                { value: 'flow', label: 'Flow' },
+                { value: 'powerapps', label: 'Power Apps' },
+                { value: 'bap', label: 'Platform Admin' },
+                { value: 'sharepoint', label: 'SharePoint REST' },
+                { value: 'canvas-authoring', label: 'Canvas Authoring' },
+              ]}
+            />
           </div>
         ) : null}
         {matchKind === 'audience' ? (
@@ -238,11 +250,15 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
         <div className="form-row">
           <div className="field">
             <span className="field-label">Account</span>
-            <select value={account} onChange={(event) => setAccount(event.target.value)}>
-              {optionList(accounts.map((a: any) => a.name), 'select account').map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <Select
+              aria-label="Account"
+              value={account}
+              onChange={setAccount}
+              options={optionList(accounts.map((a: any) => a.name), 'select account').map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+            />
           </div>
           <div className="field">
             <span className="field-label">SharePoint URL</span>

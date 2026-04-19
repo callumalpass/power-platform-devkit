@@ -271,8 +271,82 @@ export function renderHtml(): string {
     .form-row.three { grid-template-columns: repeat(3, 1fr); }
     .field { display: grid; gap: 6px; }
     .field-label { font-size: 0.625rem; font-weight: 500; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.14em; }
-    input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 0.8125rem; background: var(--surface); color: var(--ink); transition: border-color 150ms; }
+    input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 0.8125rem; background: var(--surface); color: var(--ink); transition: border-color 150ms, background-color 150ms; }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+    /* Custom Select component — drop-in replacement for native <select>.
+       Closed trigger inherits input shape; open listbox uses app chrome. */
+    .pp-select { position: relative; display: inline-flex; width: 100%; }
+    .pp-select-trigger {
+      display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
+      width: 100%; padding: 8px 10px; padding-right: 28px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--ink);
+      font: inherit; font-size: 0.8125rem; text-align: left; cursor: pointer;
+      transition: border-color 150ms, background-color 150ms;
+    }
+    .pp-select-trigger:hover:not(:disabled) { border-color: var(--muted); }
+    .pp-select-trigger:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .pp-select-trigger:disabled { opacity: 0.55; cursor: not-allowed; }
+    .pp-select.open .pp-select-trigger { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .pp-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .pp-select-placeholder { color: var(--muted-2); }
+    .pp-select-chevron { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); position: absolute; right: 10px; top: 50%; transform: translateY(-50%); transition: transform 120ms, color 120ms; pointer-events: none; }
+    .pp-select.open .pp-select-chevron { transform: translateY(-50%) rotate(180deg); color: var(--ink); }
+
+    .pp-select-menu {
+      position: absolute; left: 0; right: 0; z-index: 70;
+      margin: 4px 0 0; padding: 4px; list-style: none;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+      max-height: 320px; overflow-y: auto;
+      animation: pp-select-in 100ms ease;
+    }
+    @keyframes pp-select-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
+    .pp-select.placement-up .pp-select-menu { top: auto; bottom: 100%; margin: 0 0 4px; }
+    .pp-select-option {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 10px; border-radius: 3px; cursor: pointer;
+      font-size: 0.8125rem; color: var(--ink); line-height: 1.3;
+      transition: background 80ms;
+    }
+    .pp-select-option.active { background: var(--bg); }
+    .pp-select-option.selected { color: var(--ink); }
+    .pp-select-option.selected.active { background: var(--accent-soft); }
+    .pp-select-option.disabled { color: var(--muted-2); cursor: not-allowed; }
+    .pp-select-option-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .pp-select-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pp-select-option-description { font-size: 0.6875rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pp-select-option-check { color: var(--accent); display: inline-flex; flex-shrink: 0; }
+
+    /* Console bar variant: flat segment, no radius, dividers */
+    .console-bar .pp-select { width: auto; }
+    .console-bar .pp-select-trigger { border: none; border-right: 1px solid var(--border); border-radius: 0; background-color: var(--bg); padding: 10px 30px 10px 14px; font-weight: 600; }
+    .console-bar .pp-select-trigger:hover:not(:disabled) { border-color: transparent; background-color: color-mix(in srgb, var(--ink) 5%, var(--bg)); }
+    .console-bar .pp-select-trigger:focus-visible, .console-bar .pp-select.open .pp-select-trigger { box-shadow: none; background-color: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+
+    /* Select polish: custom chevron, consistent padding, hover state.
+       --chevron: inlined SVG tinted via currentColor replacement in light/dark. */
+    select {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      padding-right: 28px;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 7' fill='none' stroke='%236c6c69' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M1 1l5 5 5-5'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 10px 6px;
+    }
+    html.dark select {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 7' fill='none' stroke='%23a3a3a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M1 1l5 5 5-5'/></svg>");
+    }
+    select:hover:not(:disabled) { border-color: var(--muted); }
+    select:disabled { opacity: 0.55; cursor: not-allowed; }
+    /* Tighter chevron for compact/select variants */
+    select.console-preset-select,
+    .btn-sm select,
+    .run-toolbar select,
+    .action-toolbar select { background-position: right 8px center; padding-right: 24px; }
+
     textarea { font-family: var(--mono); font-size: 0.8125rem; line-height: 1.5; resize: vertical; }
     textarea.xml-editor { min-height: 320px; }
     .fetchxml-editor-shell { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
@@ -480,7 +554,44 @@ export function renderHtml(): string {
     .flow-outline-canvas:active { cursor: grabbing; }
     .flow-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted); }
-    .check-row input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; padding: 0; margin: 0; border-radius: 4px; accent-color: var(--accent); cursor: pointer; }
+
+    /* Custom checkbox appearance — replaces OS-native control across the app. */
+    input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none;
+      flex-shrink: 0; width: 16px; height: 16px; min-width: 16px;
+      margin: 0; padding: 0;
+      border: 1px solid var(--border); border-radius: 3px;
+      background: var(--surface); cursor: pointer;
+      position: relative; vertical-align: middle;
+      transition: background-color 100ms, border-color 100ms;
+    }
+    input[type="checkbox"]:hover:not(:disabled) { border-color: var(--muted); }
+    input[type="checkbox"]:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    input[type="checkbox"]:disabled { opacity: 0.5; cursor: not-allowed; }
+    input[type="checkbox"]::after {
+      content: '';
+      position: absolute; left: 4px; top: 1px;
+      width: 5px; height: 9px;
+      border-right: 2px solid var(--surface);
+      border-bottom: 2px solid var(--surface);
+      transform: rotate(45deg) scale(0);
+      transform-origin: center;
+      transition: transform 110ms ease;
+    }
+    input[type="checkbox"]:checked {
+      background-color: var(--accent);
+      border-color: var(--accent);
+    }
+    input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
+    input[type="checkbox"]:indeterminate {
+      background-color: var(--accent);
+      border-color: var(--accent);
+    }
+    input[type="checkbox"]:indeterminate::after {
+      left: 3px; top: 6px; width: 8px; height: 0;
+      border-right: none; border-bottom: 2px solid var(--surface);
+      transform: none;
+    }
     .conditional { display: none; }
     .conditional.visible { display: grid; }
     .check-row.conditional.visible { display: flex; }
@@ -572,7 +683,7 @@ export function renderHtml(): string {
     .api-scope-check { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 0; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 120ms; user-select: none; }
     .api-scope-check:hover { border-color: var(--accent); }
     .api-scope-check:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-    .api-scope-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .api-scope-check input { margin: 0; }
     .api-scope-note { font-size: 0.625rem; color: var(--muted); font-weight: 400; font-style: italic; }
 
     /* Onboarding flow */
@@ -767,8 +878,9 @@ export function renderHtml(): string {
 
     .console-bar { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 16px; transition: border-color 200ms; font-family: var(--mono); }
     .console-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    .console-bar select { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 10px 12px; font-weight: 600; font-size: 0.8125rem; background: var(--bg); min-width: 0; }
-    .console-bar select:focus { outline: none; box-shadow: none; }
+    .console-bar select { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 10px 30px 10px 14px; font-weight: 600; font-size: 0.8125rem; background-color: var(--bg); min-width: 0; background-position: right 10px center; }
+    .console-bar select:hover:not(:disabled) { background-color: color-mix(in srgb, var(--ink) 5%, var(--bg)); border-color: transparent; }
+    .console-bar select:focus { outline: none; box-shadow: none; background-color: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
     .console-bar input { border: none; border-radius: 0; flex: 1; padding: 10px 14px; font-family: var(--mono); font-size: 0.8125rem; min-width: 0; }
     .console-bar input:focus { outline: none; box-shadow: none; }
     .console-bar .btn { border-radius: 0; border: none; border-left: 1px solid var(--border); padding: 10px 20px; font-weight: 600; }
@@ -888,7 +1000,7 @@ export function renderHtml(): string {
     .rel-toolbar-group { display: flex; align-items: center; gap: 4px; }
     .rel-toolbar-label { font-size: 0.6875rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
     .rel-toolbar-check { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted); cursor: pointer; user-select: none; }
-    .rel-toolbar-check input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+    .rel-toolbar-check input { margin: 0; }
     .rel-canvas-container { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); overflow: hidden; }
     .rel-svg { width: 100%; height: calc(100dvh - var(--chrome-h) - 120px); min-height: 500px; cursor: grab; touch-action: none; }
     .rel-svg:active { cursor: grabbing; }

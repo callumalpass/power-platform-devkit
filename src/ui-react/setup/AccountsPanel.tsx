@@ -13,6 +13,7 @@ import type { useConfirm } from './ConfirmDialog.js';
 import { DetailPanel } from './DetailPanel.js';
 import { OverflowMenu } from './OverflowMenu.js';
 import { useResizableWidth } from './use-resizable-width.js';
+import { Select } from '../Select.js';
 import { CopyButton } from '../CopyButton.js';
 
 type AccountKind = 'user' | 'device-code' | 'client-secret' | 'environment-token' | 'static-token';
@@ -251,6 +252,8 @@ export function AddAccountForm(props: {
   const { selectedApis, setSelectedApis, globalEnvironment, onLoginStarted, refreshState, toast, onSaved } = props;
   const [accountKind, setAccountKind] = useState<AccountKind>('user');
   const [mode, setMode] = useState<'basic' | 'advanced'>('basic');
+  const [preferredFlow, setPreferredFlow] = useState<string>('interactive');
+  const [prompt, setPrompt] = useState<string>('');
   const formRef = useRef<HTMLFormElement | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -329,13 +332,18 @@ export function AddAccountForm(props: {
           <div className="form-row">
             <div className="field">
               <span className="field-label">Authentication Method</span>
-              <select name="kind" value={accountKind} onChange={(event) => setAccountKind(event.target.value as AccountKind)}>
-                <option value="user">Interactive (browser login)</option>
-                <option value="device-code">Device code</option>
-                <option value="client-secret">Client secret</option>
-                <option value="environment-token">Environment token variable</option>
-                <option value="static-token">Static token</option>
-              </select>
+              <Select
+                name="kind"
+                value={accountKind}
+                onChange={(next) => setAccountKind(next as AccountKind)}
+                options={[
+                  { value: 'user', label: 'Interactive (browser login)' },
+                  { value: 'device-code', label: 'Device code' },
+                  { value: 'client-secret', label: 'Client secret' },
+                  { value: 'environment-token', label: 'Environment token variable' },
+                  { value: 'static-token', label: 'Static token' },
+                ]}
+              />
             </div>
             <div className="field"></div>
           </div>
@@ -350,8 +358,33 @@ export function AddAccountForm(props: {
           {isInteractive ? (
             <>
               <div className="form-row">
-                <div className="field"><span className="field-label">Preferred Flow</span><select name="preferredFlow"><option value="interactive">interactive</option><option value="device-code">device-code</option></select></div>
-                <div className="field"><span className="field-label">Prompt</span><select name="prompt"><option value="">default</option><option value="select_account">select_account</option><option value="login">login</option><option value="consent">consent</option><option value="none">none</option></select></div>
+                <div className="field">
+                  <span className="field-label">Preferred Flow</span>
+                  <Select
+                    name="preferredFlow"
+                    value={preferredFlow}
+                    onChange={setPreferredFlow}
+                    options={[
+                      { value: 'interactive', label: 'interactive' },
+                      { value: 'device-code', label: 'device-code' },
+                    ]}
+                  />
+                </div>
+                <div className="field">
+                  <span className="field-label">Prompt</span>
+                  <Select
+                    name="prompt"
+                    value={prompt}
+                    onChange={setPrompt}
+                    options={[
+                      { value: '', label: 'default' },
+                      { value: 'select_account', label: 'select_account' },
+                      { value: 'login', label: 'login' },
+                      { value: 'consent', label: 'consent' },
+                      { value: 'none', label: 'none' },
+                    ]}
+                  />
+                </div>
               </div>
               <div className="check-row"><input type="checkbox" name="forcePrompt" id="forcePrompt" /><label htmlFor="forcePrompt">Force prompt on next login</label></div>
               {accountKind === 'user' ? <div className="check-row"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode" /><label htmlFor="fallbackToDeviceCode">Allow fallback to device code</label></div> : null}

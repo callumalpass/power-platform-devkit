@@ -10,6 +10,7 @@ import {
 } from './utils.js';
 import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
+import { Select } from './Select.js';
 import {
   analyzeFetchXml,
   executeFetchXml,
@@ -312,14 +313,19 @@ export function FetchXmlTab(props: {
         <div className="form-row">
           <div className="field">
             <span className="field-label">Entity</span>
-            <select value={entityName} onChange={(event) => setEntityName(event.target.value)}>
-              <option value="">select entity…</option>
-              {dataverse.entities.map((item) => (
-                <option key={item.logicalName} value={item.logicalName}>
-                  {(item.displayName || item.logicalName)} ({item.logicalName})
-                </option>
-              ))}
-            </select>
+            <Select
+              aria-label="Entity"
+              placeholder="select entity…"
+              value={entityName}
+              onChange={setEntityName}
+              options={[
+                { value: '', label: 'select entity…' },
+                ...dataverse.entities.map((item) => ({
+                  value: item.logicalName,
+                  label: `${item.displayName || item.logicalName} (${item.logicalName})`,
+                })),
+              ]}
+            />
           </div>
           <div className="field">
             <span className="field-label">Entity Set Name</span>
@@ -352,17 +358,25 @@ export function FetchXmlTab(props: {
           </div>
           <div className="field">
             <span className="field-label">Distinct</span>
-            <select value={String(distinct)} onChange={(event) => setDistinct(event.target.value === 'true')}>
-              <option value="false">false</option>
-              <option value="true">true</option>
-            </select>
+            <Select
+              value={String(distinct)}
+              onChange={(next) => setDistinct(next === 'true')}
+              options={[
+                { value: 'false', label: 'false' },
+                { value: 'true', label: 'true' },
+              ]}
+            />
           </div>
           <div className="field">
             <span className="field-label">Filter Type</span>
-            <select value={filterType} onChange={(event) => setFilterType(event.target.value as 'and' | 'or')}>
-              <option value="and">and</option>
-              <option value="or">or</option>
-            </select>
+            <Select
+              value={filterType}
+              onChange={(next) => setFilterType(next as 'and' | 'or')}
+              options={[
+                { value: 'and', label: 'and' },
+                { value: 'or', label: 'or' },
+              ]}
+            />
           </div>
         </div>
         <div className="field">
@@ -370,14 +384,20 @@ export function FetchXmlTab(props: {
           <div className="condition-list">
             {conditions.map((row) => (
               <div key={row.id} className="condition-row">
-                <select value={row.attribute} onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { attribute: event.target.value }))}>
-                  <option value="">select…</option>
-                  {selectableAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
-                </select>
-                <select value={row.operator} onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { operator: event.target.value }))}>
-                  <option value="">select…</option>
-                  {OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
-                </select>
+                <Select
+                  aria-label="Attribute"
+                  placeholder="select…"
+                  value={row.attribute}
+                  onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { attribute: next }))}
+                  options={[{ value: '', label: 'select…' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+                />
+                <Select
+                  aria-label="Operator"
+                  placeholder="select…"
+                  value={row.operator}
+                  onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { operator: next }))}
+                  options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
+                />
                 <input value={row.value} placeholder="value" onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { value: event.target.value }))} />
                 <button type="button" className="condition-remove" onClick={() => setConditions((current) => removeConditionRow(current, row.id))}>×</button>
               </div>
@@ -388,17 +408,23 @@ export function FetchXmlTab(props: {
         <div className="form-row">
           <div className="field">
             <span className="field-label">Order By</span>
-            <select value={orderAttribute} onChange={(event) => setOrderAttribute(event.target.value)}>
-              <option value="">none</option>
-              {selectableAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
-            </select>
+            <Select
+              aria-label="Order by"
+              value={orderAttribute}
+              onChange={setOrderAttribute}
+              options={[{ value: '', label: 'none' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+            />
           </div>
           <div className="field">
             <span className="field-label">Direction</span>
-            <select value={String(orderDescending)} onChange={(event) => setOrderDescending(event.target.value === 'true')}>
-              <option value="false">ascending</option>
-              <option value="true">descending</option>
-            </select>
+            <Select
+              value={String(orderDescending)}
+              onChange={(next) => setOrderDescending(next === 'true')}
+              options={[
+                { value: 'false', label: 'ascending' },
+                { value: 'true', label: 'descending' },
+              ]}
+            />
           </div>
         </div>
         <FetchXmlLinksEditor
@@ -752,37 +778,55 @@ function FetchXmlLinksEditor(props: {
               <div className="form-row" style={{ marginBottom: 8 }}>
                 <div className="field">
                   <span className="field-label">Linked Entity</span>
-                  <select value={link.name} onChange={(event) => {
-                    const value = event.target.value;
-                    updateLink(link.id, { name: value, from: '', attributes: [], conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }] });
-                    void loadLinkDetail(link.id, value);
-                  }}>
-                    <option value="">select entity…</option>
-                    {dataverse.entities.map((item) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
-                  </select>
+                  <Select
+                    aria-label="Linked entity"
+                    placeholder="select entity…"
+                    value={link.name}
+                    onChange={(next) => {
+                      updateLink(link.id, { name: next, from: '', attributes: [], conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }] });
+                      void loadLinkDetail(link.id, next);
+                    }}
+                    options={[
+                      { value: '', label: 'select entity…' },
+                      ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` })),
+                    ]}
+                  />
                 </div>
                 <div className="field">
                   <span className="field-label">Link Type</span>
-                  <select value={link.linkType} onChange={(event) => updateLink(link.id, { linkType: event.target.value as 'inner' | 'outer' })}>
-                    <option value="inner">inner</option>
-                    <option value="outer">outer</option>
-                  </select>
+                  <Select
+                    value={link.linkType}
+                    onChange={(next) => updateLink(link.id, { linkType: next as 'inner' | 'outer' })}
+                    options={[
+                      { value: 'inner', label: 'inner' },
+                      { value: 'outer', label: 'outer' },
+                    ]}
+                  />
                 </div>
               </div>
               <div className="form-row" style={{ marginBottom: 8 }}>
                 <div className="field">
                   <span className="field-label">From (linked attr)</span>
-                  <select value={link.from} onChange={(event) => updateLink(link.id, { from: event.target.value })}>
-                    <option value="">select…</option>
-                    {linkAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
-                  </select>
+                  <Select
+                    aria-label="From attribute"
+                    placeholder="select…"
+                    value={link.from}
+                    onChange={(next) => updateLink(link.id, { from: next })}
+                    options={[{ value: '', label: 'select…' }, ...linkAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+                  />
                 </div>
                 <div className="field">
                   <span className="field-label">To (parent attr)</span>
-                  <select value={link.to} onChange={(event) => updateLink(link.id, { to: event.target.value })}>
-                    <option value="">select…</option>
-                    {dataverse.currentEntityDetail ? (getSelectableAttributes(dataverse.currentEntityDetail) as DataverseAttribute[]).map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>) : null}
-                  </select>
+                  <Select
+                    aria-label="To attribute"
+                    placeholder="select…"
+                    value={link.to}
+                    onChange={(next) => updateLink(link.id, { to: next })}
+                    options={[
+                      { value: '', label: 'select…' },
+                      ...(dataverse.currentEntityDetail ? (getSelectableAttributes(dataverse.currentEntityDetail) as DataverseAttribute[]).map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName })) : []),
+                    ]}
+                  />
                 </div>
               </div>
               <div className="field" style={{ marginBottom: 8 }}>
@@ -812,14 +856,20 @@ function FetchXmlLinksEditor(props: {
                 <div className="condition-list">
                   {link.conditions.map((row) => (
                     <div key={row.id} className="condition-row">
-                      <select value={row.attribute} onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { attribute: event.target.value }) })}>
-                        <option value="">select…</option>
-                        {linkAttributes.map((attribute) => <option key={attribute.logicalName} value={attribute.logicalName}>{attribute.logicalName}</option>)}
-                      </select>
-                      <select value={row.operator} onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { operator: event.target.value }) })}>
-                        <option value="">select…</option>
-                        {OPERATORS.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
-                      </select>
+                      <Select
+                        aria-label="Attribute"
+                        placeholder="select…"
+                        value={row.attribute}
+                        onChange={(next) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { attribute: next }) })}
+                        options={[{ value: '', label: 'select…' }, ...linkAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+                      />
+                      <Select
+                        aria-label="Operator"
+                        placeholder="select…"
+                        value={row.operator}
+                        onChange={(next) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { operator: next }) })}
+                        options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
+                      />
                       <input value={row.value} placeholder="value" onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { value: event.target.value }) })} />
                       <button type="button" className="condition-remove" onClick={() => updateLink(link.id, { conditions: removeConditionRow(link.conditions, row.id) })}>×</button>
                     </div>
@@ -1026,17 +1076,32 @@ export function RelationshipsTab(props: {
     <div className="dv-subpanel active">
       <div className="panel" style={{ padding: 14 }}>
         <div className="rel-toolbar">
-          <select value={entityName} onChange={(event) => setEntityName(event.target.value)} style={{ maxWidth: 240 }}>
-            <option value="">select entity…</option>
-            {dataverse.entities.map((item) => <option key={item.logicalName} value={item.logicalName}>{(item.displayName || item.logicalName)} ({item.logicalName})</option>)}
-          </select>
+          <div style={{ maxWidth: 240, flex: '1 1 240px', minWidth: 0 }}>
+            <Select
+              aria-label="Entity"
+              placeholder="select entity…"
+              value={entityName}
+              onChange={setEntityName}
+              options={[
+                { value: '', label: 'select entity…' },
+                ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` })),
+              ]}
+            />
+          </div>
           <div className="rel-toolbar-group">
             <label className="rel-toolbar-label">Depth</label>
-            <select value={String(depth)} onChange={(event) => setDepth(Number(event.target.value))} style={{ width: 60 }}>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
+            <div style={{ width: 72 }}>
+              <Select
+                aria-label="Depth"
+                value={String(depth)}
+                onChange={(next) => setDepth(Number(next))}
+                options={[
+                  { value: '1', label: '1' },
+                  { value: '2', label: '2' },
+                  { value: '3', label: '3' },
+                ]}
+              />
+            </div>
           </div>
           <label className="rel-toolbar-check"><input type="checkbox" checked={hideSystem} onChange={(event) => setHideSystem(event.target.checked)} /> Hide system</label>
           <button className="btn btn-primary" type="button" style={{ padding: '5px 14px', fontSize: '0.75rem' }} onClick={() => void loadGraph()}>{loading ? 'Loading…' : 'Load Graph'}</button>
