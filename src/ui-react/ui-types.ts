@@ -171,9 +171,15 @@ export type FlowItem = {
     createdTime?: string;
     lastModifiedTime?: string;
     flowTriggerUri?: string;
+    resourceId?: string;
+    workflowEntityId?: string;
+    workflowUniqueId?: string;
+    installationStatus?: string;
+    componentState?: string;
     creator?: { objectId?: string };
     definition?: unknown;
     connectionReferences?: unknown;
+    installedConnectionReferences?: unknown;
     definitionSummary?: FlowDefinitionSummary;
   };
 };

@@ -18,6 +18,15 @@ const dataverseConnection: FlowEnvironmentConnection = {
   status: 'Connected',
 };
 
+const dataverseConnectionWithSolutionReference: FlowEnvironmentConnection = {
+  ...dataverseConnection,
+  solutionReferences: [{
+    id: 'd44dc40b-3e3a-f111-88b5-6045bde68dac',
+    logicalName: 'new_sharedcommondataserviceforapps_7f348',
+    displayName: 'Microsoft Dataverse',
+  }],
+};
+
 const outlookConnection: FlowEnvironmentConnection = {
   name: 'office-connection',
   id: '/providers/Microsoft.PowerApps/apis/shared_office365users/connections/office-connection',
@@ -151,6 +160,40 @@ test('flow connection model handles embedded solution logical references', () =>
   assert.equal(model.issues.some((issue) => issue.level === 'error'), false);
 });
 
+test('flow connection model binds logical solution references to matching environment connections', () => {
+  const source = JSON.stringify({
+    properties: {
+      connectionReferences: {
+        shared_commondataserviceforapps_1: {
+          runtimeSource: 'embedded',
+          connection: { connectionReferenceLogicalName: 'new_sharedcommondataserviceforapps_7f348' },
+          api: { name: 'shared_commondataserviceforapps' },
+        },
+      },
+      definition: {
+        actions: {
+          List_accounts: {
+            type: 'OpenApiConnection',
+            inputs: {
+              host: {
+                connectionName: 'shared_commondataserviceforapps_1',
+                operationId: 'ListRecords',
+                apiId: dataverseConnection.apiId,
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const model = buildFlowConnectionModel(source, [dataverseConnectionWithSolutionReference]);
+
+  assert.equal(model.references[0].status, 'bound');
+  assert.equal(model.references[0].connection?.name, dataverseConnection.name);
+  assert.equal(model.issues.some((issue) => issue.code === 'CONNECTION_REFERENCE_LOGICAL'), false);
+});
+
 test('flow connection model reports missing and unused references', () => {
   const source = JSON.stringify({
     properties: {
@@ -219,6 +262,17 @@ test('flow connection reference edits add, rebind, and remove references', () =>
   const removed = removeFlowConnectionReference(rebound, 'shared_commondataserviceforapps');
   parsed = JSON.parse(removed);
   assert.deepEqual(parsed.properties.connectionReferences, {});
+});
+
+test('flow connection reference edits prefer solution logical reference shape when available', () => {
+  const initial = JSON.stringify({ properties: { displayName: 'Flow', definition: { actions: {} } } });
+  const added = setFlowConnectionReference(initial, 'shared_commondataserviceforapps', dataverseConnectionWithSolutionReference);
+  const parsed = JSON.parse(added);
+
+  assert.equal(parsed.properties.connectionReferences.shared_commondataserviceforapps.connection.connectionReferenceLogicalName, 'new_sharedcommondataserviceforapps_7f348');
+  assert.equal(parsed.properties.connectionReferences.shared_commondataserviceforapps.api.name, dataverseConnection.apiName);
+  assert.equal(parsed.properties.connectionReferences.shared_commondataserviceforapps.connectionName, undefined);
+  assert.equal(parsed.properties.connectionReferences.shared_commondataserviceforapps.connection.name, undefined);
 });
 
 test('setActionConnectionReference updates modern and legacy host fields', () => {

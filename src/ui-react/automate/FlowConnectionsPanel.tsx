@@ -353,6 +353,10 @@ function EnvironmentConnectionRow(props: {
   toast: ToastFn;
   onInspect: (seed: FlowConnectionInspectSeed) => void;
 }) {
+  const solutionRefs = (props.connection.solutionReferences || [])
+    .map((reference) => reference.logicalName)
+    .filter(Boolean)
+    .join(', ');
   return (
     <div className="flow-environment-connection-row">
       <div>
@@ -360,6 +364,7 @@ function EnvironmentConnectionRow(props: {
         <div className="flow-connection-meta">
           {connectorLabel(props.connection)}
           {props.connection.status ? ` · ${props.connection.status}` : ''}
+          {solutionRefs ? ` · solution refs ${solutionRefs}` : ''}
         </div>
       </div>
       <div className="flow-connection-actions">
@@ -402,5 +407,9 @@ function compatibleConnectionsForReference(reference: FlowConnectionReference, c
 }
 
 function connectionOptionLabel(connection: FlowEnvironmentConnection, suffix = '') {
-  return `${connection.displayName || connection.name} (${connectorLabel(connection)})${suffix ? ` - ${suffix}` : ''}`;
+  const solutionRefs = (connection.solutionReferences || [])
+    .map((reference) => reference.logicalName)
+    .filter(Boolean)
+    .join(', ');
+  return `${connection.displayName || connection.name} (${connectorLabel(connection)})${solutionRefs ? ` - ${solutionRefs}` : ''}${suffix ? ` - ${suffix}` : ''}`;
 }

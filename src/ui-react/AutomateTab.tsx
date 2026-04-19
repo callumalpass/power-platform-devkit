@@ -5,7 +5,9 @@ import {
   buildFlowDocument,
   checkFlowDefinition,
   flowIdentifier,
+  flowRuntimeId,
   flowRunTriggerNames,
+  sameFlowIdentity,
   flowValidationFromError,
   formatFlowDocument,
   loadActionDetail,
@@ -16,6 +18,7 @@ import {
   loadFlowRuns,
   loadRunActions,
   loadRunDetail,
+  setFlowActivationState,
   saveFlowDefinition,
   type FlowValidationKind,
   type FlowValidationResult,
@@ -396,7 +399,7 @@ export function AutomateTab(props: {
       const updated = await saveFlowDefinition(environment, currentFlow, flowDocument);
       setLoadedFlowDocument(flowDocument);
       setCurrentFlow(updated);
-      setFlows((items) => items.map((item) => flowIdentifier(item) === flowIdentifier(currentFlow) ? { ...item, ...updated } : item));
+      setFlows((items) => items.map((item) => sameFlowIdentity(item, currentFlow) ? { ...item, ...updated } : item));
       toast(skipServiceCheck ? 'Flow definition saved without service check' : 'Flow definition checked and saved');
     } catch (error) {
       setFlowValidation(flowValidationFromError('errors', error));
@@ -537,22 +540,21 @@ export function AutomateTab(props: {
   }
 
   async function flowAction(action: 'run' | 'start' | 'stop') {
-    if (!currentFlow || currentFlow.source !== 'flow') return;
-    const flowApiId = currentFlow.name;
-    if (!flowApiId) return;
+    if (!currentFlow) return;
     const labels = { run: 'Running', start: 'Turning on', stop: 'Turning off' };
     toast(labels[action] + '...');
     try {
-      const runTriggerName = flowRunTriggerNames(currentFlow, flowDocument)[0] || 'manual';
-      const paths: Record<string, string> = {
-        run: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`,
-        start: `/flows/${flowApiId}/start`,
-        stop: `/flows/${flowApiId}/stop`,
-      };
-      await api<any>('/api/request/execute', {
-        method: 'POST',
-        body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: paths[action] }),
-      });
+      if (action === 'run') {
+        const flowApiId = flowRuntimeId(currentFlow);
+        if (!flowApiId) throw new Error('This flow does not expose a runtime id yet. Turn it on and refresh before running it.');
+        const runTriggerName = flowRunTriggerNames(currentFlow, flowDocument)[0] || 'manual';
+        await api<any>('/api/request/execute', {
+          method: 'POST',
+          body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`, responseType: 'void' }),
+        });
+      } else {
+        await setFlowActivationState(environment, currentFlow, action === 'start');
+      }
       const messages = { run: 'Flow triggered', start: 'Flow turned on', stop: 'Flow turned off' };
       toast(messages[action]);
       // For state changes, poll until the API reflects the new state
@@ -561,7 +563,7 @@ export function AutomateTab(props: {
         for (let attempt = 0; attempt < 10; attempt++) {
           await new Promise((r) => setTimeout(r, 800));
           const refreshed = await loadFlowList(environment);
-          const updated = refreshed.flows.find((f: FlowItem) => f.name === flowApiId);
+          const updated = refreshed.flows.find((flow: FlowItem) => sameFlowIdentity(flow, currentFlow));
           if (updated && String(prop(updated, 'properties.state')) === expectedState) {
             setFlows(refreshed.flows);
             setCurrentFlow(updated);
@@ -572,7 +574,7 @@ export function AutomateTab(props: {
       // Fallback / run action: just refresh once
       const refreshed = await loadFlowList(environment);
       setFlows(refreshed.flows);
-      const updated = refreshed.flows.find((f: FlowItem) => f.name === flowApiId);
+      const updated = refreshed.flows.find((flow: FlowItem) => sameFlowIdentity(flow, currentFlow));
       if (updated) setCurrentFlow(updated);
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), true);

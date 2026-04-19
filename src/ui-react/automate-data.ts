@@ -2,7 +2,7 @@ import { ApiRequestError, api, prop } from './utils.js';
 import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
 import type { FlowEnvironmentConnection } from './automate/flow-connections.js';
 
-const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
+const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
 const CONNECTIONS_FOR_ENVIRONMENT_PATH = "/connections?$filter=environment%20eq%20%27{environment}%27";
 
 const connectionNameCache = new Map<string, Promise<Map<string, string>>>();
@@ -38,6 +38,14 @@ export type FlowCallbackUrlResult = {
   value: string;
   kind: 'signed' | 'authenticated';
   raw: unknown;
+};
+
+export type FlowLifecycleRequest = {
+  api: 'dv' | 'flow';
+  method: 'PATCH' | 'POST';
+  path: string;
+  body?: Record<string, unknown>;
+  responseType?: 'json' | 'text' | 'void';
 };
 
 export async function loadFlowList(environment: string): Promise<FlowListResult> {
@@ -79,11 +87,12 @@ export async function analyzeFlowDocument(source: string, cursor = source.length
 
 export async function checkFlowDefinition(environment: string, flow: FlowItem, source: string, kind: FlowValidationKind): Promise<FlowValidationResult> {
   const suffix = kind === 'errors' ? 'checkFlowErrors' : 'checkFlowWarnings';
+  const flowId = flowWorkflowId(flow) || flowIdentifier(flow);
   try {
     const result = await executeRequest<unknown>(
       environment,
       'flow',
-      `/flows/${flowIdentifier(flow)}/${suffix}`,
+      `/flows/${flowId}/${suffix}`,
       true,
       'POST',
       buildFlowServicePayload(source),
@@ -121,10 +130,11 @@ export function flowValidationFromError(kind: FlowValidationKind, error: unknown
 }
 
 export async function saveFlowDefinition(environment: string, flow: FlowItem, source: string): Promise<FlowItem> {
+  const flowId = flowWorkflowId(flow) || flowIdentifier(flow);
   const result = await executeRequest<unknown>(
     environment,
     'flow',
-    `/flows/${flowIdentifier(flow)}?$expand=properties.connectionreferences.apidefinition,properties.definitionsummary.operations.apioperation,operationDefinition,plan,properties.throttleData,properties.estimatedsuspensiondata,properties.powerFlowType`,
+    `/flows/${flowId}?$expand=properties.connectionreferences.apidefinition,properties.definitionsummary.operations.apioperation,operationDefinition,plan,properties.throttleData,properties.estimatedsuspensiondata,properties.powerFlowType`,
     true,
     'PATCH',
     {
@@ -141,9 +151,9 @@ export async function loadFlowCallbackUrl(environment: string, flow: FlowItem, s
   const sourcePayload = parseJsonMaybe(source);
   const sourceValue = extractFlowCallbackUrl(sourcePayload);
   if (sourceValue) return flowTriggerUrlResult(sourceValue, sourcePayload);
-  const flowId = flowIdentifier(flow);
   const triggerNames = flowCallbackTriggerNames(flow, source);
-  const attempts = [
+  const flowIds = uniqueStrings([flowRuntimeId(flow), flowWorkflowId(flow), flowIdentifier(flow)]);
+  const attempts = flowIds.flatMap((flowId) => [
     ...triggerNames.map((triggerName) => ({
       label: `trigger ${triggerName}`,
       path: `/flows/${flowId}/triggers/${encodeURIComponent(triggerName)}/listCallbackUrl`,
@@ -154,7 +164,7 @@ export async function loadFlowCallbackUrl(environment: string, flow: FlowItem, s
       path: `/flows/${flowId}/listCallbackUrl`,
       query: { 'api-version': '1' },
     },
-  ];
+  ]);
   const errors: string[] = [];
   for (const attempt of attempts) {
     try {
@@ -247,6 +257,33 @@ function flowTriggerNameFromUrl(value: string): string {
   }
 }
 
+function flowIdFromTriggerUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const pathValue = flowIdFromPath(value);
+  if (pathValue) return pathValue;
+  try {
+    const url = new URL(value);
+    return flowIdFromPath(url.pathname);
+  } catch {
+    const match = value.match(/\/flows\/([^/]+)\/triggers\//i);
+    return match ? decodeURIComponent(match[1]) : undefined;
+  }
+}
+
+function flowIdFromResourceId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return flowIdFromPath(trimmed) || (trimmed.includes('/') ? undefined : trimmed);
+}
+
+function flowIdFromPath(value: string): string | undefined {
+  const path = value.split(/[?#]/, 1)[0];
+  const parts = path.split('/').filter(Boolean);
+  const flowIndex = parts.findIndex((part) => part.toLowerCase() === 'flows');
+  return flowIndex >= 0 ? decodeURIComponent(parts[flowIndex + 1] || '') || undefined : undefined;
+}
+
 function flowTriggerUrlResult(value: string, raw: unknown): FlowCallbackUrlResult {
   return {
     value,
@@ -288,7 +325,51 @@ export async function loadFlowApiConnections(environment: string): Promise<FlowE
     CONNECTIONS_FOR_ENVIRONMENT_PATH,
     true,
   );
-  return (result.response?.value || []).map(normalizeFlowApiConnection).filter((connection) => connection.name);
+  const connections = (result.response?.value || []).map(normalizeFlowApiConnection).filter((connection) => connection.name);
+  try {
+    const refs = await loadSolutionConnectionReferences(environment);
+    return mergeSolutionConnectionReferences(connections, refs);
+  } catch {
+    return connections;
+  }
+}
+
+type SolutionConnectionReference = {
+  id?: string;
+  logicalName?: string;
+  displayName?: string;
+  connectorId?: string;
+  connectionId?: string;
+};
+
+async function loadSolutionConnectionReferences(environment: string): Promise<SolutionConnectionReference[]> {
+  const result = await executeRequest<{ value?: unknown[] }>(
+    environment,
+    'dv',
+    '/connectionreferences?$select=connectionreferenceid,connectionreferencelogicalname,connectionreferencedisplayname,connectorid,connectionid',
+    false,
+  );
+  return (result.response?.value || []).map(normalizeSolutionConnectionReference).filter((reference) => reference.logicalName || reference.connectionId);
+}
+
+function mergeSolutionConnectionReferences(connections: FlowEnvironmentConnection[], references: SolutionConnectionReference[]): FlowEnvironmentConnection[] {
+  if (!references.length) return connections;
+  return connections.map((connection) => {
+    const matches = references.filter((reference) => {
+      return normalizeConnectionName(reference.connectionId) === normalizeConnectionName(connection.name)
+        || normalizeConnectionName(reference.connectionId) === normalizeConnectionName(connectionNameFromId(connection.id))
+        || Boolean(reference.connectionId && normalizeConnectionId(connection.id).endsWith(`/connections/${normalizeConnectionName(reference.connectionId)}`));
+    });
+    if (!matches.length) return connection;
+    return {
+      ...connection,
+      solutionReferences: matches.map((reference) => ({
+        id: reference.id,
+        logicalName: reference.logicalName,
+        displayName: reference.displayName,
+      })),
+    };
+  });
 }
 
 export async function loadFlowApiOperationSchema(environment: string, apiRef: string | undefined, operationId: string): Promise<FlowApiOperationSchema | null> {
@@ -319,21 +400,23 @@ export async function loadFlowApiOperationSchema(environment: string, apiRef: st
 
 export async function loadFlowDynamicEnum(
   environment: string,
-  apiName: string | undefined,
+  apiRef: string | undefined,
   connectionName: string | undefined,
   dynamicValues: unknown,
   parameters: Record<string, unknown>,
 ): Promise<FlowDynamicValueOption[]> {
-  if (!apiName || !isRecord(dynamicValues)) return [];
-  const resolvedConnectionName = await resolveFlowConnectionName(environment, apiName, connectionName);
+  if (!apiRef || !isRecord(dynamicValues)) return [];
+  const resolvedConnectionName = await resolveFlowConnectionName(environment, apiRef, connectionName);
   if (!resolvedConnectionName) return [];
+  const resolvedApiName = await resolveFlowApiName(environment, apiRef, resolvedConnectionName);
+  if (!resolvedApiName) return [];
   const dynamicInvocationDefinition = normalizeDynamicInvocationDefinition(dynamicValues);
   if (!dynamicInvocationDefinition.operationId) return [];
   if (hasMissingRequiredDynamicParameters(dynamicInvocationDefinition, parameters)) return [];
   const result = await executeRequest<unknown>(
     environment,
     'powerautomate',
-    `/apis/${encodeURIComponent(apiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listEnum`,
+    `/apis/${encodeURIComponent(resolvedApiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listEnum`,
     true,
     'POST',
     {
@@ -346,20 +429,22 @@ export async function loadFlowDynamicEnum(
 
 export async function loadFlowDynamicProperties(
   environment: string,
-  apiName: string | undefined,
+  apiRef: string | undefined,
   connectionName: string | undefined,
   field: FlowApiOperationSchemaField,
   parameters: Record<string, unknown>,
 ): Promise<FlowApiOperationSchemaField[]> {
-  if (!apiName || !isRecord(field.dynamicSchema)) return [];
-  const resolvedConnectionName = await resolveFlowConnectionName(environment, apiName, connectionName);
+  if (!apiRef || !isRecord(field.dynamicSchema)) return [];
+  const resolvedConnectionName = await resolveFlowConnectionName(environment, apiRef, connectionName);
   if (!resolvedConnectionName) return [];
+  const resolvedApiName = await resolveFlowApiName(environment, apiRef, resolvedConnectionName);
+  if (!resolvedApiName) return [];
   const dynamicInvocationDefinition = normalizeDynamicInvocationDefinition(field.dynamicSchema);
   if (!dynamicInvocationDefinition.operationId || hasMissingRequiredDynamicParameters(dynamicInvocationDefinition, parameters)) return [];
   const result = await executeRequest<unknown>(
     environment,
     'powerautomate',
-    `/apis/${encodeURIComponent(apiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listDynamicProperties`,
+    `/apis/${encodeURIComponent(resolvedApiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listDynamicProperties`,
     true,
     'POST',
     {
@@ -412,27 +497,65 @@ export function buildFlowServicePayload(source: string): Record<string, unknown>
 }
 
 export async function loadFlowRuns(environment: string, flow: FlowItem): Promise<FlowRun[]> {
-  const result = await executeRequest<{ value?: FlowRun[] }>(environment, 'flow', `/flows/${flowIdentifier(flow)}/runs?$top=20`);
+  const flowId = flowRuntimeId(flow) || flowWorkflowId(flow) || flowIdentifier(flow);
+  const result = await executeRequest<{ value?: FlowRun[] }>(environment, 'flow', `/flows/${flowId}/runs?$top=20`);
   return result.response?.value || [];
 }
 
 export async function loadRunActions(environment: string, flow: FlowItem, run: FlowRun): Promise<FlowAction[]> {
-  const result = await executeRequest<{ value?: FlowAction[] }>(environment, 'flow', `/flows/${flowIdentifier(flow)}/runs/${run.name}/actions`);
+  const flowId = flowRuntimeId(flow) || flowWorkflowId(flow) || flowIdentifier(flow);
+  const result = await executeRequest<{ value?: FlowAction[] }>(environment, 'flow', `/flows/${flowId}/runs/${run.name}/actions`);
   return result.response?.value || [];
 }
 
 export async function loadRunDetail(environment: string, flow: FlowItem, run: FlowRun): Promise<FlowRun> {
+  const flowId = flowRuntimeId(flow) || flowWorkflowId(flow) || flowIdentifier(flow);
   const result = await executeRequest<FlowRun>(
     environment,
     'flow',
-    `/flows/${flowIdentifier(flow)}/runs/${run.name}?$expand=properties/actions,properties/flow&include=repetitionCount&isMigrationSource=false`,
+    `/flows/${flowId}/runs/${run.name}?$expand=properties/actions,properties/flow&include=repetitionCount&isMigrationSource=false`,
   );
   return result.response || run;
 }
 
 export async function loadActionDetail(environment: string, flow: FlowItem, run: FlowRun, action: FlowAction): Promise<FlowAction> {
-  const result = await executeRequest<FlowAction>(environment, 'flow', `/flows/${flowIdentifier(flow)}/runs/${run.name}/actions/${action.name}`);
+  const flowId = flowRuntimeId(flow) || flowWorkflowId(flow) || flowIdentifier(flow);
+  const result = await executeRequest<FlowAction>(environment, 'flow', `/flows/${flowId}/runs/${run.name}/actions/${action.name}`);
   return result.response || action;
+}
+
+export async function setFlowActivationState(environment: string, flow: FlowItem, active: boolean): Promise<void> {
+  const request = flowActivationRequest(flow, active);
+  await executeRequest<unknown>(
+    environment,
+    request.api,
+    request.path,
+    true,
+    request.method,
+    request.body,
+    undefined,
+    request.responseType,
+  );
+}
+
+export function flowActivationRequest(flow: FlowItem, active: boolean): FlowLifecycleRequest {
+  const workflowId = flowWorkflowId(flow);
+  if (workflowId) {
+    return {
+      api: 'dv',
+      method: 'PATCH',
+      path: `/workflows(${workflowId})`,
+      body: { statecode: active ? 1 : 0 },
+      responseType: 'void',
+    };
+  }
+  const runtimeId = flowRuntimeId(flow) || flowIdentifier(flow);
+  if (!runtimeId) throw new Error('Flow id is not available.');
+  return {
+    api: 'flow',
+    method: 'POST',
+    path: `/flows/${runtimeId}/${active ? 'start' : 'stop'}`,
+  };
 }
 
 async function executeRequest<T>(
@@ -443,6 +566,7 @@ async function executeRequest<T>(
   method = 'GET',
   body?: unknown,
   query?: Record<string, string>,
+  responseType?: 'json' | 'text' | 'void',
 ) {
   const result = await api<ApiEnvelope<ApiExecuteResponse<T>>>('/api/request/execute', {
     method: 'POST',
@@ -454,6 +578,7 @@ async function executeRequest<T>(
       ...(query ? { query } : {}),
       allowInteractive,
       softFail: !allowInteractive,
+      ...(responseType ? { responseType } : {}),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   });
@@ -461,7 +586,45 @@ async function executeRequest<T>(
 }
 
 export function flowIdentifier(flow: FlowItem | null | undefined) {
-  return flow && (flow.workflowid || flow.name) || '';
+  return flow && (flowWorkflowId(flow) || flowRuntimeId(flow) || flow.name) || '';
+}
+
+export function flowWorkflowId(flow: FlowItem | null | undefined): string {
+  if (!flow) return '';
+  return firstString(
+    prop(flow, 'properties.workflowEntityId'),
+    flow.workflowid,
+    prop(flow, 'workflowEntityId'),
+    prop(flow, 'properties.workflowid'),
+  ) || '';
+}
+
+export function flowRuntimeId(flow: FlowItem | null | undefined): string {
+  if (!flow) return '';
+  return firstString(
+    flowIdFromResourceId(prop(flow, 'properties.resourceId')),
+    flowIdFromResourceId(prop(flow, 'resourceId')),
+    flowIdFromTriggerUrl(extractFlowCallbackUrl(flow)),
+    flow.source === 'flow' ? flow.name : undefined,
+  ) || '';
+}
+
+export function flowIdentityKeys(flow: FlowItem | null | undefined): string[] {
+  if (!flow) return [];
+  return uniqueStrings([
+    flowWorkflowId(flow),
+    flowRuntimeId(flow),
+    flow.name,
+    flow.id,
+    prop(flow, 'properties.workflowUniqueId'),
+    prop(flow, 'properties.flowTriggerUri'),
+  ]);
+}
+
+export function sameFlowIdentity(left: FlowItem | null | undefined, right: FlowItem | null | undefined): boolean {
+  const leftKeys = new Set(flowIdentityKeys(left));
+  if (!leftKeys.size) return false;
+  return flowIdentityKeys(right).some((key) => leftKeys.has(key));
 }
 
 export function buildFlowDocument(detail: FlowItem | Record<string, unknown>) {
@@ -487,20 +650,29 @@ export function buildFlowDocument(detail: FlowItem | Record<string, unknown>) {
 
 function normalizeFlowApiItem(value: unknown): FlowItem {
   const flow = value as FlowItem;
+  const workflowEntityId = firstString(prop(flow, 'properties.workflowEntityId'), flow.workflowid);
+  const resourceId = firstString(
+    flowIdFromResourceId(prop(flow, 'properties.resourceId')),
+    flowIdFromResourceId(prop(flow, 'properties.resourceid')),
+    flowIdFromTriggerUrl(prop(flow, 'properties.flowTriggerUri')),
+  );
   return {
     ...flow,
     source: 'flow',
-    workflowid: flow.workflowid || flow.name,
+    workflowid: workflowEntityId,
     properties: {
       ...(flow.properties || {}),
       displayName: prop(flow, 'properties.displayName') || flow.name || 'Unnamed',
       definition: prop(flow, 'properties.definition'),
       connectionReferences: prop(flow, 'properties.connectionReferences'),
+      installedConnectionReferences: prop(flow, 'properties.installedConnectionReferences'),
+      ...(workflowEntityId ? { workflowEntityId } : {}),
+      ...(resourceId ? { resourceId } : {}),
     },
   };
 }
 
-function normalizeDataverseFlow(value: unknown): FlowItem {
+export function normalizeDataverseFlow(value: unknown): FlowItem {
   const flow = value as Record<string, unknown>;
   const clientData = parseJsonMaybe(flow.clientdata);
   const definition = prop(clientData, 'properties.definition') || prop(clientData, 'definition') || clientData || {};
@@ -513,10 +685,12 @@ function normalizeDataverseFlow(value: unknown): FlowItem {
     properties: {
       displayName: String(flow.name || flow.workflowid || 'Unnamed'),
       description: String(flow.description || ''),
-      state: flow.statecode === 0 ? 'Started' : flow.statecode === 1 ? 'Stopped' : 'Unknown',
+      state: flow.statecode === 1 ? 'Started' : flow.statecode === 0 ? 'Stopped' : 'Unknown',
       createdTime: typeof flow.createdon === 'string' ? flow.createdon : undefined,
       lastModifiedTime: typeof flow.modifiedon === 'string' ? flow.modifiedon : undefined,
       creator: { objectId: String(flow._ownerid_value || '') },
+      workflowEntityId: String(flow.workflowid || ''),
+      workflowUniqueId: typeof flow.workflowidunique === 'string' ? flow.workflowidunique : undefined,
       definition,
       connectionReferences: prop(clientData, 'properties.connectionReferences') || {},
       definitionSummary: {
@@ -575,6 +749,17 @@ function normalizeFlowApiConnection(value: unknown): FlowEnvironmentConnection {
     displayName: firstString(prop(connection, 'properties.displayName'), connection.displayName),
     status: firstString(prop(connection, 'properties.statuses.0.status'), prop(connection, 'properties.overallStatus')),
     raw: value,
+  };
+}
+
+function normalizeSolutionConnectionReference(value: unknown): SolutionConnectionReference {
+  const reference = value as Record<string, unknown>;
+  return {
+    id: firstString(reference.connectionreferenceid, reference.id),
+    logicalName: firstString(reference.connectionreferencelogicalname, prop(reference, 'properties.connectionreferencelogicalname')),
+    displayName: firstString(reference.connectionreferencedisplayname, prop(reference, 'properties.connectionreferencedisplayname')),
+    connectorId: firstString(reference.connectorid, prop(reference, 'properties.connectorid')),
+    connectionId: firstString(reference.connectionid, prop(reference, 'properties.connectionid')),
   };
 }
 
@@ -854,7 +1039,19 @@ async function resolveFlowConnectionName(environment: string, apiName: string, p
     connectionNameCache.set(key, cached);
   }
   const connections = await cached;
-  return connections.get(apiName.toLowerCase());
+  for (const alias of apiNameAliases(apiName)) {
+    const match = connections.get(alias);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+async function resolveFlowApiName(environment: string, apiRef: string, connectionName: string | undefined): Promise<string | undefined> {
+  const direct = apiNameFromId(apiRef) || apiRef;
+  if (!connectionName) return direct;
+  const connections = await loadFlowApiConnections(environment);
+  const connection = connections.find((item) => item.name === connectionName || connectionNameFromId(item.id) === connectionName);
+  return apiNameFromId(connection?.apiId) || connection?.apiName || direct;
 }
 
 async function loadConnectionNamesByApi(environment: string): Promise<Map<string, string>> {
@@ -868,10 +1065,21 @@ async function loadConnectionNamesByApi(environment: string): Promise<Map<string
     ].filter((value): value is string => Boolean(value));
     for (const name of names) {
       const normalized = apiNameFromId(name) || name;
-      if (normalized && !result.has(normalized.toLowerCase())) result.set(normalized.toLowerCase(), connection.name);
+      for (const alias of apiNameAliases(normalized)) {
+        if (!result.has(alias)) result.set(alias, connection.name);
+      }
     }
   }
   return result;
+}
+
+function apiNameAliases(value: string): string[] {
+  const normalized = (apiNameFromId(value) || value).toLowerCase();
+  if (!normalized) return [];
+  const aliases = new Set([normalized]);
+  if (normalized.startsWith('shared_')) aliases.add(normalized.slice('shared_'.length));
+  else aliases.add(`shared_${normalized}`);
+  return [...aliases];
 }
 
 function normalizeDynamicInvocationDefinition(source: Record<string, unknown>): Record<string, unknown> {
@@ -962,6 +1170,14 @@ function connectionNameFromId(value: unknown): string | undefined {
   const parts = value.split('/').filter(Boolean);
   const index = parts.findIndex((part) => part.toLowerCase() === 'connections');
   return index >= 0 ? parts[index + 1] : undefined;
+}
+
+function normalizeConnectionName(value: unknown): string {
+  return firstString(value)?.toLowerCase() || '';
+}
+
+function normalizeConnectionId(value: unknown): string {
+  return firstString(value)?.toLowerCase() || '';
 }
 
 function parseJsonMaybe(value: unknown): Record<string, unknown> | null {
@@ -1063,6 +1279,19 @@ function firstString(...values: unknown[]) {
     if (typeof value === 'string' && value.trim()) return value;
   }
   return undefined;
+}
+
+function uniqueStrings(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

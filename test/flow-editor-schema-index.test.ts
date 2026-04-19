@@ -7,7 +7,7 @@ import {
   flowEditorSchemaCompletionItems,
   type FlowEditorSchemaActionEntry,
 } from '../src/ui-react/automate/flow-editor-schema-index.js';
-import { fieldSchemaKey } from '../src/ui-react/automate/flow-dynamic-schema.js';
+import { dynamicApiRef, fieldSchemaKey } from '../src/ui-react/automate/flow-dynamic-schema.js';
 
 function flowSource(parameters: Record<string, unknown>): string {
   return JSON.stringify({
@@ -58,6 +58,47 @@ test('flow editor schema index discovers connector actions from outline ranges',
   assert.equal(targets[0]?.operationRef.operationId, 'GetItems');
   assert.equal(targets[0]?.operationRef.apiName, 'shared_sharepointonline');
   assert.equal(targets[0]?.operationRef.connectionName, 'shared-sharepointonline-1');
+});
+
+test('flow editor schema targets prefer canonical API ids over Flow detail aliases', () => {
+  const source = JSON.stringify({
+    properties: {
+      connectionReferences: {
+        shared_commondataserviceforapps: {
+          connectionName: 'shared-commondataser-da8725a8',
+          id: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+          displayName: 'Microsoft Dataverse',
+          apiName: 'commondataserviceforapps',
+        },
+      },
+      definition: {
+        actions: {
+          List_accounts: {
+            type: 'OpenApiConnection',
+            inputs: {
+              host: {
+                connectionReferenceName: 'shared_commondataserviceforapps',
+                operationId: 'ListRecords',
+              },
+              parameters: {
+                entityName: 'accounts',
+              },
+            },
+            runAfter: {},
+          },
+        },
+      },
+    },
+  }, null, 2);
+  const analysis = analyzeFlow(source, source.indexOf('entityName'));
+  const target = collectFlowEditorSchemaTargets(source, analysis)[0];
+  assert.ok(target);
+
+  assert.equal(target.operationRef.apiId, '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps');
+  assert.equal(target.operationRef.apiName, 'shared_commondataserviceforapps');
+  assert.equal(target.operationRef.apiRef, '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps');
+  assert.equal(target.operationRef.connectionName, 'shared-commondataser-da8725a8');
+  assert.equal(dynamicApiRef(target.operationRef, { apiName: 'commondataserviceforapps', operationId: 'ListRecords', fields: [] }), '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps');
 });
 
 test('flow editor schema completions suggest connector parameter keys and dynamic values', () => {

@@ -15,23 +15,23 @@ export function useFlowDynamicOptions(
   const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicValues), [schema]);
   const parameters = useMemo(() => readConnectorParameters(action), [action]);
   const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicValues), parameters), [fields, parameters]);
+  const apiRef = dynamicApiRef(operationRef, schema);
   const signature = useMemo(() => JSON.stringify({
     environment,
-    apiName: operationRef.apiName || schema?.apiName,
+    apiRef,
     connectionName: operationRef.connectionName,
     fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicValues]),
     parameters: dynamicParameters,
-  }), [dynamicParameters, environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName]);
+  }), [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]);
 
   useEffect(() => {
     let cancelled = false;
-    const apiName = operationRef.apiName || schema?.apiName;
-    if (!environment || !apiName || !fields.length) {
+    if (!environment || !apiRef || !fields.length) {
       setOptions({});
       return;
     }
     void Promise.all(fields.map(async (field) => {
-      const values = await loadFlowDynamicEnum(environment, apiName, operationRef.connectionName, field.dynamicValues, dynamicParameters);
+      const values = await loadFlowDynamicEnum(environment, apiRef, operationRef.connectionName, field.dynamicValues, dynamicParameters);
       return [fieldSchemaKey(field), values] as const;
     }))
       .then((entries) => {
@@ -42,7 +42,7 @@ export function useFlowDynamicOptions(
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
       });
     return () => { cancelled = true; };
-  }, [environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName, signature, toast]);
+  }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
 
   return options;
 }
@@ -58,23 +58,23 @@ export function useFlowDynamicSchemaFields(
   const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicSchema), [schema]);
   const parameters = useMemo(() => readConnectorParameters(action), [action]);
   const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicSchema), parameters), [fields, parameters]);
+  const apiRef = dynamicApiRef(operationRef, schema);
   const signature = useMemo(() => JSON.stringify({
     environment,
-    apiName: operationRef.apiName || schema?.apiName,
+    apiRef,
     connectionName: operationRef.connectionName,
     fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicSchema]),
     parameters: dynamicParameters,
-  }), [dynamicParameters, environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName]);
+  }), [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]);
 
   useEffect(() => {
     let cancelled = false;
-    const apiName = operationRef.apiName || schema?.apiName;
-    if (!environment || !apiName || !fields.length) {
+    if (!environment || !apiRef || !fields.length) {
       setFieldsByParent({});
       return;
     }
     void Promise.all(fields.map(async (field) => {
-      const values = await loadFlowDynamicProperties(environment, apiName, operationRef.connectionName, field, dynamicParameters);
+      const values = await loadFlowDynamicProperties(environment, apiRef, operationRef.connectionName, field, dynamicParameters);
       return [fieldSchemaKey(field), values] as const;
     }))
       .then((entries) => {
@@ -85,7 +85,7 @@ export function useFlowDynamicSchemaFields(
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
       });
     return () => { cancelled = true; };
-  }, [environment, fields, operationRef.apiName, operationRef.connectionName, schema?.apiName, signature, toast]);
+  }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
 
   return fieldsByParent;
 }
@@ -128,6 +128,11 @@ export function dynamicParameterReferences(metadata: unknown): string[] {
 export function fieldSchemaKey(field: FlowApiOperationSchemaField) {
   return `${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`;
 }
+
+export function dynamicApiRef(operationRef: FlowActionOperationRef, schema: FlowApiOperationSchema | null): string | undefined {
+  return operationRef.apiId || operationRef.apiRef || operationRef.apiName || schema?.apiId || schema?.apiName;
+}
+
 export function groupConnectorFields(fields: FlowApiOperationSchemaField[]): Array<{ location: string; fields: FlowApiOperationSchemaField[] }> {
   const order = ['path', 'query', 'body', 'header', 'parameter', 'internal'];
   const groups = new Map<string, FlowApiOperationSchemaField[]>();

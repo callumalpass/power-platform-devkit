@@ -8,6 +8,11 @@ export type FlowEnvironmentConnection = {
   apiName?: string;
   apiId?: string;
   status?: string;
+  solutionReferences?: Array<{
+    id?: string;
+    logicalName?: string;
+    displayName?: string;
+  }>;
   raw?: unknown;
 };
 
@@ -369,16 +374,35 @@ function readConnectorUsage(name: string, kind: 'action' | 'trigger', path: stri
 function findConnectionForReference(reference: FlowConnectionReference, connections: FlowEnvironmentConnection[]): FlowEnvironmentConnection | undefined {
   const name = normalizeConnectionName(reference.connectionName);
   const id = normalizeConnectionId(reference.connectionId);
+  const logicalName = normalizeConnectionName(reference.logicalName);
   return connections.find((connection) => {
     return (name && normalizeConnectionName(connection.name) === name)
       || (id && normalizeConnectionId(connection.id) === id)
-      || (reference.connectionName && normalizeConnectionId(connection.id).endsWith(`/connections/${reference.connectionName.toLowerCase()}`));
+      || (reference.connectionName && normalizeConnectionId(connection.id).endsWith(`/connections/${reference.connectionName.toLowerCase()}`))
+      || (logicalName && (connection.solutionReferences || []).some((solutionReference) => normalizeConnectionName(solutionReference.logicalName) === logicalName));
   });
 }
 
 function buildConnectionReferenceValue(existing: MutableJson, connection: FlowEnvironmentConnection): MutableJson {
   const apiId = connection.apiId || (connection.apiName ? `/providers/Microsoft.PowerApps/apis/${connection.apiName}` : undefined);
   const apiName = connection.apiName || apiNameFromId(connection.apiId);
+  const existingConnectionName = firstString(existing.connectionName, prop(existing, 'connection.name'));
+  const logicalName = firstString(prop(existing, 'connection.connectionReferenceLogicalName'), existing.connectionReferenceLogicalName)
+    || (!existingConnectionName ? connection.solutionReferences?.find((reference) => reference.logicalName)?.logicalName : undefined);
+  if (logicalName && !existingConnectionName) {
+    return {
+      ...existing,
+      runtimeSource: firstString(existing.runtimeSource) || 'embedded',
+      api: {
+        ...(isObject(existing.api) ? existing.api : {}),
+        ...(apiName ? { name: apiName } : {}),
+      },
+      connection: {
+        ...(isObject(existing.connection) ? existing.connection : {}),
+        connectionReferenceLogicalName: logicalName,
+      },
+    };
+  }
   return {
     ...existing,
     source: firstString(existing.source) || 'Embedded',

@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractFlowCallbackUrl, flowCallbackTriggerNames, flowRunTriggerNames, flowValidationFromError } from '../src/ui-react/automate-data.js';
+import {
+  extractFlowCallbackUrl,
+  flowActivationRequest,
+  flowCallbackTriggerNames,
+  flowIdentifier,
+  flowRuntimeId,
+  flowRunTriggerNames,
+  flowValidationFromError,
+  flowWorkflowId,
+  normalizeDataverseFlow,
+  sameFlowIdentity,
+} from '../src/ui-react/automate-data.js';
 import { ApiRequestError } from '../src/ui-react/utils.js';
 
 test('flow validation normalizes Power Automate checker descriptions', () => {
@@ -95,4 +106,47 @@ test('flow run trigger names use trigger URI when definition names are unavailab
   };
 
   assert.deepEqual(flowRunTriggerNames(flow, ''), ['Recurrence']);
+});
+
+test('flow identity helpers separate workflow ids from runtime ids', () => {
+  const flow = {
+    source: 'flow' as const,
+    name: 'workflow-id',
+    properties: {
+      workflowEntityId: 'workflow-id',
+      resourceId: '/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id',
+      flowTriggerUri: 'https://example.test/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id/triggers/Recurrence/run?api-version=2016-11-01',
+    },
+  };
+
+  assert.equal(flowIdentifier(flow), 'workflow-id');
+  assert.equal(flowWorkflowId(flow), 'workflow-id');
+  assert.equal(flowRuntimeId(flow), 'runtime-id');
+  assert.equal(sameFlowIdentity(flow, { source: 'flow', name: 'runtime-id' }), true);
+});
+
+test('flow activation requests prefer Dataverse workflow state when workflow id is known', () => {
+  assert.deepEqual(
+    flowActivationRequest({ source: 'flow', name: 'runtime-id', properties: { workflowEntityId: 'workflow-id' } }, true),
+    {
+      api: 'dv',
+      method: 'PATCH',
+      path: '/workflows(workflow-id)',
+      body: { statecode: 1 },
+      responseType: 'void',
+    },
+  );
+  assert.deepEqual(
+    flowActivationRequest({ source: 'flow', name: 'runtime-id' }, false),
+    {
+      api: 'flow',
+      method: 'POST',
+      path: '/flows/runtime-id/stop',
+    },
+  );
+});
+
+test('Dataverse flow fallback maps statecode 1 to Started and 0 to Stopped', () => {
+  assert.equal(normalizeDataverseFlow({ name: 'On flow', workflowid: 'on-id', statecode: 1 }).properties?.state, 'Started');
+  assert.equal(normalizeDataverseFlow({ name: 'Off flow', workflowid: 'off-id', statecode: 0 }).properties?.state, 'Stopped');
 });

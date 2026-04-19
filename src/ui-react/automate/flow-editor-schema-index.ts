@@ -10,6 +10,7 @@ import {
   type FlowActionOperationRef,
 } from './flow-action-document.js';
 import {
+  dynamicApiRef,
   expandDynamicSchemaFields,
   fieldSchemaKey,
   pickDynamicParameters,
@@ -221,12 +222,12 @@ async function loadDynamicSchemaFields(
 ): Promise<Record<string, FlowApiOperationSchemaField[]>> {
   const dynamicFields = fields.filter((field) => field.dynamicSchema);
   if (!dynamicFields.length) return {};
-  const apiName = target.operationRef.apiName || schema?.apiName;
-  if (!apiName) return {};
+  const apiRef = dynamicApiRef(target.operationRef, schema);
+  if (!apiRef) return {};
   const parameters = readConnectorParameters(target.action);
   const dynamicParameters = pickDynamicParameters(dynamicFields.map((field) => field.dynamicSchema), parameters);
   const entries = await Promise.all(dynamicFields.map(async (field) => {
-    const values = await cachedDynamicSchemaFields(environment, apiName, target.operationRef.connectionName, field, dynamicParameters);
+    const values = await cachedDynamicSchemaFields(environment, apiRef, target.operationRef.connectionName, field, dynamicParameters);
     return [fieldSchemaKey(field), values] as const;
   }));
   return Object.fromEntries(entries.filter(([, values]) => values.length));
@@ -240,12 +241,12 @@ async function loadDynamicOptions(
 ): Promise<Record<string, FlowDynamicValueOption[]>> {
   const dynamicFields = fields.filter((field) => field.dynamicValues);
   if (!dynamicFields.length) return {};
-  const apiName = target.operationRef.apiName || schema?.apiName;
-  if (!apiName) return {};
+  const apiRef = dynamicApiRef(target.operationRef, schema);
+  if (!apiRef) return {};
   const parameters = readConnectorParameters(target.action);
   const dynamicParameters = pickDynamicParameters(dynamicFields.map((field) => field.dynamicValues), parameters);
   const entries = await Promise.all(dynamicFields.map(async (field) => {
-    const values = await cachedDynamicOptions(environment, apiName, target.operationRef.connectionName, field.dynamicValues, dynamicParameters);
+    const values = await cachedDynamicOptions(environment, apiRef, target.operationRef.connectionName, field.dynamicValues, dynamicParameters);
     return [fieldSchemaKey(field), values] as const;
   }));
   return Object.fromEntries(entries.filter(([, values]) => values.length));
@@ -253,15 +254,15 @@ async function loadDynamicOptions(
 
 function cachedDynamicSchemaFields(
   environment: string,
-  apiName: string,
+  apiRef: string,
   connectionName: string | undefined,
   field: FlowApiOperationSchemaField,
   parameters: Record<string, unknown>,
 ): Promise<FlowApiOperationSchemaField[]> {
-  const key = stableCacheKey(['schema', environment, apiName, connectionName || '', fieldSchemaKey(field), field.dynamicSchema, parameters]);
+  const key = stableCacheKey(['schema', environment, apiRef, connectionName || '', fieldSchemaKey(field), field.dynamicSchema, parameters]);
   let promise = dynamicSchemaCache.get(key);
   if (!promise) {
-    promise = loadFlowDynamicProperties(environment, apiName, connectionName, field, parameters)
+    promise = loadFlowDynamicProperties(environment, apiRef, connectionName, field, parameters)
       .catch((error) => {
         dynamicSchemaCache.delete(key);
         throw error;
@@ -273,15 +274,15 @@ function cachedDynamicSchemaFields(
 
 function cachedDynamicOptions(
   environment: string,
-  apiName: string,
+  apiRef: string,
   connectionName: string | undefined,
   dynamicValues: unknown,
   parameters: Record<string, unknown>,
 ): Promise<FlowDynamicValueOption[]> {
-  const key = stableCacheKey(['options', environment, apiName, connectionName || '', dynamicValues, parameters]);
+  const key = stableCacheKey(['options', environment, apiRef, connectionName || '', dynamicValues, parameters]);
   let promise = dynamicOptionsCache.get(key);
   if (!promise) {
-    promise = loadFlowDynamicEnum(environment, apiName, connectionName, dynamicValues, parameters)
+    promise = loadFlowDynamicEnum(environment, apiRef, connectionName, dynamicValues, parameters)
       .catch((error) => {
         dynamicOptionsCache.delete(key);
         throw error;

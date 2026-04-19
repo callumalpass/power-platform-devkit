@@ -190,7 +190,7 @@ export function FetchXmlTab(props: {
       .then((detail) => {
         if (cancelled) return;
         setEntityDetail(detail);
-        setSelectedAttrs((current) => current.length ? current : getDefaultSelectedColumns(detail, 0));
+        setSelectedAttrs(getDefaultSelectedColumns(detail, 0));
       })
       .catch((error) => {
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
