@@ -14,28 +14,7 @@ Desktop app, CLI, MCP server, and library for working with Microsoft Power Platf
 - **CLI** -- `pp`, the command-line tool for scripted and terminal use.
 - **MCP server** -- `pp-mcp`, a stdio server for AI clients.
 
-The Windows installer can install any combination of those artifacts. The npm package installs the CLI and MCP server only.
-
-### npm
-
-If you already have Node.js 22+ installed:
-
-```sh
-npm install -g pp
-```
-
-Or run without a global install:
-
-```sh
-npx pp --help
-```
-
-The npm package exposes two binaries:
-
-- `pp` for the CLI
-- `pp-mcp` for the MCP server
-
-The npm package does not include PP Desktop. Use the Windows installer for the packaged desktop app, or run Desktop from source during development.
+`pp` is not published on npm. Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Prebuilt CLI and MCP binaries are available for Windows, macOS (arm64), and Linux (x64). PP Desktop is packaged by the Windows installer and as standalone macOS/Linux Electron archives.
 
 ### Windows
 
@@ -47,9 +26,41 @@ Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run
 
 Leave **Add pp command-line tools to PATH** checked if you want to use `pp` and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
 
-For unreleased builds, download the `pp-windows-<commit>` artifact from the latest successful CI workflow run.
-
 PP Desktop is the recommended Windows experience. It uses the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Desktop talks to its backend through Electron IPC; there is no local web server to start and no `pp ui` command.
+
+### macOS
+
+Download `pp-darwin-arm64.tar.gz` from the latest [GitHub Release](../../releases), extract it, and place the `pp` and `pp-mcp` binaries somewhere on your `PATH`:
+
+```sh
+curl -LO https://github.com/callumalpass/power-platform-devkit/releases/latest/download/pp-darwin-arm64.tar.gz
+tar -xzf pp-darwin-arm64.tar.gz
+sudo mv pp pp-mcp /usr/local/bin/
+```
+
+For PP Desktop, download `pp-desktop-darwin-arm64.zip`, unzip it, and move `PP Desktop.app` to `/Applications`. The macOS desktop archive is currently unsigned and not notarized, so treat it as a development/pre-release build.
+
+### Linux
+
+Download `pp-linux-x64.tar.gz` from the latest [GitHub Release](../../releases), extract it, and place the binaries on your `PATH`:
+
+```sh
+curl -LO https://github.com/callumalpass/power-platform-devkit/releases/latest/download/pp-linux-x64.tar.gz
+tar -xzf pp-linux-x64.tar.gz
+sudo mv pp pp-mcp /usr/local/bin/
+```
+
+For PP Desktop, download `pp-desktop-linux-x64.tar.gz`, extract it, and run the bundled Electron app:
+
+```sh
+curl -LO https://github.com/callumalpass/power-platform-devkit/releases/latest/download/pp-desktop-linux-x64.tar.gz
+tar -xzf pp-desktop-linux-x64.tar.gz
+./pp-desktop-linux-x64/pp
+```
+
+### Unreleased builds
+
+For unreleased builds, download the `pp-<platform>-<arch>-<commit>` artifact from the latest successful CI workflow run. Linux and macOS artifacts include both the CLI/MCP archive and the PP Desktop archive.
 
 ## Quick start
 
@@ -322,7 +333,7 @@ Build self-contained executables with:
 pnpm run build:sea
 ```
 
-This emits `pp.exe` and `pp-mcp.exe` under `release/win32-x64/`. The SEA build currently runs on Windows hosts only.
+This emits `pp` and `pp-mcp` for the current host under `release/<platform>-<arch>/`, with `.exe` extensions on Windows.
 
 Build the Electron desktop directory with:
 
@@ -330,4 +341,4 @@ Build the Electron desktop directory with:
 pnpm run package:desktop
 ```
 
-The SEA build emits `pp.exe` and `pp-mcp.exe` under `release/win32-x64/`. The Electron packaging step emits the desktop app under `release/electron/`. The Inno Setup installer definition at `packaging/windows/pp.iss` installs into `Program Files\PP`, offers Desktop, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates a Start menu shortcut for PP Desktop, and registers uninstall support.
+The SEA build emits `pp` and `pp-mcp` under `release/<platform>-<arch>/`. The Electron packaging step emits the desktop app under `release/electron/`; CI archives this as `pp-desktop-linux-x64.tar.gz` on Linux and `pp-desktop-darwin-arm64.zip` on macOS. The Inno Setup installer definition at `packaging/windows/pp.iss` installs into `Program Files\PP`, offers Desktop, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates a Start menu shortcut for PP Desktop, and registers uninstall support.

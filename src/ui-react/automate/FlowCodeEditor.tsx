@@ -9,9 +9,11 @@ import { analyzeFlow } from '../../flow-language.js';
 import type { DiagnosticItem, FlowAnalysis, FlowAnalysisOutlineItem, ToastFn } from '../ui-types.js';
 import { applyMonacoAppTheme, attachMonacoVim, type MonacoVimAttachment } from '../monaco-support.js';
 import type { FlowEditorHandle } from './types.js';
+import { findFlowExpressionCompletionContext } from '../../flow-expression-completions.js';
 import { INPUT_LABELS, escapeMarkdown, shorten } from './outline-utils.js';
 import {
   EMPTY_FLOW_EDITOR_SCHEMA_INDEX,
+  flowEditorExpressionSchemaCompletionItems,
   flowEditorSchemaCompletionItems,
   type FlowEditorSchemaIndex,
 } from './flow-editor-schema-index.js';
@@ -143,7 +145,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       theme: 'pp-app',
     });
     const completionProvider = monaco.languages.registerCompletionItemProvider(FLOW_JSON_LANGUAGE_ID, {
-      triggerCharacters: ['"', "'", '@', ':', '(', ','],
+      triggerCharacters: ['"', "'", '@', ':', '(', ',', '[', '?'],
       provideCompletionItems: (completionModel, position) => {
         if (completionModel.uri.toString() !== model.uri.toString()) return { suggestions: [] };
         const source = completionModel.getValue();
@@ -155,6 +157,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
             suggestions: [
               ...flowSchemaCompletions(completionModel, position, currentAnalysis, schemaIndexRef.current),
               ...flowConnectionCompletions(completionModel, position, currentAnalysis, connectionModelRef.current),
+              ...flowExpressionSchemaCompletions(completionModel, position, schemaIndexRef.current),
               ...flowAnalysisCompletions(completionModel, position, currentAnalysis),
               ...flowSnippetCompletions(completionModel, position),
             ],
@@ -189,11 +192,11 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       valueRef.current = next;
       onChangeRef.current(next);
       const text = event.changes.map((change) => change.text).join('');
-      if (!/[A-Za-z_@'(),]/.test(text)) return;
+      if (!/[A-Za-z_@'(),?\[]/.test(text)) return;
       const position = editor.getPosition();
       if (!position) return;
       const offset = model.getOffsetAt(position);
-      if (findExpressionCompletionPrefixStart(model.getValue(), offset) === null) return;
+      if (!findFlowExpressionCompletionContext(model.getValue(), offset, { windowSize: 200, stopAtDoubleQuote: true })) return;
       window.setTimeout(() => {
         if (editor.getModel()?.uri.toString() === model.uri.toString()) {
           editor.trigger('pp-flow-expression', 'editor.action.triggerSuggest', {});
@@ -329,6 +332,24 @@ function flowSchemaCompletions(
   }));
 }
 
+function flowExpressionSchemaCompletions(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  schemaIndex: FlowEditorSchemaIndex,
+): monaco.languages.CompletionItem[] {
+  const cursor = model.getOffsetAt(position);
+  const range = flowCompletionRange(model, position);
+  return flowEditorExpressionSchemaCompletionItems(model.getValue(), cursor, schemaIndex).map((item) => ({
+    label: item.label,
+    kind: monaco.languages.CompletionItemKind.Property,
+    detail: item.detail,
+    documentation: item.documentation,
+    insertText: item.insertText,
+    sortText: item.sortText,
+    range,
+  }));
+}
+
 function flowConnectionCompletions(
   model: monaco.editor.ITextModel,
   position: monaco.Position,
@@ -362,9 +383,9 @@ function flowSnippetCompletions(model: monaco.editor.ITextModel, position: monac
 
 function flowCompletionRange(model: monaco.editor.ITextModel, position: monaco.Position): monaco.IRange {
   const offset = model.getOffsetAt(position);
-  const expressionPrefixStart = findExpressionCompletionPrefixStart(model.getValue(), offset);
-  if (expressionPrefixStart !== null) {
-    const start = model.getPositionAt(expressionPrefixStart);
+  const expressionContext = findFlowExpressionCompletionContext(model.getValue(), offset, { windowSize: 200, stopAtDoubleQuote: true });
+  if (expressionContext) {
+    const start = model.getPositionAt(expressionContext.replaceFrom);
     if (start.lineNumber === position.lineNumber) {
       return {
         startLineNumber: position.lineNumber,
@@ -385,44 +406,6 @@ function wordCompletionRange(model: monaco.editor.ITextModel, position: monaco.P
     startColumn: word.startColumn,
     endColumn: word.endColumn,
   };
-}
-
-function findExpressionCompletionPrefixStart(source: string, cursor: number): number | null {
-  const windowStart = Math.max(0, cursor - 200);
-  const before = source.slice(windowStart, cursor);
-  const expressionStart = before.lastIndexOf('@');
-  if (expressionStart < 0) return null;
-  const expressionOffset = before.startsWith('@{', expressionStart) ? 2 : 1;
-  const expressionBefore = before.slice(expressionStart + expressionOffset);
-  if (expressionBefore.includes('"')) return null;
-
-  const targetNamePrefixMatch = expressionBefore.match(/(?:actions|body|outputs|items|variables|parameters|result)\(\s*'([^']*)$/i);
-  if (targetNamePrefixMatch) {
-    return cursor - (targetNamePrefixMatch[1] ?? '').length;
-  }
-
-  if (isInsideWdlString(expressionBefore)) return null;
-  const functionPrefixMatch = expressionBefore.match(/[A-Za-z_][A-Za-z0-9_]*$/);
-  const prefix = functionPrefixMatch?.[0] ?? '';
-  const prefixStart = expressionBefore.length - prefix.length;
-  const previous = expressionBefore[prefixStart - 1];
-  if (!prefix && expressionBefore.length && !/[({[,\s@?:+\-*/]/.test(expressionBefore[expressionBefore.length - 1]!)) return null;
-  if (previous && !/[({[,\s@?:+\-*/]/.test(previous)) return null;
-  return cursor - prefix.length;
-}
-
-function isInsideWdlString(value: string): boolean {
-  let inString = false;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    if (char !== '\'') continue;
-    if (inString && value[index + 1] === '\'') {
-      index += 1;
-      continue;
-    }
-    inString = !inString;
-  }
-  return inString;
 }
 
 function completionKind(type: string | undefined): monaco.languages.CompletionItemKind {

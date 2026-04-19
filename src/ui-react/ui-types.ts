@@ -153,6 +153,12 @@ export type FlowDynamicValueOption = {
   raw?: unknown;
 };
 
+export type FlowApiOperationResponseSchema = {
+  statusCode: string;
+  schema?: unknown;
+  bodySchema?: unknown;
+};
+
 export type FlowApiOperationSchema = {
   apiId?: string;
   apiName?: string;
@@ -161,6 +167,7 @@ export type FlowApiOperationSchema = {
   summary?: string;
   description?: string;
   fields: FlowApiOperationSchemaField[];
+  responses?: FlowApiOperationResponseSchema[];
   raw?: unknown;
 };
 

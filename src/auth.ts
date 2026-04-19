@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ConfidentialClientApplication,
@@ -466,7 +466,7 @@ function loginFailureDiagnostic(account: Account, resource: string, error: unkno
 
 async function createPublicClientApplication(account: UserAccount, options: ConfigStoreOptions): Promise<PublicClientApplication> {
   const cacheDir = getMsalCacheDir(options);
-  await mkdir(cacheDir, { recursive: true });
+  await mkdir(cacheDir, { recursive: true, mode: 0o700 });
   const cachePath = join(cacheDir, `${resolveTokenCacheKey(account)}.json`);
   const cachePlugin: ICachePlugin = {
     beforeCacheAccess: async (context) => {
@@ -484,7 +484,8 @@ async function createPublicClientApplication(account: UserAccount, options: Conf
     afterCacheAccess: async (context) => {
       if (!context.cacheHasChanged) return;
       try {
-        await writeFile(cachePath, context.tokenCache.serialize(), 'utf8');
+        await writeFile(cachePath, context.tokenCache.serialize(), { encoding: 'utf8', mode: 0o600 });
+        if (process.platform !== 'win32') await chmod(cachePath, 0o600).catch(() => undefined);
       } catch (error) {
         await quarantineCorruptCacheFile(cachePath);
         throw new Error(`Failed to write MSAL cache for ${account.name}: ${error instanceof Error ? error.message : String(error)}`);

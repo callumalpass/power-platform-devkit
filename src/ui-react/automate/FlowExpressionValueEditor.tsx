@@ -1,7 +1,13 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { useEffect, useRef } from 'react';
+import { findFlowExpressionCompletionContext } from '../../flow-expression-completions.js';
 import { completeFlowExpression } from '../../flow-language.js';
 import { applyMonacoAppTheme } from '../monaco-support.js';
+import {
+  EMPTY_FLOW_EDITOR_SCHEMA_INDEX,
+  flowEditorExpressionSchemaCompletionItems,
+  type FlowEditorSchemaIndex,
+} from './flow-editor-schema-index.js';
 import { FLOW_EXPRESSION_TOKEN_RULES } from './flow-monaco-tokens.js';
 
 const FLOW_FIELD_LANGUAGE_ID = 'pp-flow-field-expression';
@@ -11,6 +17,7 @@ let flowFieldModelCounter = 0;
 export function FlowExpressionValueEditor(props: {
   value: string;
   source: string;
+  schemaIndex?: FlowEditorSchemaIndex;
   mode: 'text' | 'json';
   onChange: (value: string) => void;
 }) {
@@ -19,11 +26,13 @@ export function FlowExpressionValueEditor(props: {
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const valueRef = useRef(props.value);
   const sourceRef = useRef(props.source);
+  const schemaIndexRef = useRef<FlowEditorSchemaIndex>(props.schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX);
   const onChangeRef = useRef(props.onChange);
   const suppressChangeRef = useRef(false);
   const modeRef = useRef(props.mode);
 
   useEffect(() => { sourceRef.current = props.source; }, [props.source]);
+  useEffect(() => { schemaIndexRef.current = props.schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX; }, [props.schemaIndex]);
   useEffect(() => { onChangeRef.current = props.onChange; }, [props.onChange]);
   useEffect(() => { modeRef.current = props.mode; }, [props.mode]);
 
@@ -57,19 +66,31 @@ export function FlowExpressionValueEditor(props: {
         try {
           if (completionModel.uri.toString() !== model.uri.toString()) return { suggestions: [] };
           const cursor = completionModel.getOffsetAt(position);
-          const context = findFieldExpressionCompletionContext(completionModel.getValue(), cursor);
+          const context = findFlowExpressionCompletionContext(completionModel.getValue(), cursor);
           if (!context) return { suggestions: [] };
           const range = rangeFromOffsets(completionModel, context.replaceFrom, cursor);
+          const schemaSuggestions = flowEditorExpressionSchemaCompletionItems(completionModel.getValue(), cursor, schemaIndexRef.current);
           return {
-            suggestions: completeFlowExpression(sourceRef.current, context.text, context.relativeCursor).map((item) => ({
-              label: item.label,
-              kind: completionKind(item.type),
-              detail: item.detail || item.type,
-              documentation: item.info,
-              insertText: item.apply || item.label,
-              insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-              range,
-            })),
+            suggestions: [
+              ...schemaSuggestions.map((item) => ({
+                label: item.label,
+                kind: monaco.languages.CompletionItemKind.Property,
+                detail: item.detail,
+                documentation: item.documentation,
+                insertText: item.insertText,
+                sortText: item.sortText,
+                range,
+              })),
+              ...completeFlowExpression(sourceRef.current, context.text, context.relativeCursor).map((item) => ({
+                label: item.label,
+                kind: completionKind(item.type),
+                detail: item.detail || item.type,
+                documentation: item.info,
+                insertText: item.apply || item.label,
+                insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+                range,
+              })),
+            ],
           };
         } catch (error) {
           console.error('Flow expression completions failed', error);
@@ -84,11 +105,11 @@ export function FlowExpressionValueEditor(props: {
       if (!suppressChangeRef.current) onChangeRef.current(next);
 
       const inserted = event.changes.map((change) => change.text).join('');
-      if (!/[A-Za-z_@'(),?]/.test(inserted)) return;
+      if (!/[A-Za-z_@'(),?\[]/.test(inserted)) return;
       const position = editor.getPosition();
       if (!position) return;
       const offset = model.getOffsetAt(position);
-      if (!findFieldExpressionCompletionContext(model.getValue(), offset)) return;
+      if (!findFlowExpressionCompletionContext(model.getValue(), offset)) return;
       window.setTimeout(() => {
         if (editor.getModel()?.uri.toString() === model.uri.toString()) {
           editor.trigger('pp-flow-field-expression', 'editor.action.triggerSuggest', {});
@@ -180,55 +201,6 @@ function editorOptions(mode: 'text' | 'json'): monaco.editor.IStandaloneEditorCo
     theme: 'pp-app',
     wordWrap: mode === 'json' ? 'on' : 'off',
   };
-}
-
-function findFieldExpressionCompletionContext(source: string, cursor: number): { text: string; relativeCursor: number; replaceFrom: number } | null {
-  const windowStart = Math.max(0, cursor - 240);
-  const before = source.slice(windowStart, cursor);
-  const expressionStart = before.lastIndexOf('@');
-  if (expressionStart < 0) return null;
-
-  const expressionOffset = before.startsWith('@{', expressionStart) ? 2 : 1;
-  const expressionFrom = windowStart + expressionStart + expressionOffset;
-  if (expressionFrom > cursor) return null;
-
-  const expressionBefore = source.slice(expressionFrom, cursor);
-  const targetNamePrefixMatch = expressionBefore.match(/(?:actions|body|outputs|items|variables|parameters|result)\(\s*'([^']*)$/i);
-  if (targetNamePrefixMatch) {
-    return {
-      text: expressionBefore,
-      relativeCursor: expressionBefore.length,
-      replaceFrom: cursor - (targetNamePrefixMatch[1] ?? '').length,
-    };
-  }
-
-  if (isInsideWdlString(expressionBefore)) return null;
-  const functionPrefixMatch = expressionBefore.match(/[A-Za-z_][A-Za-z0-9_]*$/);
-  const prefix = functionPrefixMatch?.[0] ?? '';
-  const prefixStart = expressionBefore.length - prefix.length;
-  const previous = expressionBefore[prefixStart - 1];
-  const last = expressionBefore[expressionBefore.length - 1];
-  if (!prefix && expressionBefore.length && last && !/[({[,\s@?:+\-*/]/.test(last)) return null;
-  if (previous && !/[({[,\s@?:+\-*/]/.test(previous)) return null;
-  return {
-    text: expressionBefore,
-    relativeCursor: expressionBefore.length,
-    replaceFrom: cursor - prefix.length,
-  };
-}
-
-function isInsideWdlString(value: string): boolean {
-  let inString = false;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    if (char !== "'") continue;
-    if (inString && value[index + 1] === "'") {
-      index += 1;
-      continue;
-    }
-    inString = !inString;
-  }
-  return inString;
 }
 
 function rangeFromOffsets(model: monaco.editor.ITextModel, from: number, to: number): monaco.IRange {

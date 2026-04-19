@@ -14,11 +14,13 @@ import {
   valueToEditText,
 } from './flow-action-document.js';
 import { summarizeDynamicMetadata } from './flow-dynamic-schema.js';
+import type { FlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 
 export function CommonActionFields(props: {
   action: Record<string, unknown>;
   includeTrailing?: boolean;
   source: string;
+  schemaIndex?: FlowEditorSchemaIndex;
   onChange: (path: string[], value: unknown) => void;
 }) {
   const type = String(props.action.type || '').toLowerCase();
@@ -55,6 +57,7 @@ export function CommonActionFields(props: {
           kind={field.kind}
           options={field.options}
           source={props.source}
+          schemaIndex={props.schemaIndex}
           onChange={(value) => props.onChange(field.path, value)}
         />
       ))}
@@ -66,6 +69,7 @@ export function CommonActionFields(props: {
           value={readPathValue(props.action, field.path)}
           kind={field.kind}
           source={props.source}
+          schemaIndex={props.schemaIndex}
           onChange={(value) => props.onChange(field.path, value)}
         />
       ))}
@@ -74,7 +78,7 @@ export function CommonActionFields(props: {
 }
 type ActionValueOption = string | FlowDynamicValueOption;
 
-export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; options?: FlowDynamicValueOption[]; source: string; onChange: (value: unknown) => void }) {
+export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; options?: FlowDynamicValueOption[]; source: string; schemaIndex?: FlowEditorSchemaIndex; onChange: (value: unknown) => void }) {
   const { field } = props;
   const type = field.type || schemaTypeLabel(field.schema) || 'value';
   const dynamicHint = summarizeDynamicMetadata(field);
@@ -90,11 +94,11 @@ export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; v
         {field.description ? <div className="flow-action-field-desc">{field.description}</div> : null}
         {dynamicHint ? <div className="flow-action-field-desc">{dynamicHint}</div> : null}
       </div>
-      <ActionValueEditor value={props.value} kind={options?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={options} source={props.source} onChange={props.onChange} />
+      <ActionValueEditor value={props.value} kind={options?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={options} source={props.source} schemaIndex={props.schemaIndex} onChange={props.onChange} />
     </div>
   );
 }
-function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: ActionValueOption[]; source: string; onChange: (value: unknown) => void }) {
+function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: ActionValueOption[]; source: string; schemaIndex?: FlowEditorSchemaIndex; onChange: (value: unknown) => void }) {
   const kind = props.kind || (isObject(props.value) || Array.isArray(props.value) ? 'json' : 'text');
   const valueText = valueToEditText(props.value, kind);
   const content = kind === 'select' ? (
@@ -111,6 +115,7 @@ function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text
     <FlowExpressionValueEditor
       value={valueText}
       source={props.source}
+      schemaIndex={props.schemaIndex}
       mode="json"
       onChange={(next) => props.onChange(parseEditableJson(next))}
     />
@@ -118,6 +123,7 @@ function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text
     <FlowExpressionValueEditor
       value={valueText}
       source={props.source}
+      schemaIndex={props.schemaIndex}
       mode="text"
       onChange={(next) => props.onChange(next)}
     />

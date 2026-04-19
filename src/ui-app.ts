@@ -630,7 +630,8 @@ export function renderHtml(options: { scriptSrc?: string } = {}): string {
       .flow-connection-bind-row { grid-template-columns: 1fr; }
     }
     .fetchxml-diagnostics { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-    .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+    .fetchxml-diagnostic { border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 10px; background: var(--bg); color: var(--ink); font: inherit; }
+    .fetchxml-diagnostic:hover { background: var(--surface); }
     .fetchxml-diagnostic.warning { border-left-color: var(--warn); }
     .fetchxml-diagnostic.error { border-left-color: var(--danger); }
     .fetchxml-diagnostic.info { border-left-color: var(--accent); }

@@ -26,6 +26,7 @@ import {
   useFlowDynamicSchemaFields,
   visibleConnectorSchemaFields,
 } from './flow-dynamic-schema.js';
+import { useFlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 import {
   compatibleConnectionReferences,
   connectorLabel,
@@ -156,6 +157,7 @@ export function EditFlowActionModal(props: {
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
   const connectorFieldGroups = groupConnectorFields([...connectorFields, ...existingParameterFields]);
   const dynamicOptions = useFlowDynamicOptions(props.environment, draft, schema, operationRef, props.toast);
+  const expressionSchemaIndex = useFlowEditorSchemaIndex(props.environment, props.source, null, props.toast);
   const hasConnectorSchema = actionLike && Boolean(operationRef.apiRef && operationRef.operationId);
   const compatibleReferences = useMemo(
     () => compatibleConnectionReferences(props.connectionModel, { apiId: operationRef.apiId, apiName: operationRef.apiName }),
@@ -247,6 +249,7 @@ export function EditFlowActionModal(props: {
                             field={field}
                             options={dynamicOptions[fieldSchemaKey(field)]}
                             source={props.source}
+                            schemaIndex={expressionSchemaIndex}
                             value={readPathValue(draft, connectorFieldPath(field))}
                             onChange={(value) => updateDraft(connectorFieldPath(field), value)}
                           />
@@ -260,7 +263,7 @@ export function EditFlowActionModal(props: {
               {actionLike ? (
                 <div className="flow-action-edit-section">
                   <h3>Common fields</h3>
-                  <CommonActionFields action={draft} source={props.source} onChange={updateDraft} />
+                  <CommonActionFields action={draft} source={props.source} schemaIndex={expressionSchemaIndex} onChange={updateDraft} />
                 </div>
               ) : null}
               {!actionLike && !hasConnectorSchema ? (
@@ -276,7 +279,7 @@ export function EditFlowActionModal(props: {
                   <button className="btn btn-ghost" type="button" onClick={syncJsonFromFields}>Reset from fields</button>
                 </div>
               </div>
-              <FlowExpressionValueEditor value={rawText} source={props.source} mode="json" onChange={setRawText} />
+              <FlowExpressionValueEditor value={rawText} source={props.source} schemaIndex={expressionSchemaIndex} mode="json" onChange={setRawText} />
               {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
             </div>
           )}

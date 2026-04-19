@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeFlow, completeFlowExpression, type FlowCompletionItem } from '../src/flow-language.js';
+import { findFlowExpressionCompletionContext } from '../src/flow-expression-completions.js';
 import {
   buildFlowOperationSearchBody,
   normalizeFlowApiOperationSchema,
@@ -12,6 +13,7 @@ import {
 import {
   buildFlowEditorSchemaIndex,
   collectFlowEditorSchemaTargets,
+  flowEditorExpressionSchemaCompletionItems,
   flowEditorSchemaCompletionItems,
   type FlowEditorSchemaActionEntry,
 } from '../src/ui-react/automate/flow-editor-schema-index.js';
@@ -304,6 +306,68 @@ function valueArray(value: unknown): unknown[] {
   return isRecord(value) && Array.isArray(value.value) ? value.value : [];
 }
 
+function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {
+  return values.find(isRecord);
+}
+
+function fieldNames(fields: FlowApiOperationSchemaField[]): Set<string> {
+  return new Set(fields.map((field) => field.name));
+}
+
+function outputFieldsFromSchema(schema: unknown): FlowApiOperationSchemaField[] {
+  const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : {};
+  return Object.entries(properties).flatMap(([name, property]) => {
+    if (!isRecord(property)) return [];
+    return [{
+      name,
+      location: 'output' as const,
+      type: typeof property.type === 'string' ? property.type : undefined,
+      title: firstString(property['x-ms-summary'], property.title),
+      description: typeof property.description === 'string' ? property.description : undefined,
+      schema: property,
+    }];
+  });
+}
+
+function normalizeDynamicInvocationDefinitionForSmoke(source: Record<string, unknown>): Record<string, unknown> {
+  const operationId = firstString(source.operationId, source.operation, source.name);
+  const parameters: Record<string, unknown> = {};
+  if (isRecord(source.parameters)) {
+    for (const [name, raw] of Object.entries(source.parameters)) {
+      if (typeof raw === 'string') {
+        parameters[name] = { parameterReference: raw, required: true };
+        continue;
+      }
+      if (!isRecord(raw)) continue;
+      const reference = firstString(raw.parameterReference, raw.parameter, raw.name, raw.value);
+      parameters[name] = reference ? { ...raw, parameterReference: reference } : raw;
+    }
+  }
+
+  const result: Record<string, unknown> = {
+    ...(operationId ? { operationId } : {}),
+    parameters,
+  };
+  const itemsPath = firstString(source.itemsPath, source['value-collection'], source.valueCollection, source.collection);
+  const itemValuePath = firstString(source.itemValuePath, source['value-path'], source.valuePath, source.value);
+  const itemTitlePath = firstString(source.itemTitlePath, source['value-title'], source.valueTitle, source.title);
+  if (itemsPath) result.itemsPath = itemsPath;
+  if (itemValuePath) result.itemValuePath = itemValuePath;
+  if (itemTitlePath) result.itemTitlePath = itemTitlePath;
+  return result;
+}
+
+function dynamicInvocationParametersForSmoke(definition: Record<string, unknown>, currentParameters: Record<string, unknown>): Record<string, unknown> {
+  const parameterDefinitions = isRecord(definition.parameters) ? definition.parameters : {};
+  const result: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(parameterDefinitions)) {
+    const parameterReference = isRecord(raw) ? firstString(raw.parameterReference, raw.parameter, raw.name) : undefined;
+    const sourceName = parameterReference || name;
+    if (Object.prototype.hasOwnProperty.call(currentParameters, sourceName)) result[name] = currentParameters[sourceName];
+  }
+  return result;
+}
+
 function apiNameFromOperation(operation: unknown): string | undefined {
   const id = firstString(readPath(operation, 'id'), readPath(operation, 'properties.api.id'), readPath(operation, 'properties.api.name'));
   if (!id) return undefined;
@@ -312,7 +376,7 @@ function apiNameFromOperation(operation: unknown): string | undefined {
 }
 
 async function liveRequest<T>(
-  api: 'flow' | 'powerapps',
+  api: 'flow' | 'powerapps' | 'powerautomate',
   path: string,
   options: { method?: string; body?: unknown; query?: Record<string, string> } = {},
 ): Promise<T> {
@@ -449,6 +513,64 @@ test('expression target-name completions are context-aware by function family', 
 
   const loopResultTargets = completeFlowExpression(RICH_COMPLETION_FLOW, "result('For");
   expectCompletion(loopResultTargets, 'For_each_record', 'action');
+});
+
+test('expression completion context parsing is shared across target names and accessors', () => {
+  const targetSource = "@outputs('Prep";
+  const targetContext = findFlowExpressionCompletionContext(targetSource, targetSource.length);
+  assert.equal(targetContext?.kind, 'target-name');
+  assert.equal(targetContext?.text, "outputs('Prep");
+  assert.equal(targetContext?.prefix, 'Prep');
+  assert.equal(targetContext?.targetName?.functionName, 'outputs');
+  assert.equal(targetContext?.replaceFrom, targetSource.indexOf('Prep'));
+
+  const escapedTargetSource = "@body('Bob''s_action";
+  const escapedTargetContext = findFlowExpressionCompletionContext(escapedTargetSource, escapedTargetSource.length);
+  assert.equal(escapedTargetContext?.kind, 'target-name');
+  assert.equal(escapedTargetContext?.prefix, "Bob's_action");
+  assert.equal(escapedTargetContext?.replaceFrom, escapedTargetSource.indexOf('Bob'));
+
+  const nestedTargetSource = "@coalesce(body('Get";
+  const nestedTargetContext = findFlowExpressionCompletionContext(nestedTargetSource, nestedTargetSource.length);
+  assert.equal(nestedTargetContext?.kind, 'target-name');
+  assert.equal(nestedTargetContext?.prefix, 'Get');
+  assert.equal(nestedTargetContext?.targetName?.functionName, 'body');
+  assert.equal(nestedTargetContext?.replaceFrom, nestedTargetSource.indexOf('Get'));
+
+  const accessorSource = "@body('List_accounts')?['va";
+  const accessorContext = findFlowExpressionCompletionContext(accessorSource, accessorSource.length);
+  assert.equal(accessorContext?.kind, 'accessor');
+  assert.equal(accessorContext?.prefix, 'va');
+  assert.equal(accessorContext?.replaceFrom, accessorSource.indexOf('va'));
+  assert.equal(accessorContext?.accessor?.baseExpression, "body('List_accounts')");
+  assert.equal(accessorContext?.accessor?.optional, true);
+
+  const nestedAccessorSource = "@outputs('Get_items')?['body']?['va";
+  const nestedAccessorContext = findFlowExpressionCompletionContext(nestedAccessorSource, nestedAccessorSource.length);
+  assert.equal(nestedAccessorContext?.kind, 'accessor');
+  assert.equal(nestedAccessorContext?.accessor?.baseExpression, "outputs('Get_items')?['body']");
+  assert.deepEqual(nestedAccessorContext?.accessor?.segments, ['body']);
+
+  const nestedCallAccessorSource = "@coalesce(body('Get_current_user')?['disp";
+  const nestedCallAccessorContext = findFlowExpressionCompletionContext(nestedCallAccessorSource, nestedCallAccessorSource.length);
+  assert.equal(nestedCallAccessorContext?.kind, 'accessor');
+  assert.equal(nestedCallAccessorContext?.prefix, 'disp');
+  assert.equal(nestedCallAccessorContext?.accessor?.baseExpression, "body('Get_current_user')");
+  assert.deepEqual(nestedCallAccessorContext?.accessor?.segments, []);
+
+  const firstItemAccessorSource = "@first(body('List_accounts')?['value'])?['acco";
+  const firstItemAccessorContext = findFlowExpressionCompletionContext(firstItemAccessorSource, firstItemAccessorSource.length);
+  assert.equal(firstItemAccessorContext?.kind, 'accessor');
+  assert.equal(firstItemAccessorContext?.prefix, 'acco');
+  assert.equal(firstItemAccessorContext?.accessor?.baseExpression, "first(body('List_accounts')?['value'])");
+
+  const nestedLengthAccessorSource = "@length(body('List_accounts')?['val";
+  const nestedLengthAccessorContext = findFlowExpressionCompletionContext(nestedLengthAccessorSource, nestedLengthAccessorSource.length);
+  assert.equal(nestedLengthAccessorContext?.kind, 'accessor');
+  assert.equal(nestedLengthAccessorContext?.accessor?.baseExpression, "body('List_accounts')");
+
+  const closedSource = "@outputs('PrepareValue')";
+  assert.equal(findFlowExpressionCompletionContext(closedSource, closedSource.length), null);
 });
 
 test('expression completions filter prefixes and stay quiet inside string literals', () => {
@@ -624,6 +746,55 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
   assert.ok(datasetValueCompletions.some((item) => item.label.includes('Quoted Archive') && item.insertText === 'https://contoso.sharepoint.com/sites/\\"Quoted\\"\\\\Archive'));
 });
 
+test('connector operation normalization preserves output response schemas for expression accessors', () => {
+  const schema = normalizeFlowApiOperationSchema(
+    'shared_commondataserviceforapps',
+    '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+    'ListRecords',
+    {
+      name: 'ListRecords',
+      properties: {
+        summary: 'List rows',
+        inputsDefinition: {
+          parameters: {
+            entityName: { type: 'string', required: true },
+          },
+        },
+        responsesDefinition: {
+          200: {
+            type: 'object',
+            properties: {
+              body: {
+                type: 'object',
+                properties: {
+                  value: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      'x-ms-dynamic-properties': {
+                        operationId: 'GetMetadataForGetEntity',
+                        parameters: {
+                          entityName: { parameterReference: 'entityName', required: true },
+                        },
+                        itemValuePath: 'schema',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  );
+
+  assert.ok(schema);
+  assert.equal(schema.responses?.[0]?.statusCode, '200');
+  assert.equal(readPath(schema.responses?.[0]?.bodySchema, 'properties.value.type'), 'array');
+  assert.equal(readPath(schema.responses?.[0]?.bodySchema, 'properties.value.items.x-ms-dynamic-properties.operationId'), 'GetMetadataForGetEntity');
+});
+
 test('connection-aware completions suggest connector host keys and values from the flow connection model', () => {
   const source = JSON.stringify({
     properties: {
@@ -766,6 +937,72 @@ test('live flow API metadata drives the same completions as the editor schema in
   assert.ok(completions.some((item) => item.label === '$filter' && item.kind === 'property'));
   assert.ok(completions.some((item) => item.label === '$top' && item.kind === 'property'));
   assert.equal(completions.some((item) => item.label === '$select'), false, 'existing live API fields should not be suggested again');
+
+  const dynamicOutputSchema = firstRecord(
+    readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items.x-ms-dynamic-properties'),
+    readPath(schema.responses?.[0]?.schema, 'properties.value.items.x-ms-dynamic-properties'),
+  );
+  const outputItemSchema = firstRecord(
+    readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items'),
+    readPath(schema.responses?.[0]?.schema, 'properties.value.items'),
+  );
+  assert.ok(isRecord(dynamicOutputSchema), 'live ListRows response should expose dynamic row output metadata');
+  assert.ok(isRecord(outputItemSchema), 'live ListRows response should expose a row item schema');
+  const dynamicInvocationDefinition = normalizeDynamicInvocationDefinitionForSmoke(dynamicOutputSchema);
+  const dynamicInvocationSourceParameters = {
+    entityName: 'accounts',
+    '$select': 'accountid,name',
+  };
+  const liveOutputSchema = await liveRequest<unknown>(
+    'powerautomate',
+    `/apis/${apiName}/connections/${encodeURIComponent(connectionName)}/listDynamicProperties`,
+    {
+      method: 'POST',
+      body: {
+        parameters: dynamicInvocationParametersForSmoke(dynamicInvocationDefinition, dynamicInvocationSourceParameters),
+        contextParameterAlias: 'body/value',
+        dynamicInvocationDefinition,
+        location: 'output',
+      },
+    },
+  );
+  const dynamicOutputFields = outputFieldsFromSchema(liveOutputSchema);
+  const dynamicOutputNames = fieldNames(dynamicOutputFields);
+  assert.equal(dynamicOutputNames.has('accountid'), true, 'live dynamic ListRows output schema should include accountid');
+  assert.equal(dynamicOutputNames.has('name'), true, 'live dynamic ListRows output schema should include name');
+
+  const outputSource = liveConnectorFlow({
+    apiName,
+    apiId,
+    connectionName,
+    operationId,
+    parameters: {
+      entityName: 'accounts',
+      '$select': 'accountid,name',
+    },
+  });
+  const outputAnalysis = analyzeFlow(outputSource, outputSource.indexOf('"entityName"') + 5);
+  const outputTarget = collectFlowEditorSchemaTargets(outputSource, outputAnalysis)[0];
+  assert.ok(outputTarget);
+  const outputIndex = buildFlowEditorSchemaIndex([{
+    ...outputTarget,
+    schema,
+    fields,
+    options: {},
+    outputFields: {
+      'body/value': dynamicOutputFields,
+    },
+    status: 'ready',
+  }], false);
+  const bodyAccessor = "@body('List_rows')?['value']?['";
+  const bodyAccessorCompletions = flowEditorExpressionSchemaCompletionItems(bodyAccessor, bodyAccessor.length, outputIndex);
+  assert.equal(bodyAccessorCompletions.some((item) => item.label === 'accountid'), true, 'body() accessor completions should include live dynamic accountid');
+  assert.equal(bodyAccessorCompletions.some((item) => item.label === 'name'), true, 'body() accessor completions should include live dynamic name');
+
+  const outputsAccessor = "@outputs('List_rows')?['body']?['value']?['";
+  const outputsAccessorCompletions = flowEditorExpressionSchemaCompletionItems(outputsAccessor, outputsAccessor.length, outputIndex);
+  assert.equal(outputsAccessorCompletions.some((item) => item.label === 'accountid'), true, 'outputs() accessor completions should include live dynamic accountid');
+  assert.equal(outputsAccessorCompletions.some((item) => item.label === 'name'), true, 'outputs() accessor completions should include live dynamic name');
 
   const officeConnection = valueArray(connections).find((connection) => {
     const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';

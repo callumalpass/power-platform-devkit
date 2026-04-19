@@ -1,5 +1,5 @@
 import { ApiRequestError, api, prop } from './utils.js';
-import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationKind, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationKind, FlowApiOperationResponseSchema, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
 import type { FlowEnvironmentConnection } from './automate/flow-connections.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
@@ -437,6 +437,7 @@ export async function loadFlowDynamicProperties(
   connectionName: string | undefined,
   field: FlowApiOperationSchemaField,
   parameters: Record<string, unknown>,
+  options: { location?: 'input' | 'output'; contextParameterAlias?: string } = {},
 ): Promise<FlowApiOperationSchemaField[]> {
   if (!apiRef || !isRecord(field.dynamicSchema)) return [];
   const resolvedConnectionName = await resolveFlowConnectionName(environment, apiRef, connectionName);
@@ -453,9 +454,9 @@ export async function loadFlowDynamicProperties(
     'POST',
     {
       parameters: dynamicInvocationParameters(dynamicInvocationDefinition, parameters),
-      contextParameterAlias: field.name || 'body',
+      contextParameterAlias: options.contextParameterAlias || field.name || 'body',
       dynamicInvocationDefinition,
-      location: 'input',
+      location: options.location || 'input',
     },
   );
   const schema = isRecord(result.response)
@@ -809,6 +810,7 @@ export function normalizeFlowApiOperationSchema(apiName: string, apiId: string |
       summary: firstString(operationDetail.summary, operationDetail.displayName, prop(operationDetail, 'inputsDefinition.summary'), properties.summary),
       description: firstString(operationDetail.description, properties.description),
       fields,
+      responses: normalizeOperationResponses(operationDetail, swagger),
       raw: operationDetail,
     };
   }
@@ -828,6 +830,7 @@ export function normalizeFlowApiOperationSchema(apiName: string, apiId: string |
         summary: typeof methodValue.summary === 'string' ? methodValue.summary : undefined,
         description: typeof methodValue.description === 'string' ? methodValue.description : undefined,
         fields: normalizeSwaggerParameters(parameters, swagger),
+        responses: normalizeOperationResponses(methodValue, swagger),
         raw: methodValue,
       };
     }
@@ -875,6 +878,41 @@ function operationParameters(operation: Record<string, unknown>): unknown[] {
     if (isRecord(value)) return Object.entries(value).map(([name, parameter]) => isRecord(parameter) ? { name, ...parameter } : { name, schema: parameter });
   }
   return [];
+}
+
+function normalizeOperationResponses(operation: Record<string, unknown>, swagger: Record<string, unknown>): FlowApiOperationResponseSchema[] {
+  const responseMap = firstRecordOrUndefined(
+    prop(operation, 'properties.responsesDefinition'),
+    operation.responsesDefinition,
+    prop(operation, 'properties.responses'),
+    operation.responses,
+  );
+  if (!responseMap) return [];
+  return Object.entries(responseMap).flatMap(([statusCode, response]) => {
+    const schema = normalizeResponseSchema(response, swagger);
+    if (!schema) return [];
+    return [{
+      statusCode,
+      schema,
+      bodySchema: responseBodySchema(schema, swagger),
+    }];
+  });
+}
+
+function normalizeResponseSchema(response: unknown, swagger: Record<string, unknown>): unknown {
+  if (!isRecord(response)) return undefined;
+  const schema = isRecord(response.schema)
+    ? response.schema
+    : isRecord(prop(response, 'properties.schema'))
+      ? prop(response, 'properties.schema')
+      : response;
+  return resolveSwaggerSchemaDeep(schema, swagger);
+}
+
+function responseBodySchema(schema: unknown, swagger: Record<string, unknown>): unknown {
+  if (!isRecord(schema)) return undefined;
+  const body = prop(schema, 'properties.body');
+  return isRecord(body) ? resolveSwaggerSchemaDeep(body, swagger) : undefined;
 }
 
 function normalizeOperationDefinitionFields(operation: Record<string, unknown>, swagger: Record<string, unknown>): FlowApiOperationSchemaField[] {
@@ -1036,6 +1074,36 @@ function resolveSwaggerSchema(schema: Record<string, unknown> | undefined, swagg
   return { ...resolveSwaggerSchema(resolved, swagger), ...rest };
 }
 
+function resolveSwaggerSchemaDeep(schema: unknown, swagger: Record<string, unknown>, seen = new Set<string>()): unknown {
+  if (!isRecord(schema)) return schema;
+  const ref = typeof schema.$ref === 'string' ? schema.$ref : '';
+  let resolved = schema;
+  if (ref.startsWith('#/') && !seen.has(ref)) {
+    const target = readJsonPointer(swagger, ref.slice(2));
+    if (isRecord(target)) {
+      seen.add(ref);
+      const { $ref, ...rest } = schema;
+      resolved = {
+        ...(resolveSwaggerSchemaDeep(target, swagger, seen) as Record<string, unknown>),
+        ...rest,
+      };
+      seen.delete(ref);
+    }
+  }
+
+  const next: Record<string, unknown> = { ...resolved };
+  if (isRecord(next.properties)) {
+    next.properties = Object.fromEntries(Object.entries(next.properties).map(([key, value]) => [key, resolveSwaggerSchemaDeep(value, swagger, seen)]));
+  }
+  if (isRecord(next.items)) {
+    next.items = resolveSwaggerSchemaDeep(next.items, swagger, seen);
+  }
+  if (isRecord(next.additionalProperties)) {
+    next.additionalProperties = resolveSwaggerSchemaDeep(next.additionalProperties, swagger, seen);
+  }
+  return next;
+}
+
 function readJsonPointer(source: unknown, pointer: string): unknown {
   return pointer.split('/').reduce((current, rawSegment) => {
     if (!isRecord(current)) return undefined;
@@ -1122,7 +1190,7 @@ function normalizeDynamicInvocationParameterDefinitions(value: unknown): Record<
     }
     if (!isRecord(raw)) continue;
     const reference = firstString(raw.parameterReference, raw.parameter, raw.name, raw.value);
-    result[name] = reference ? { ...raw, parameterReference: reference, required: raw.required !== false } : raw;
+    result[name] = reference ? { ...raw, parameterReference: reference } : raw;
   }
   return result;
 }
@@ -1141,7 +1209,7 @@ function dynamicInvocationParameters(definition: Record<string, unknown>, curren
 function hasMissingRequiredDynamicParameters(definition: Record<string, unknown>, currentParameters: Record<string, unknown>): boolean {
   const parameterDefinitions = isRecord(definition.parameters) ? definition.parameters : {};
   return Object.entries(parameterDefinitions).some(([name, raw]) => {
-    if (!isRecord(raw) || raw.required === false) return false;
+    if (!isRecord(raw) || raw.required !== true) return false;
     const parameterReference = firstString(raw.parameterReference, raw.parameter, raw.name);
     const sourceName = parameterReference || name;
     return !Object.prototype.hasOwnProperty.call(currentParameters, sourceName) || currentParameters[sourceName] === '' || currentParameters[sourceName] === undefined || currentParameters[sourceName] === null;

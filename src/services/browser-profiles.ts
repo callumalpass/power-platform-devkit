@@ -277,6 +277,22 @@ function profileDirectoryName(accountName: string): string {
 }
 
 function launchSystemBrowser(userDataDir: string, url: string): OperationResult<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return fail(createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL is not a valid URL.', {
+      source: SOURCE,
+      detail: `Rejected url: ${url}`,
+    }));
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return fail(createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL must use http or https.', {
+      source: SOURCE,
+      detail: `Rejected scheme: ${parsed.protocol}`,
+    }));
+  }
+  const safeUrl = parsed.toString();
   const candidates = browserCommandCandidates();
   const errors: string[] = [];
   for (const candidate of candidates) {
@@ -285,7 +301,7 @@ function launchSystemBrowser(userDataDir: string, url: string): OperationResult<
       continue;
     }
     try {
-      const child = spawn(candidate.command, [...candidate.args, ...browserProfileArgs(userDataDir), url], {
+      const child = spawn(candidate.command, [...candidate.args, ...browserProfileArgs(userDataDir), '--', safeUrl], {
         detached: true,
         stdio: 'ignore',
       });

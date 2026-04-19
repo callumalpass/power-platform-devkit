@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, win32 as win32Path } from 'node:path';
 import { z } from 'zod';
@@ -148,9 +148,10 @@ export async function writeConfig(config: GlobalConfig, options: ConfigStoreOpti
   try {
     const normalized = globalConfigSchema.parse(config);
     await enqueueConfigWrite(path, async () => {
-      await mkdir(dirname(path), { recursive: true });
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-      await writeFile(tempPath, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+      await writeFile(tempPath, JSON.stringify(normalized, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+      if (process.platform !== 'win32') await chmod(tempPath, 0o600).catch(() => undefined);
       await rename(tempPath, path);
     });
     return ok(normalized);

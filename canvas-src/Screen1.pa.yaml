@@ -1,0 +1,15 @@
+Screens:
+  Screen1:
+    Properties:
+      LoadingSpinnerColor: =RGBA(56, 96, 178, 1)
+    Children:
+      - Label1:
+          Control: Label
+          Properties:
+            BorderColor: =RGBA(0, 18, 107, 1)
+            Font: =Font.'Open Sans'
+            Height: =438
+            Text: ="MSAPP source validate"
+            Width: =578
+            X: =40
+            Y: =40

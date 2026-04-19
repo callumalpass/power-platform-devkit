@@ -37,6 +37,7 @@ import {
   useFlowDynamicSchemaFields,
   visibleConnectorSchemaFields,
 } from './flow-dynamic-schema.js';
+import { useFlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 import {
   compatibleConnectionReferences,
   connectorLabel,
@@ -199,6 +200,7 @@ export function AddFlowActionModal(props: {
   const operationDraftRef = useMemo(() => operationDraft ? resolveActionOperation(props.source, operationDraft) : {}, [props.source, operationDraft]);
   const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
   const operationDynamicSchemaFields = useFlowDynamicSchemaFields(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
+  const expressionSchemaIndex = useFlowEditorSchemaIndex(props.environment, props.source, props.analysis, props.toast);
 
   function updateOperationDraft(path: string[], value: unknown) {
     setOperationDraft((current) => current ? setPathValue(current, path, value) : current);
@@ -438,7 +440,7 @@ export function AddFlowActionModal(props: {
                 {((selectedOperation?.isBuiltIn && !selectedOperation.hasConnectorSchema) || selectedTemplate) && operationDraft ? (
                   <div className="add-action-config-params">
                     <div className="add-action-section-label">Fields</div>
-                    <CommonActionFields action={operationDraft} source={props.source} includeTrailing={false} onChange={updateOperationDraft} />
+                    <CommonActionFields action={operationDraft} source={props.source} schemaIndex={expressionSchemaIndex} includeTrailing={false} onChange={updateOperationDraft} />
                   </div>
                 ) : null}
 
@@ -452,6 +454,7 @@ export function AddFlowActionModal(props: {
                           field={field}
                           options={operationDynamicOptions[fieldSchemaKey(field)]}
                           source={props.source}
+                          schemaIndex={expressionSchemaIndex}
                           value={readPathValue(operationDraft, connectorFieldPath(field))}
                           onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
                         />
