@@ -6,12 +6,13 @@ import { createDesktopApiContext, handleDesktopApiRequest, type DesktopApiReques
 let mainWindow: BrowserWindow | undefined;
 let devReloadWatcher: ReturnType<typeof watch> | undefined;
 const isDesktopDev = process.env.PP_DESKTOP_DEV === '1';
+const isDesktopE2E = process.env.PP_DESKTOP_E2E === '1';
 const e2eWindowMode = process.env.PP_DESKTOP_E2E_WINDOW_MODE;
 const keepWindowHiddenForE2E = e2eWindowMode === 'hidden';
 const useBackgroundWindowForE2E = e2eWindowMode === 'background';
 
-if (isDesktopDev) {
-  app.setPath('userData', path.join(app.getPath('userData'), 'dev'));
+if (isDesktopDev || isDesktopE2E) {
+  app.setPath('userData', path.join(app.getPath('userData'), isDesktopE2E ? 'e2e' : 'dev'));
 }
 
 const gotLock = app.requestSingleInstanceLock();
