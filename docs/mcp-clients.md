@@ -2,6 +2,16 @@
 
 Setup instructions for using the `pp` MCP server with specific AI coding tools.
 
+The MCP server is the `pp-mcp` executable. It is installed by the Windows installer when the **MCP server** component is selected, and by `npm install -g pp` as part of the npm package. PP Desktop does not host MCP itself; MCP clients launch `pp-mcp` as a separate stdio process.
+
+`pp-mcp` reads the same pp config and auth cache as PP Desktop and the CLI. A common setup is to sign in and add environments in PP Desktop or with `pp auth login` / `pp env add`, then point your MCP client at `pp-mcp`.
+
+If the Windows installer did not add pp to `PATH`, use the full command path in client configs:
+
+```text
+C:\Program Files\PP\pp-mcp.exe
+```
+
 ## Claude Code
 
 ```sh
