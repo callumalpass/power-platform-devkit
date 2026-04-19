@@ -8,6 +8,14 @@ Desktop app, CLI, MCP server, and library for working with Microsoft Power Platf
 
 ## Install
 
+`pp` is distributed as three related artifacts that share the same config and auth cache:
+
+- **PP Desktop** -- Electron app for account setup, environment management, and Power Platform workspaces.
+- **CLI** -- `pp`, the command-line tool for scripted and terminal use.
+- **MCP server** -- `pp-mcp`, a stdio server for AI clients.
+
+The Windows installer can install any combination of those artifacts. The npm package installs the CLI and MCP server only.
+
 ### npm
 
 If you already have Node.js 22+ installed:
@@ -27,13 +35,21 @@ The npm package exposes two binaries:
 - `pp` for the CLI
 - `pp-mcp` for the MCP server
 
+The npm package does not include PP Desktop. Use the Windows installer for the packaged desktop app, or run Desktop from source during development.
+
 ### Windows
 
-Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run the installer. The installer can install PP Desktop, the MCP server, and the command-line tools as separate components. Leave **Add pp command-line tools to PATH** checked if you want to use `pp` and `pp-mcp` from PowerShell.
+Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run the installer. The installer offers these components:
+
+- **PP Desktop** installs the Electron app under `Program Files\PP\desktop` and creates a Start menu shortcut.
+- **MCP server** installs `pp-mcp.exe` under `Program Files\PP` for MCP clients.
+- **Command-line tools** installs `pp.exe` under `Program Files\PP`.
+
+Leave **Add pp command-line tools to PATH** checked if you want to use `pp` and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
 
 For unreleased builds, download the `pp-windows-<commit>` artifact from the latest successful CI workflow run.
 
-PP Desktop is the recommended Windows experience. It uses the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others.
+PP Desktop is the recommended Windows experience. It uses the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Desktop talks to its backend through Electron IPC; there is no local web server to start and no `pp ui` command.
 
 ## Quick start
 
@@ -187,7 +203,7 @@ Desktop communicates with the local backend through Electron IPC. There is no pu
 
 ## MCP server
 
-The MCP server exposes Power Platform operations as tools for AI assistants (e.g., Claude Desktop). It uses stdio transport.
+The MCP server exposes Power Platform operations as tools for AI assistants (e.g., Claude Desktop). It is a separate stdio process, usually launched by the MCP client. It shares pp config and auth with Desktop and the CLI.
 
 ```sh
 pp mcp        # or: pp-mcp
@@ -281,6 +297,14 @@ pnpm build
 ```
 
 This produces ESM and CJS outputs in `dist/`, including the `pp` and `pp-mcp` binaries plus the bundled PP Desktop assets under `dist/desktop/`.
+
+Run PP Desktop from source with live rebuilds:
+
+```sh
+pnpm run dev:desktop
+```
+
+This starts Electron from `dist/desktop`, watches the Desktop main/preload code and renderer code, restarts Electron when main/preload changes, and reloads the renderer when React/UI code changes. Dev mode uses a separate Electron profile so it can run next to an installed or manually launched PP Desktop instance while still sharing the normal pp config and auth cache.
 
 Run the Electron E2E suite with:
 
