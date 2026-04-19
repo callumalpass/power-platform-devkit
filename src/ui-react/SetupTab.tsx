@@ -65,37 +65,41 @@ export function SetupTab(props: SetupTabProps) {
     }));
   }
 
+  async function pingApi(alias: string, apiName: string) {
+    setHealth((current) => ({
+      ...current,
+      [alias]: {
+        ...(current[alias] || {}),
+        [apiName]: { status: 'pending', summary: 'Checking...' },
+      },
+    }));
+    try {
+      const response = await fetch('/api/checks/ping', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
+      });
+      const payload = await response.json();
+      const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
+      setHealth((current) => ({
+        ...current,
+        [alias]: { ...(current[alias] || {}), [apiName]: value },
+      }));
+    } catch {
+      setHealth((current) => ({
+        ...current,
+        [alias]: {
+          ...(current[alias] || {}),
+          [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' },
+        },
+      }));
+    }
+  }
+
   async function checkHealth(environmentList: any[]) {
     for (const environment of environmentList) {
       for (const apiName of HEALTH_APIS) {
-        setHealth((current) => ({
-          ...current,
-          [environment.alias]: {
-            ...(current[environment.alias] || {}),
-            [apiName]: { status: 'pending', summary: 'Checking...' },
-          },
-        }));
-        try {
-          const response = await fetch('/api/checks/ping', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ environment: environment.alias, api: apiName, softFail: true }),
-          });
-          const payload = await response.json();
-          const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
-          setHealth((current) => ({
-            ...current,
-            [environment.alias]: { ...(current[environment.alias] || {}), [apiName]: value },
-          }));
-        } catch {
-          setHealth((current) => ({
-            ...current,
-            [environment.alias]: {
-              ...(current[environment.alias] || {}),
-              [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' },
-            },
-          }));
-        }
+        await pingApi(environment.alias, apiName);
       }
     }
   }
@@ -104,6 +108,15 @@ export function SetupTab(props: SetupTabProps) {
     void checkHealth(environments);
     void checkTokenStatuses(accounts);
     toast('Health checks started');
+  }
+
+  function recheckApi(alias: string, apiName?: string) {
+    if (apiName) {
+      void pingApi(alias, apiName);
+    } else {
+      const target = environments.find((env: any) => env.alias === alias);
+      if (target) void checkHealth([target]);
+    }
   }
 
   // First-run onboarding takes over the whole panel.
@@ -167,6 +180,7 @@ export function SetupTab(props: SetupTabProps) {
       <div className={`dv-subpanel ${setupSubTab === 'accounts' ? 'active' : ''}`}>
         <AccountsPanel
           accounts={accounts}
+          environments={environments}
           tokenStatus={tokenStatus}
           selectedApis={selectedApis}
           setSelectedApis={setSelectedApis}
@@ -186,6 +200,7 @@ export function SetupTab(props: SetupTabProps) {
           health={health}
           confirm={confirm}
           recheckHealth={recheckHealth}
+          recheckApi={recheckApi}
           refreshState={refreshState}
           toast={toast}
         />

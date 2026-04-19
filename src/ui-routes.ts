@@ -11,7 +11,7 @@ import type { UiJobStore } from './ui-jobs.js';
 import { handleAccountBrowserProfileGet, handleAccountBrowserProfileOpen, handleAccountBrowserProfileReset, handleAccountBrowserProfileVerify, handleAccountCreate, handleAccountDelete, handleAccountLogin, handleAccountLoginJob, handleAccountTokenStatus, handleAccountUpdate, handleAuthSessionCancel, handleAuthSessionCreate, handleAuthSessionEvents, handleAuthSessionGet, handleJobDelete, handleJobGet } from './ui-route-accounts.js';
 import { handleUiAssetRoute, loadUiState } from './ui-route-assets.js';
 import { handleDataverseQueryExecute, handleDataverseQueryPreview, handleDataverseRecordCreate, handleEntityDetail, handleEntityList, handleFetchXmlExecute, handleFetchXmlIntellisense, handleFetchXmlPreview } from './ui-route-dataverse.js';
-import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
+import { handleEnvironmentCreate, handleEnvironmentDelete, handleEnvironmentDiscover, handleEnvironmentUpdate, handlePing, handleWhoAmICheck } from './ui-route-environments.js';
 import { handleCanvasRequest, handleCanvasSessionCreate, handleCanvasSessionDelete, handleCanvasSessionEvents, handleCanvasSessionGet, handleCanvasSessionList, handleCanvasSessionProbe, handleCanvasYamlFetch, handleCanvasYamlValidate } from './ui-route-canvas.js';
 import { handleFlowLanguageAnalyze } from './ui-route-flow-language.js';
 import { handleCliRequestExecute, handleRequestExecute } from './ui-route-requests.js';
@@ -107,6 +107,10 @@ export async function handleUiRequest(
 
   if (method === 'PUT' && /^\/api\/accounts\/[^/]+$/.test(url.pathname)) {
     return handleAccountUpdate(request, response, url, context);
+  }
+
+  if (method === 'PUT' && /^\/api\/environments\/[^/]+$/.test(url.pathname)) {
+    return handleEnvironmentUpdate(request, response, url, context);
   }
 
   if (method === 'DELETE') {
