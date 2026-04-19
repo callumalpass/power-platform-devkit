@@ -14,6 +14,7 @@ import { DataverseTab } from './dataverse/DataverseTab.js';
 import { AppsTab, type AppsState } from './apps/AppsTab.js';
 import { CanvasTab, type CanvasState } from './canvas/CanvasTab.js';
 import { PlatformTab, type PlatformState } from './platform/PlatformTab.js';
+import { isMonacoKeyboardEvent } from './monaco-support.js';
 import type { DataverseState } from './ui-types.js';
 
 export function App() {
@@ -525,17 +526,4 @@ export function App() {
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </>
   );
-}
-
-function isMonacoKeyboardEvent(event: KeyboardEvent): boolean {
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLElement && activeElement.closest('.monaco-editor, .monaco-diff-editor')) {
-    return true;
-  }
-  const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-  for (const item of path) {
-    if (item instanceof HTMLElement && item.closest('.monaco-editor, .monaco-diff-editor')) return true;
-  }
-  const target = event.target;
-  return target instanceof HTMLElement && Boolean(target.closest('.monaco-editor, .monaco-diff-editor'));
 }
