@@ -23,12 +23,6 @@ export function healthHint(entry: HealthEntry): string | null {
   return entry.message || null;
 }
 
-export function describeTemporaryTokenMatch(match: { kind: string; origin?: string; api?: string; audience?: string }): string {
-  if (match.kind === 'origin') return `origin ${match.origin}`;
-  if (match.kind === 'api') return `api ${match.api}`;
-  return `audience ${match.audience}`;
-}
-
 export function shellQuote(value: string): string {
   return /^[A-Za-z0-9._:@/-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }

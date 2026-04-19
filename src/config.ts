@@ -111,14 +111,6 @@ export function getMsalCacheDir(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'msal');
 }
 
-export function getUiStatePath(options: ConfigStoreOptions = {}): string {
-  return join(getConfigDir(options), 'ui-state.json');
-}
-
-export function getUiPreferredPortPath(options: ConfigStoreOptions = {}): string {
-  return join(getConfigDir(options), 'ui-preferred-port.json');
-}
-
 export function getSavedRequestsPath(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'saved-requests.json');
 }

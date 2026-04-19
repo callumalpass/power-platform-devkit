@@ -2,9 +2,9 @@
 
 # pp
 
-CLI and library for working with Microsoft Power Platform.
+Desktop app, CLI, MCP server, and library for working with Microsoft Power Platform.
 
-`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, SharePoint REST, BAP, and Power Apps APIs. It includes an MCP server for AI assistant integration and a localhost web UI for managing accounts, environments, and querying Dataverse.
+`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, SharePoint REST, BAP, and Power Apps APIs. It includes PP Desktop for managing accounts, environments, and Power Platform workspaces, plus an MCP server for AI assistant integration.
 
 ## Install
 
@@ -22,19 +22,18 @@ Or run without a global install:
 npx pp --help
 ```
 
-The package exposes three binaries:
+The npm package exposes two binaries:
 
 - `pp` for the CLI
 - `pp-mcp` for the MCP server
-- `pp-ui` for the browser UI launcher
 
 ### Windows
 
-Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run the installer. Leave **Add pp to PATH** checked to use `pp`, `pp-mcp`, and `pp-ui` from PowerShell.
+Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run the installer. The installer can install PP Desktop, the MCP server, and the command-line tools as separate components. Leave **Add pp command-line tools to PATH** checked if you want to use `pp` and `pp-mcp` from PowerShell.
 
 For unreleased builds, download the `pp-windows-<commit>` artifact from the latest successful CI workflow run.
 
-The Windows `pp-ui.exe` launcher is built as a GUI executable. Starting it from the Start Menu or Explorer opens the UI without keeping a terminal window open.
+PP Desktop is the recommended Windows experience. It uses the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others.
 
 ## Quick start
 
@@ -79,8 +78,6 @@ pp dv /accounts --env dev
 | `pp whoami --env ALIAS` | Run Dataverse WhoAmI |
 | `pp ping --env ALIAS` | Check API connectivity |
 | `pp token --env ALIAS` | Print a bearer token |
-| `pp ui` | Start or reuse the web UI |
-| `pp ui stop` | Stop the running web UI server |
 | `pp mcp` | Start the MCP server |
 | `pp migrate-config` | Migrate legacy config |
 | `pp update [--check]` | Check GitHub releases for a newer version |
@@ -164,50 +161,29 @@ pp dv /accounts --env dev --query '$select=name,accountid' --query '$top=50' --j
 
 This runs jq in-process through WebAssembly; it does not shell out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned.
 
-## Web UI
+## PP Desktop
 
-```sh
-pp ui
-```
-
-Starts or reuses a localhost HTTP server and opens a browser. If another `pp ui` instance is already running for the same config directory, the command reuses it instead of starting a duplicate process. If the default port is busy, `pp ui` automatically falls back to another localhost port.
-
-On Windows, launching `pp-ui.exe` from the installer shortcut opens the UI in an app-style Edge window and leaves the local UI server running in the background. The `pp ui` CLI command keeps the terminal-attached behavior so logs and Ctrl+C shutdown remain available.
-
-[![pp UI light-mode walkthrough](docs/images/pp-ui-light-walkthrough.gif)](docs/videos/pp-ui-light-walkthrough.mp4)
+[![PP Desktop light-mode walkthrough](docs/images/pp-desktop-light-walkthrough.gif)](docs/videos/pp-desktop-light-walkthrough.mp4)
 
 Click the walkthrough for the full MP4.
 
-![pp UI setup status in light mode](docs/images/pp-ui-setup-light.png)
+![PP Desktop setup status in light mode](docs/images/pp-desktop-setup-light.png)
 
-![pp UI API console in light mode](docs/images/pp-ui-console-light.png)
+![PP Desktop API console in light mode](docs/images/pp-desktop-console-light.png)
 
-![pp UI Dataverse explorer in light mode](docs/images/pp-ui-dataverse-light.png)
+![PP Desktop Dataverse explorer in light mode](docs/images/pp-desktop-dataverse-light.png)
 
-The UI provides:
+PP Desktop provides:
 
 - **Setup** -- Manage accounts and environments
-- **Explorer** -- Browse Dataverse entities and metadata
-- **Query Lab** -- Build and run OData queries
+- **Console** -- Send requests to supported Power Platform APIs
+- **Dataverse** -- Browse entities and metadata, build OData queries, and execute FetchXML
+- **Automate** -- Inspect Power Automate flows and runs
+- **Apps** -- Inspect Power Apps inventory
+- **Platform** -- Inspect platform environment metadata
 - **FetchXML** -- Execute FetchXML queries
 
-Options:
-
-- `--port PORT` -- Set the server port (default: auto-assigned)
-- `--no-open` -- Don't open a browser on startup
-- `--config-dir DIR` -- Override config directory
-- `--lan` -- Listen on the local network instead of localhost (requires `--pair`)
-- `--pair` -- Require a short-lived pairing code before browsers can use the UI
-
-### LAN access
-
-To serve the UI to another browser on the same trusted network:
-
-```sh
-pp ui --lan --pair --no-open
-```
-
-The command prints LAN URLs plus a short-lived pairing URL/code. Open the pairing URL from the client browser, or open the LAN URL and enter the code shown on the host. Pairing is in-memory and lasts only for the running UI process; restart `pp ui` to revoke paired browsers. LAN mode uses plain HTTP, so use it only on a trusted LAN or behind your own HTTPS/VPN layer.
+Desktop communicates with the local backend through Electron IPC. There is no public `pp ui` command and no localhost browser UI mode.
 
 ## MCP server
 
@@ -304,7 +280,15 @@ pnpm install
 pnpm build
 ```
 
-This produces ESM and CJS outputs in `dist/`, including the `pp`, `pp-mcp`, and `pp-ui` binaries. The build bundles browser-side vendor modules up front so `pp ui` does not depend on resolving `node_modules` at runtime.
+This produces ESM and CJS outputs in `dist/`, including the `pp` and `pp-mcp` binaries plus the bundled PP Desktop assets under `dist/desktop/`.
+
+Run the Electron E2E suite with:
+
+```sh
+pnpm run test:e2e:desktop
+```
+
+On Linux this runs the Electron app under `xvfb-run` by default, so the test window does not attach to the active desktop session or steal focus. Set `PP_DESKTOP_E2E_SHOW_WINDOW=1` to run the same suite with a visible window for debugging.
 
 ### Windows packaging
 
@@ -314,6 +298,12 @@ Build self-contained executables with:
 pnpm run build:sea
 ```
 
-This emits `pp.exe`, `pp-mcp.exe`, and `pp-ui.exe` under `release/win32-x64/`. The SEA build currently runs on Windows hosts only.
+This emits `pp.exe` and `pp-mcp.exe` under `release/win32-x64/`. The SEA build currently runs on Windows hosts only.
 
-The Inno Setup installer definition at `packaging/windows/pp.iss` installs into `Program Files\pp`, optionally adds the install directory to `PATH`, creates a Start menu shortcut for PP UI, and registers uninstall support.
+Build the Electron desktop directory with:
+
+```sh
+pnpm run package:desktop
+```
+
+The SEA build emits `pp.exe` and `pp-mcp.exe` under `release/win32-x64/`. The Electron packaging step emits the desktop app under `release/electron/`. The Inno Setup installer definition at `packaging/windows/pp.iss` installs into `Program Files\PP`, offers Desktop, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates a Start menu shortcut for PP Desktop, and registers uninstall support.

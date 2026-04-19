@@ -1,4 +1,5 @@
-export function renderHtml(): string {
+export function renderHtml(options: { scriptSrc?: string } = {}): string {
+  const scriptSrc = options.scriptSrc ?? '/assets/ui/app.js';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -2043,7 +2044,7 @@ export function renderHtml(): string {
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
             <div>
               <h2>Definition Lab</h2>
-              <p class="desc" style="margin-bottom:0">Inspect the selected flow definition with shared CLI/UI validation, graph diagnostics, and expression-aware completions.</p>
+              <p class="desc" style="margin-bottom:0">Inspect the selected flow definition with shared validation, graph diagnostics, and expression-aware completions.</p>
             </div>
             <div class="btn-group">
               <span id="flow-language-status" style="font-size:0.75rem;color:var(--muted)"><span class="fetchxml-status-dot warn"></span>Definition not loaded</span>
@@ -2198,7 +2199,7 @@ export function renderHtml(): string {
   </div>
   </div>
 
-  <script type="module" src="/assets/ui/app.js"></script>
+  <script type="module" src="${scriptSrc}"></script>
 </body>
 </html>`;
 }

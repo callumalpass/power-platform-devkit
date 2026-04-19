@@ -50,12 +50,11 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   }
 
   async function graphGetOptional(path: string) {
-    const response = await fetch('/api/request/execute', {
+    const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
+      allowFailure: true,
     });
-    const result = await response.json();
     return result.success === false ? null : result.data?.response;
   }
 

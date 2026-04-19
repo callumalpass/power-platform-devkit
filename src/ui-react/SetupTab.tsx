@@ -9,6 +9,7 @@ import { EnvironmentsPanel } from './setup/EnvironmentsPanel.js';
 import { AccessPanel } from './setup/AccessPanel.js';
 import { ToolsPanel } from './setup/ToolsPanel.js';
 import { summarizeHealthFailure } from './setup/health.js';
+import { api } from './utils.js';
 import {
   HEALTH_APIS,
   SETUP_SUB_TAB_LABELS,
@@ -51,10 +52,7 @@ export function SetupTab(props: SetupTabProps) {
   async function checkTokenStatuses(accountList: any[]) {
     await Promise.all(accountList.map(async (account) => {
       try {
-        const response = await fetch(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, {
-          headers: { 'content-type': 'application/json' },
-        });
-        const data = await response.json();
+        const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
         setTokenStatus((current) => ({
           ...current,
           [account.name]: data.success && data.data ? data.data : { authenticated: false },
@@ -74,12 +72,11 @@ export function SetupTab(props: SetupTabProps) {
       },
     }));
     try {
-      const response = await fetch('/api/checks/ping', {
+      const payload = await api<any>('/api/checks/ping', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
+        allowFailure: true,
       });
-      const payload = await response.json();
       const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
       setHealth((current) => ({
         ...current,

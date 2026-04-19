@@ -1,5 +1,5 @@
 export type SetupSubTab = 'accounts' | 'environments' | 'access' | 'tools';
-export type ToolsSubTab = 'sharepoint' | 'temp-tokens' | 'mcp';
+export type ToolsSubTab = 'sharepoint' | 'mcp';
 
 export type HealthEntry = {
   status: string;
@@ -10,19 +10,6 @@ export type HealthEntry = {
 };
 
 export type TokenEntry = { authenticated: boolean; expiresAt?: number | string } | undefined;
-
-export type TemporaryTokenSummary = {
-  id: string;
-  name: string;
-  audience?: string;
-  subject?: string;
-  tenantId?: string;
-  scopes?: string[];
-  roles?: string[];
-  expiresAt?: number;
-  match: { kind: 'origin'; origin: string } | { kind: 'api'; api: string } | { kind: 'audience'; audience: string };
-  createdAt: string;
-};
 
 export type BrowserProfileStatus = {
   account: string;
@@ -80,6 +67,5 @@ export const SETUP_SUB_TAB_LABELS: Record<SetupSubTab, string> = {
 
 export const TOOLS_SUB_TAB_LABELS: Record<ToolsSubTab, string> = {
   sharepoint: 'SharePoint',
-  'temp-tokens': 'Temporary Tokens',
   mcp: 'MCP',
 };

@@ -23,21 +23,25 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
   function handleLoginStarted(session: AuthSession) {
     setActiveSession(session);
     setLoginTargets(session.targets || []);
-    const events = new EventSource(`/api/auth/sessions/${encodeURIComponent(session.id)}/events`);
-    events.addEventListener('session', (event) => {
-      const next = JSON.parse((event as MessageEvent).data) as AuthSession;
-      handleSessionUpdate(next);
-      if (next.status === 'completed' || next.status === 'failed' || next.status === 'cancelled') {
-        events.close();
+    void pollSession(session.id);
+  }
+
+  async function pollSession(id: string) {
+    let done = false;
+    while (!done) {
+      try {
+        const payload = await api<any>(`/api/auth/sessions/${encodeURIComponent(id)}`);
+        const next = payload.data as AuthSession | undefined;
+        if (next) {
+          handleSessionUpdate(next);
+          done = next.status === 'completed' || next.status === 'failed' || next.status === 'cancelled';
+        }
+      } catch {
+        toast('Authentication status disconnected', true);
+        return;
       }
-    });
-    events.onerror = () => {
-      events.close();
-      void fetch(`/api/auth/sessions/${encodeURIComponent(session.id)}`)
-        .then((response) => response.json())
-        .then((payload) => payload.data ? handleSessionUpdate(payload.data) : undefined)
-        .catch(() => toast('Authentication status disconnected', true));
-    };
+      if (!done) await new Promise((resolve) => setTimeout(resolve, 800));
+    }
   }
 
   async function handleCancelLogin() {

@@ -23,7 +23,6 @@ import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccoun
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthoringSession, rpcCanvasAuthoring, saveCanvasSession, startCanvasAuthoringSession } from './services/canvas-authoring.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
-import { executeRequestViaRunningUi, startPpUi, stopPpUi } from './ui.js';
 import { VERSION } from './version.js';
 import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
 
@@ -34,7 +33,6 @@ const TOP_LEVEL_COMMANDS = [
   'whoami',
   'ping',
   'token',
-  'ui',
   'dv',
   'flow',
   'graph',
@@ -110,8 +108,6 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
         allowInteractiveAuth: hasFlag(rest, '--allow-interactive-auth'),
       });
       return 0;
-    case 'ui':
-      return runUi(rest);
     case 'migrate-config':
       return runMigrateConfig(rest);
     case 'update':
@@ -330,14 +326,7 @@ async function runRequest(args: string[]): Promise<number> {
     jq: readFlag(args, '--jq'),
     readIntent: hasFlag(args, '--read'),
   };
-  const result = hasFlag(args, '--via-ui')
-    ? await executeRequestViaRunningUi({
-      ...requestInput,
-      configDir: readFlag(args, '--config-dir'),
-      temporaryToken: readFlag(args, '--temp-token') ?? readFlag(args, '--temporary-token'),
-      allowInteractive: !hasFlag(args, '--no-interactive-auth'),
-    })
-    : await executeApiRequest(requestInput, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
+  const result = await executeApiRequest(requestInput, readConfigOptions(args), { allowInteractive: !hasFlag(args, '--no-interactive-auth') });
   if (!result.success) return printFailure(result, args);
   printResult(result.data, args);
   return 0;
@@ -851,58 +840,6 @@ async function runMigrateConfig(args: string[]): Promise<number> {
   return 0;
 }
 
-async function runUi(args: string[]): Promise<number> {
-  if (wantsHelp(args)) {
-    printUiHelp();
-    return 0;
-  }
-  if (positionalArgs(args)[0] === 'stop') {
-    return runUiStop(args);
-  }
-  const portValue = readFlag(args, '--port');
-  const port = portValue === undefined ? undefined : Number(portValue);
-  if (portValue !== undefined && (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535)) {
-    return printFailure(argumentFailure('UI_PORT_INVALID', 'Usage: pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]'), args);
-  }
-  if (hasFlag(args, '--lan') && !hasFlag(args, '--pair')) {
-    return printFailure(argumentFailure('UI_LAN_REQUIRES_PAIR', 'LAN UI access requires --pair.'), args);
-  }
-
-  const ui = await startPpUi({
-    configDir: readFlag(args, '--config-dir'),
-    port,
-    openBrowser: !hasFlag(args, '--no-open'),
-    allowInteractiveAuth: !hasFlag(args, '--no-interactive-auth'),
-    lan: hasFlag(args, '--lan'),
-    pair: hasFlag(args, '--pair'),
-  });
-
-  if (ui.reused) return 0;
-
-  const shutdown = async () => {
-    await ui.close();
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
-
-  process.stdout.write('Press Ctrl+C to stop.\n');
-  await new Promise<void>(() => undefined);
-  return 0;
-}
-
-async function runUiStop(args: string[]): Promise<number> {
-  const configDir = readFlag(args, '--config-dir');
-  const result = await stopPpUi({ configDir });
-  if (result.stopped) {
-    process.stdout.write(`Stopped pp UI at ${result.url}\n`);
-    return 0;
-  }
-  process.stderr.write('No running pp UI instance found.\n');
-  return 1;
-}
-
 function readLoginInput(args: string[]) {
   const name = positionalArgs(args)[0];
   if (!name) return argumentFailure('ACCOUNT_NAME_REQUIRED', 'Usage: pp auth login <account> [flags]');
@@ -962,7 +899,6 @@ function printHelp(): void {
       '  whoami          Dataverse WhoAmI for an environment',
       '  ping            Basic connectivity check',
       '  token           Print a token for an environment',
-      '  ui              Start the localhost auth and environment UI',
       '  dv              Shortcut for "request --api dv"',
       '  graph           Shortcut for "request --api graph"',
       '  sharepoint      Shortcut for "request --api sharepoint"',
@@ -1089,7 +1025,7 @@ function printRequestHelp(): void {
       'Send an authenticated request. Environment-scoped APIs require --env; Graph and SharePoint may use --account.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]',
+      '  pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]',
     ].join('\n') + '\n',
   );
 }
@@ -1102,7 +1038,7 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
       `Shortcut for "pp request --api ${api}".`,
       '',
       'Usage:',
-      `  pp ${api} <path|url> ${api === 'graph' || api === 'sharepoint' ? '[--account ACCOUNT|--env ALIAS]' : '--env ALIAS [--account ACCOUNT]'} [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--via-ui] [--temp-token NAME] [--no-interactive-auth]`,
+      `  pp ${api} <path|url> ${api === 'graph' || api === 'sharepoint' ? '[--account ACCOUNT|--env ALIAS]' : '--env ALIAS [--account ACCOUNT]'} [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-interactive-auth]`,
     ].join('\n') + '\n',
   );
 }
@@ -1359,24 +1295,6 @@ function printEnvironmentTokenHelp(): void {
 
 function printMcpHelp(): void {
   process.stdout.write(['pp mcp', '', 'Start the pp MCP server.', '', 'Usage:', '  pp mcp [--config-dir DIR] [--allow-interactive-auth]'].join('\n') + '\n');
-}
-
-function printUiHelp(): void {
-  process.stdout.write(
-    [
-      'pp ui',
-      '',
-      'Start the UI for account, environment, and MCP inspection.',
-      '',
-      'Usage:',
-      '  pp ui [--port PORT] [--no-open] [--config-dir DIR] [--no-interactive-auth] [--lan --pair]',
-      '  pp ui stop [--config-dir DIR]',
-      '',
-      'Options:',
-      '  --lan   Listen on the local network instead of localhost. Requires --pair.',
-      '  --pair  Require a short-lived pairing code before browsers can use the UI.',
-    ].join('\n') + '\n',
-  );
 }
 
 function printCompletionHelp(): void {

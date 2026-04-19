@@ -16,8 +16,32 @@ type ApiOptions = RequestInit & {
   allowFailure?: boolean;
 };
 
+type DesktopApiBridge = {
+  request(input: { path: string; method?: string; body?: unknown }): Promise<{ status: number; body: unknown }>;
+};
+
+type DesktopApiTestHook = {
+  request?(input: { path: string; method?: string; body?: unknown }): Promise<{ status: number; body: unknown } | undefined> | { status: number; body: unknown } | undefined;
+};
+
+declare global {
+  interface Window {
+    ppDesktop?: DesktopApiBridge;
+    ppDesktopTest?: DesktopApiTestHook;
+  }
+}
+
 export async function api<T = any>(path: string, options?: ApiOptions): Promise<T> {
   const { allowFailure = false, ...fetchOptions } = options ?? {};
+  if (window.ppDesktop?.request || window.ppDesktopTest?.request) {
+    const request = {
+      path,
+      method: fetchOptions.method ?? 'GET',
+      body: readDesktopRequestBody(fetchOptions.body),
+    };
+    const response = await window.ppDesktopTest?.request?.(request) ?? await window.ppDesktop?.request(request);
+    if (response) return readApiResponse<T>(response, allowFailure);
+  }
   const response = await fetch(path, {
     headers: { 'content-type': 'application/json' },
     ...fetchOptions,
@@ -36,6 +60,27 @@ export async function api<T = any>(path: string, options?: ApiOptions): Promise<
     throw new ApiRequestError(summarizeError(data), data, response.status);
   }
   return data as T;
+}
+
+function readApiResponse<T>(response: { status: number; body: unknown }, allowFailure: boolean): T {
+  const data = response.body as any;
+  if (response.status < 200 || response.status >= 300 || (!allowFailure && data?.success === false)) {
+    throw new ApiRequestError(summarizeError(data), data, response.status);
+  }
+  return data as T;
+}
+
+function readDesktopRequestBody(body: BodyInit | null | undefined): unknown {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body === 'string') {
+    if (!body.trim()) return undefined;
+    try {
+      return JSON.parse(body);
+    } catch {
+      return body;
+    }
+  }
+  return body;
 }
 
 function summarizeParseError(error: unknown, snippet: string) {

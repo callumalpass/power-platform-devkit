@@ -139,7 +139,7 @@ export async function saveFlowDefinition(environment: string, flow: FlowItem, so
     'PATCH',
     {
       ...buildFlowServicePayload(source),
-      telemetryMetadata: { modifiedSources: 'pp-ui' },
+      telemetryMetadata: { modifiedSources: 'pp-desktop' },
     },
   );
   return normalizeFlowApiItem(result.response || flow);
