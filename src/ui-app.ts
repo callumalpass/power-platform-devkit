@@ -383,11 +383,14 @@ export function renderHtml(): string {
     .monaco-hover *,
     .monaco-hover .hover-contents,
     .monaco-hover .markdown-hover { color: var(--ink) !important; background-color: var(--surface); }
-    .flow-editor-layout { display: grid; grid-template-columns: minmax(260px, 30%) minmax(0, 1fr); align-items: stretch; height: min(720px, calc(100dvh - var(--chrome-h) - 220px)); min-height: 420px; }
+    .flow-editor-layout { display: grid; grid-template-columns: minmax(0, var(--outline-width, 320px)) minmax(0, 1fr); align-items: stretch; height: min(720px, calc(100dvh - var(--chrome-h) - 220px)); min-height: 420px; }
     .flow-editor-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .flow-editor-main .fetchxml-editor-mount { flex: 1; height: 100%; min-height: 420px; }
     .flow-editor-main .fetchxml-editor-mount .monaco-editor { height: 100%; min-height: 420px; }
-    .flow-outline-rail { border-right: 1px solid var(--border); background: var(--bg); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .flow-outline-rail { position: relative; border-right: 1px solid var(--border); background: var(--bg); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .flow-outline-resize-handle { position: absolute; right: -6px; top: 0; bottom: 0; width: 12px; cursor: col-resize; z-index: 2; }
+    .flow-outline-resize-handle::before { content: ''; position: absolute; left: 5px; top: 50%; transform: translateY(-50%); width: 2px; height: 36px; background: var(--border); border-radius: 1px; transition: background 120ms, height 120ms; }
+    .flow-outline-resize-handle:hover::before, .flow-outline-resize-handle:active::before { background: var(--accent); height: 64px; }
     .flow-rail-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.6875rem; }
     .flow-rail-header h3 { margin: 0; color: var(--ink); font-size: 0.75rem; }
     .flow-outline-rail .empty { margin: 10px; }
@@ -542,6 +545,7 @@ export function renderHtml(): string {
     @media (max-width: 1100px) {
       .flow-editor-layout { grid-template-columns: 1fr; }
       .flow-outline-rail { border-right: 0; border-bottom: 1px solid var(--border); max-height: 320px; }
+      .flow-outline-resize-handle { display: none; }
     }
     @media (max-width: 900px) {
       .add-action-body { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 40%) 1fr; }

@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-type Options = { min: number; max: number; initial: number };
+type Options = {
+  min: number;
+  max: number;
+  initial: number;
+  /**
+   * Which edge the drag handle sits on. Determines how pointer motion maps to width change:
+   *  - 'left' (default): handle is on the LEFT edge of the sized element (typical for the right
+   *    column of a two-column layout). Dragging the handle left makes the element wider.
+   *  - 'right': handle is on the RIGHT edge (typical for the left column). Dragging right makes
+   *    the element wider.
+   */
+  edge?: 'left' | 'right';
+};
 
 export function useResizableWidth(storageKey: string, options: Options) {
   const [width, setWidth] = useState(() => {
@@ -21,6 +33,7 @@ export function useResizableWidth(storageKey: string, options: Options) {
     try { localStorage.setItem(storageKey, String(width)); } catch { /* ignore quota */ }
   }, [storageKey, width]);
 
+  const edge = options.edge ?? 'left';
   const startDrag = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -28,8 +41,8 @@ export function useResizableWidth(storageKey: string, options: Options) {
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     function onMove(ev: MouseEvent) {
-      // drag-left → wider (handle sits on left edge of the right column)
-      const delta = startX - ev.clientX;
+      // left-edge handle: dragging left grows the element; right-edge handle: dragging right grows it.
+      const delta = edge === 'left' ? startX - ev.clientX : ev.clientX - startX;
       const next = clamp(startWidth + delta, options.min, options.max);
       setWidth(next);
     }
@@ -41,7 +54,7 @@ export function useResizableWidth(storageKey: string, options: Options) {
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [options.min, options.max]);
+  }, [options.min, options.max, edge]);
 
   return { width, startDrag };
 }

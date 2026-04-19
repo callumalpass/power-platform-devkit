@@ -6,6 +6,7 @@ import { FlowCodeEditor } from './FlowCodeEditor.js';
 import { FlowOutlineCanvas } from './FlowOutlineCanvas.js';
 import { FlowProblemsPanel } from './FlowProblemsPanel.js';
 import type { FlowEditorHandle, FlowOperation, FlowProblem } from './types.js';
+import { useResizableWidth } from '../setup/use-resizable-width.js';
 
 export function FlowDefinitionPanel(props: {
   active: boolean;
@@ -45,6 +46,10 @@ export function FlowDefinitionPanel(props: {
   onVimToggle: (enabled: boolean) => void;
 }) {
   const { active } = props;
+  const { width: outlineWidth, startDrag: startOutlineResize } = useResizableWidth(
+    'pp-automate-outline-width',
+    { min: 220, max: 640, initial: 320, edge: 'right' },
+  );
 
   return (
     <div className={`dv-subpanel ${active ? 'active' : ''}`}>
@@ -75,7 +80,10 @@ export function FlowDefinitionPanel(props: {
               <button className="btn btn-primary" type="button" disabled={!props.isFlowEditable || props.flowBusy || !props.isFlowDirty} onClick={props.onSave}>{props.flowOperation === 'save' ? 'Checking…' : 'Check & Save'}</button>
             </div>
           </div>
-          <div className="flow-editor-layout">
+          <div
+            className="flow-editor-layout"
+            style={{ ['--outline-width' as any]: `${outlineWidth}px` }}
+          >
             <aside className="flow-outline-rail">
               <FlowOutlineCanvas
                 items={props.analysis?.outline || []}
@@ -86,6 +94,13 @@ export function FlowDefinitionPanel(props: {
                 onEditAction={props.onEditAction}
                 onAddAfter={props.onAddAfter}
                 onReorder={props.onReorderAction}
+              />
+              <div
+                className="flow-outline-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize outline"
+                onMouseDown={startOutlineResize}
               />
             </aside>
             <div className="flow-editor-main">
