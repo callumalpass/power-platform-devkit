@@ -595,16 +595,19 @@ export function renderHtml(options: { scriptSrc?: string } = {}): string {
     .flow-action-field-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
     .flow-action-field-desc,
     .flow-action-edit-note { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
-    .flow-action-schema-field textarea,
-    .flow-action-value-editor textarea,
-    .flow-action-json-editor { min-height: 86px; font-family: var(--mono); font-size: 0.75rem; }
-    .flow-action-schema-field textarea,
-    .flow-action-value-editor textarea { background: var(--surface); }
+    .flow-action-monaco-editor { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+    .flow-action-monaco-editor:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    .flow-action-monaco-editor.text { height: 34px; }
+    .flow-action-monaco-editor.json { height: 96px; min-height: 86px; }
+    .flow-action-edit-section > .flow-action-monaco-editor.json { height: 320px; }
+    .flow-action-monaco-editor .monaco-editor,
+    .flow-action-monaco-editor .monaco-editor-background,
+    .flow-action-monaco-editor .monaco-editor .inputarea.ime-input { background: var(--surface); }
+    .flow-action-monaco-editor .monaco-editor .margin { background: var(--surface); }
     .flow-action-json-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
     .flow-action-json-toolbar .flow-action-edit-note { flex: 1; min-width: 120px; }
     .flow-action-json-toolbar-actions { display: flex; gap: 4px; flex-shrink: 0; }
     .flow-action-json-toolbar .btn { padding: 4px 10px; font-size: 0.6875rem; border: 1px solid var(--border); }
-    .flow-action-json-editor { min-height: 320px; resize: vertical; }
     .flow-action-edit-error { color: var(--danger); font-size: 0.75rem; padding: 8px 12px; background: var(--warn-soft); border-radius: var(--radius-sm); border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent); }
     .flow-action-edit-footer-hint { font-family: var(--mono); font-size: 0.625rem; color: var(--muted); padding: 1px 6px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); margin-left: 4px; }
     @media (max-width: 1100px) {

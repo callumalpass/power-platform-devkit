@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadFlowApiOperationSchema, loadFlowApiOperations } from '../automate-data.js';
 import { Icon } from '../Icon.js';
 import { Select } from '../Select.js';
+import { isMonacoKeyboardEvent } from '../monaco-support.js';
 import type { FlowAnalysis, FlowApiOperation, FlowApiOperationKind, FlowApiOperationSchema, ToastFn } from '../ui-types.js';
 import type { OutlineContainerTarget } from './outline-utils.js';
 import { CommonActionFields, SchemaFieldEditor } from './FlowActionFieldEditors.js';
@@ -116,6 +117,7 @@ export function AddFlowActionModal(props: {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (isMonacoKeyboardEvent(event)) return;
       if (event.key === 'Escape') props.onClose();
     }
     document.addEventListener('keydown', onKey);
@@ -436,7 +438,7 @@ export function AddFlowActionModal(props: {
                 {((selectedOperation?.isBuiltIn && !selectedOperation.hasConnectorSchema) || selectedTemplate) && operationDraft ? (
                   <div className="add-action-config-params">
                     <div className="add-action-section-label">Fields</div>
-                    <CommonActionFields action={operationDraft} includeTrailing={false} onChange={updateOperationDraft} />
+                    <CommonActionFields action={operationDraft} source={props.source} includeTrailing={false} onChange={updateOperationDraft} />
                   </div>
                 ) : null}
 
@@ -449,6 +451,7 @@ export function AddFlowActionModal(props: {
                           key={`${field.location || 'parameter'}:${(field.path || []).join('.')}:${field.name}`}
                           field={field}
                           options={operationDynamicOptions[fieldSchemaKey(field)]}
+                          source={props.source}
                           value={readPathValue(operationDraft, connectorFieldPath(field))}
                           onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
                         />

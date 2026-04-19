@@ -15,6 +15,8 @@ import {
 } from './flow-action-document.js';
 import { WDL_ACTION_TYPES, WDL_TRIGGER_TYPES } from './flow-built-in-templates.js';
 import { Combobox, Select } from '../Select.js';
+import { isMonacoKeyboardEvent } from '../monaco-support.js';
+import { FlowExpressionValueEditor } from './FlowExpressionValueEditor.js';
 import {
   connectorLocationLabel,
   expandDynamicSchemaFields,
@@ -82,6 +84,7 @@ export function EditFlowActionModal(props: {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (isMonacoKeyboardEvent(event)) return;
       if (event.key === 'Escape') props.onClose();
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
@@ -243,6 +246,7 @@ export function EditFlowActionModal(props: {
                             key={`${field.location || 'parameter'}:${field.name}`}
                             field={field}
                             options={dynamicOptions[fieldSchemaKey(field)]}
+                            source={props.source}
                             value={readPathValue(draft, connectorFieldPath(field))}
                             onChange={(value) => updateDraft(connectorFieldPath(field), value)}
                           />
@@ -256,7 +260,7 @@ export function EditFlowActionModal(props: {
               {actionLike ? (
                 <div className="flow-action-edit-section">
                   <h3>Common fields</h3>
-                  <CommonActionFields action={draft} onChange={updateDraft} />
+                  <CommonActionFields action={draft} source={props.source} onChange={updateDraft} />
                 </div>
               ) : null}
               {!actionLike && !hasConnectorSchema ? (
@@ -272,7 +276,7 @@ export function EditFlowActionModal(props: {
                   <button className="btn btn-ghost" type="button" onClick={syncJsonFromFields}>Reset from fields</button>
                 </div>
               </div>
-              <textarea className="flow-action-json-editor" value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
+              <FlowExpressionValueEditor value={rawText} source={props.source} mode="json" onChange={setRawText} />
               {rawError ? <div className="flow-action-edit-error">{rawError}</div> : null}
             </div>
           )}
