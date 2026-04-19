@@ -49,6 +49,7 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
       fontFamily: 'var(--mono)',
       fontSize: 12,
       lineNumbers: 'on',
+      lineNumbersMinChars: 3,
       minimap: { enabled: false },
       renderWhitespace: 'none',
       scrollBeyondLastLine: false,

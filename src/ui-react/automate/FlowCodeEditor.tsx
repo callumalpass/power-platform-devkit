@@ -108,6 +108,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       fontSize: 13,
       glyphMargin: true,
       lineNumbers: 'on',
+      lineNumbersMinChars: 3,
       minimap: { enabled: false },
       renderWhitespace: 'selection',
       scrollBeyondLastLine: false,

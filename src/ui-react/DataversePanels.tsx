@@ -547,6 +547,7 @@ function FetchXmlCodeEditor(props: {
       fontSize: 13,
       glyphMargin: true,
       lineNumbers: 'on',
+      lineNumbersMinChars: 3,
       minimap: { enabled: false },
       quickSuggestions: { other: true, comments: false, strings: true },
       renderWhitespace: 'selection',

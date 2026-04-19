@@ -34,6 +34,7 @@ export function FlowDiffModal(props: { original: string; modified: string; onClo
       readOnly: true,
       renderSideBySide: true,
       minimap: { enabled: false },
+      lineNumbersMinChars: 3,
       scrollBeyondLastLine: false,
       theme: 'pp-app',
     });
