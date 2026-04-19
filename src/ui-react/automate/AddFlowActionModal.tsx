@@ -24,13 +24,29 @@ import {
 } from './flow-dynamic-schema.js';
 
 const BUILT_IN_ACTION_TEMPLATES = [
-  { key: 'compose', label: 'Compose', desc: 'Transform or pass through a value', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
-  { key: 'http', label: 'HTTP', desc: 'Call any REST endpoint', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
-  { key: 'scope', label: 'Scope', desc: 'Group related actions', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
-  { key: 'condition', label: 'Condition', desc: 'Branch with if / else', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
+  // Control flow
+  { key: 'condition', category: 'control', label: 'Condition', desc: 'Branch with if / else', name: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
+  { key: 'apply-to-each', category: 'control', label: 'Apply to each', desc: 'Loop over items in an array', name: 'Apply_to_each', action: () => ({ type: 'Foreach', foreach: '@triggerBody()?[\'value\']', actions: {} }) },
+  { key: 'switch', category: 'control', label: 'Switch', desc: 'Branch on multiple values', name: 'Switch', action: () => ({ type: 'Switch', expression: '', cases: {}, default: { actions: {} } }) },
+  { key: 'do-until', category: 'control', label: 'Do until', desc: 'Loop until a condition is true', name: 'Do_until', action: () => ({ type: 'Until', expression: '@false', limit: { count: 60, timeout: 'PT1H' }, actions: {} }) },
+  { key: 'scope', category: 'control', label: 'Scope', desc: 'Group related actions', name: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
+  // Variables & data
+  { key: 'compose', category: 'data', label: 'Compose', desc: 'Transform or pass through a value', name: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
+  { key: 'parse-json', category: 'data', label: 'Parse JSON', desc: 'Validate and extract fields from a JSON string', name: 'Parse_JSON', action: () => ({ type: 'ParseJson', inputs: { content: '', schema: {} } }) },
+  { key: 'init-variable', category: 'data', label: 'Initialize variable', desc: 'Declare a named variable (string, int, bool, array, object)', name: 'Initialize_variable', action: () => ({ type: 'InitializeVariable', inputs: { variables: [{ name: '', type: 'string', value: '' }] } }) },
+  { key: 'set-variable', category: 'data', label: 'Set variable', desc: 'Update a previously-initialized variable', name: 'Set_variable', action: () => ({ type: 'SetVariable', inputs: { name: '', value: '' } }) },
+  // Request / response
+  { key: 'http', category: 'request', label: 'HTTP', desc: 'Call any REST endpoint', name: 'HTTP', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
+  { key: 'response', category: 'request', label: 'Response', desc: 'Return an HTTP response to the caller', name: 'Response', action: () => ({ type: 'Response', kind: 'http', inputs: { statusCode: 200 } }) },
 ] as const;
 
 type BuiltInActionTemplate = typeof BUILT_IN_ACTION_TEMPLATES[number];
+
+const BUILT_IN_CATEGORIES: Array<{ key: BuiltInActionTemplate['category']; label: string; hint: string }> = [
+  { key: 'control', label: 'Control flow', hint: 'Branch and loop without a connector' },
+  { key: 'data', label: 'Variables & data', hint: 'Shape data inside the flow' },
+  { key: 'request', label: 'Request & response', hint: 'Work with HTTP directly' },
+];
 
 export function AddFlowActionModal(props: {
   environment: string;
@@ -170,27 +186,41 @@ export function AddFlowActionModal(props: {
         </div>
         <div className="rt-modal-body add-action-body">
           <div className="add-action-pane add-action-picker">
-            <div className="add-action-picker-section">
-              <div className="add-action-section-label">Built-in</div>
-              <div className="add-action-template-row">
-                {BUILT_IN_ACTION_TEMPLATES.map((template) => (
-                  <button
-                    key={template.key}
-                    type="button"
-                    className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
-                    onClick={() => selectTemplate(template)}
-                  >
-                    <span className="add-action-template-label">{template.label}</span>
-                    <span className="add-action-template-desc">{template.desc}</span>
-                  </button>
-                ))}
-              </div>
+            <div className="add-action-picker-section add-action-picker-builtins">
+              <div className="add-action-section-label">Built-in actions</div>
+              <div className="add-action-section-desc">Workflow primitives that don't need a connector or connection.</div>
+              {BUILT_IN_CATEGORIES.map((group) => {
+                const items = BUILT_IN_ACTION_TEMPLATES.filter((item) => item.category === group.key);
+                if (!items.length) return null;
+                return (
+                  <div key={group.key} className="add-action-subgroup">
+                    <div className="add-action-subgroup-label">
+                      <span>{group.label}</span>
+                      <span className="add-action-subgroup-hint">{group.hint}</span>
+                    </div>
+                    <div className="add-action-template-row">
+                      {items.map((template) => (
+                        <button
+                          key={template.key}
+                          type="button"
+                          className={`add-action-template ${selectedTemplate?.key === template.key ? 'active' : ''}`}
+                          onClick={() => selectTemplate(template)}
+                        >
+                          <span className="add-action-template-label">{template.label}</span>
+                          <span className="add-action-template-desc">{template.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="add-action-picker-section add-action-picker-search-section">
               <div className="add-action-section-label add-action-section-label-row">
-                <span>Connector operations</span>
+                <span>Connector actions</span>
                 {loading ? <span className="add-action-searching">Searching…</span> : null}
               </div>
+              <div className="add-action-section-desc">Operations exposed by Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.</div>
               <div className="add-action-search">
                 <span className="add-action-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
                 <input
