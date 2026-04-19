@@ -3,12 +3,18 @@ import { api, formatDate, highlightJson, prop } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
+import { JsonViewer } from '../JsonViewer.js';
 
 type CanvasSessionEntry = { id: string; status: string; appId: string; environmentAlias: string; result?: any; error?: string; createdAt: string; deviceCode?: { verificationUri: string; userCode: string; message: string } };
 
-function CanvasResultView(props: { result: any; endpoint: string; toast: (message: string, isError?: boolean) => void }) {
-  const { result, endpoint, toast } = props;
+const DESCRIBE_ENDPOINTS = new Set(['controls', 'apis', 'datasources']);
+
+type DescribeTarget = { sessionId: string; version: string; endpoint: string; name: string; title: string };
+
+function CanvasResultView(props: { result: any; endpoint: string; toast: (message: string, isError?: boolean) => void; onRowClick?: (item: any) => void }) {
+  const { result, endpoint, toast, onRowClick } = props;
   const [view, setView] = useState<'table' | 'json'>('table');
+  const rowClickable = Boolean(onRowClick);
 
   // Extract the main array from known canvas response shapes
   const items: any[] | null = useMemo(() => {
@@ -61,7 +67,11 @@ function CanvasResultView(props: { result: any; endpoint: string; toast: (messag
             </thead>
             <tbody>
               {items!.map((item: any, i: number) => (
-                <tr key={i}>
+                <tr
+                  key={i}
+                  className={rowClickable ? 'canvas-result-row-clickable' : ''}
+                  onClick={rowClickable ? () => onRowClick!(item) : undefined}
+                >
                   {columns.map((col) => <td key={col}>{item?.[col] === undefined || item[col] === null ? '' : String(item[col])}</td>)}
                 </tr>
               ))}
@@ -93,6 +103,7 @@ export function CanvasTab(props: {
   const [explorerEndpoint, setExplorerEndpoint] = useState('controls');
   const [yamlDir, setYamlDir] = useState('./canvas-src');
   const [yamlBusy, setYamlBusy] = useState(false);
+  const [describeTarget, setDescribeTarget] = useState<DescribeTarget | null>(null);
 
   useEffect(() => {
     if (!environment || appsLoaded) return;
@@ -427,7 +438,25 @@ export function CanvasTab(props: {
 
                   {explorerLoading && <div className="entity-loading">Loading…</div>}
                   {!explorerLoading && explorerResult && (
-                    <CanvasResultView result={explorerResult} endpoint={explorerEndpoint} toast={toast} />
+                    <CanvasResultView
+                      result={explorerResult}
+                      endpoint={explorerEndpoint}
+                      toast={toast}
+                      onRowClick={activeSession && DESCRIBE_ENDPOINTS.has(explorerEndpoint)
+                        ? (item) => {
+                            const name = typeof item?.name === 'string' && item.name ? item.name : null;
+                            if (!name) { toast('This row has no name to describe.', true); return; }
+                            const version = activeSession.result?.session?.clientConfig?.webAuthoringVersion;
+                            setDescribeTarget({
+                              sessionId: activeSession.id,
+                              version: version ? `/${version}` : '',
+                              endpoint: explorerEndpoint,
+                              name,
+                              title: item.displayName || name,
+                            });
+                          }
+                        : undefined}
+                    />
                   )}
                 </>
               )}
@@ -435,9 +464,73 @@ export function CanvasTab(props: {
           )}
         </div>
       </div>
+      {describeTarget ? (
+        <CanvasDescribeModal target={describeTarget} toast={toast} onClose={() => setDescribeTarget(null)} />
+      ) : null}
     </>
   );
 }
 
+function CanvasDescribeModal(props: { target: DescribeTarget; toast: (message: string, isError?: boolean) => void; onClose: () => void }) {
+  const { target, toast, onClose } = props;
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api<any>('/api/canvas/request', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: target.sessionId,
+        method: 'GET',
+        path: `${target.version}/api/yaml/${target.endpoint}/${encodeURIComponent(target.name)}`,
+      }),
+    })
+      .then((payload) => { if (!cancelled) setData(payload.data?.response ?? payload.data); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [target.endpoint, target.name, target.sessionId, target.version]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) { if (event.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const rawJson = useMemo(() => {
+    try { return JSON.stringify(data, null, 2); }
+    catch { return '{}'; }
+  }, [data]);
+
+  return (
+    <div className="rt-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="rt-modal size-lg canvas-describe-modal">
+        <div className="rt-modal-header">
+          <div>
+            <h3 className="rt-modal-title">{target.title}</h3>
+            <span className="rt-modal-id">{target.endpoint} · {target.name}</span>
+          </div>
+          <div className="rt-modal-actions">
+            <CopyButton value={rawJson} label="Copy JSON" title="Copy describe response" toast={toast} />
+            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
+          </div>
+        </div>
+        <div className="rt-modal-body body-flush canvas-describe-body">
+          {loading ? (
+            <div className="rt-modal-loading">Loading {target.endpoint.slice(0, -1)} details…</div>
+          ) : error ? (
+            <div className="rt-modal-error">{error}</div>
+          ) : (
+            <JsonViewer value={rawJson} height="100%" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export type CanvasState = { sessions: CanvasSessionEntry[]; sessionStarting: boolean };

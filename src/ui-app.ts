@@ -1131,6 +1131,11 @@ export function renderHtml(options: { scriptSrc?: string } = {}): string {
     .result-table th { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); z-index: 1; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
     .result-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); font-family: var(--mono); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .result-table tr:hover td { background: var(--bg); }
+    .result-table tr.canvas-result-row-clickable { cursor: pointer; }
+    .result-table tr.canvas-result-row-clickable:hover td { background: var(--accent-soft); }
+    .rt-modal.canvas-describe-modal { height: min(720px, 90vh); padding: 0; }
+    .rt-modal.canvas-describe-modal .rt-modal-body.body-flush { display: flex; flex-direction: column; }
+    .canvas-describe-body > * { flex: 1; min-height: 0; }
     .result-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 10px; }
     .result-toggle-btn { padding: 5px 14px; font-size: 0.6875rem; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--muted); transition: all 100ms; }
     .result-toggle-btn:hover { color: var(--ink); }
