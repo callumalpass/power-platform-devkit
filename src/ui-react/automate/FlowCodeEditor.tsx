@@ -15,6 +15,7 @@ import {
   flowEditorSchemaCompletionItems,
   type FlowEditorSchemaIndex,
 } from './flow-editor-schema-index.js';
+import { FLOW_SNIPPETS } from './flow-code-snippets.js';
 
 const FLOW_JSON_LANGUAGE_ID = 'pp-flow-json';
 let flowJsonLanguageRegistered = false;
@@ -411,125 +412,6 @@ function completionKind(type: string | undefined): monaco.languages.CompletionIt
   if (type === 'keyword') return monaco.languages.CompletionItemKind.Keyword;
   return monaco.languages.CompletionItemKind.Value;
 }
-
-const FLOW_SNIPPETS = [
-  {
-    label: 'pa:compose action',
-    detail: 'Compose action',
-    documentation: 'Insert a Compose action body.',
-    insertText: [
-      '"${1:Compose}": {',
-      '  "type": "Compose",',
-      '  "inputs": ${2:"value"},',
-      '  "runAfter": {${3}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:condition action',
-    detail: 'Condition action',
-    documentation: 'Insert an If action with true and false branches.',
-    insertText: [
-      '"${1:Condition}": {',
-      '  "type": "If",',
-      '  "expression": {',
-      '    "equals": [',
-      '      ${2:"left"},',
-      '      ${3:"right"}',
-      '    ]',
-      '  },',
-      '  "actions": {',
-      '    ${4}',
-      '  },',
-      '  "else": {',
-      '    "actions": {',
-      '      ${5}',
-      '    }',
-      '  },',
-      '  "runAfter": {${6}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:scope action',
-    detail: 'Scope action',
-    documentation: 'Insert a Scope action.',
-    insertText: [
-      '"${1:Scope}": {',
-      '  "type": "Scope",',
-      '  "actions": {',
-      '    ${2}',
-      '  },',
-      '  "runAfter": {${3}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:foreach action',
-    detail: 'Foreach action',
-    documentation: 'Insert a Foreach loop.',
-    insertText: [
-      '"${1:Apply_to_each}": {',
-      '  "type": "Foreach",',
-      "  \"foreach\": \"${2:@outputs('Compose')}\",",
-      '  "actions": {',
-      '    ${3}',
-      '  },',
-      '  "runAfter": {${4}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:http action',
-    detail: 'HTTP action',
-    documentation: 'Insert an HTTP action.',
-    insertText: [
-      '"${1:HTTP}": {',
-      '  "type": "Http",',
-      '  "inputs": {',
-      '    "method": "${2:GET}",',
-      '    "uri": "${3:https://example.com}"',
-      '  },',
-      '  "runAfter": {${4}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:initialize variable',
-    detail: 'Initialize variable action',
-    documentation: 'Insert an InitializeVariable action.',
-    insertText: [
-      '"${1:Initialize_variable}": {',
-      '  "type": "InitializeVariable",',
-      '  "inputs": {',
-      '    "variables": [',
-      '      {',
-      '        "name": "${2:name}",',
-      '        "type": "${3:string}",',
-      '        "value": ${4:""}',
-      '      }',
-      '    ]',
-      '  },',
-      '  "runAfter": {${5}}',
-      '}',
-    ].join('\n'),
-  },
-  {
-    label: 'pa:set variable',
-    detail: 'Set variable action',
-    documentation: 'Insert a SetVariable action.',
-    insertText: [
-      '"${1:Set_variable}": {',
-      '  "type": "SetVariable",',
-      '  "inputs": {',
-      '    "name": "${2:name}",',
-      '    "value": ${3:"value"}',
-      '  },',
-      '  "runAfter": {${4}}',
-      '}',
-    ].join('\n'),
-  },
-] as const;
 
 function flowHoverAtOffset(analysis: FlowAnalysis | null, offset: number): string | null {
   const item = findOutlineAtOffsetLocal(analysis?.outline || [], offset);
