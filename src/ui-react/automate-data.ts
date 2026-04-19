@@ -410,16 +410,24 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
   const name = firstString(operation.name, properties.name, operation.operationId, properties.operationId, prop(operation, 'apiOperation.name')) || '';
   const apiName = firstString(api.apiName, api.name, properties.apiName, operation.apiName);
   const apiDisplayName = firstString(api.displayName, api.apiDisplayName, properties.apiDisplayName, operation.apiDisplayName);
+  const operationType = firstString(properties.operationType, operation.operationType, properties.type, operation.type);
+  const tagsValue = properties.tags ?? operation.tags;
+  const tags = Array.isArray(tagsValue) ? tagsValue.map((item) => String(item)) : [];
+  const isBuiltIn = api.isBuiltIn === true || tags.includes('BuiltIn');
+  const hasConnectorSchema = operationType === 'OpenApiConnection' || operationType === 'ApiConnection';
   return {
     name,
     id: firstString(operation.id, properties.id),
     summary: firstString(properties.summary, operation.summary, properties.displayName, operation.displayName, name),
     description: firstString(properties.description, operation.description),
-    operationType: firstString(properties.operationType, operation.operationType, properties.type, operation.type),
+    operationType,
     apiId: firstString(api.id, properties.apiId, operation.apiId),
     apiName,
     apiDisplayName,
     iconUri: firstString(api.iconUri, api.iconUriValue, properties.iconUri, operation.iconUri),
+    isBuiltIn,
+    hasConnectorSchema,
+    groupName: firstString(api.name),
     raw: value,
   };
 }

@@ -4,6 +4,7 @@ import { Icon } from '../Icon.js';
 import { Select } from '../Select.js';
 import type { FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, ToastFn } from '../ui-types.js';
 import { SchemaFieldEditor } from './FlowActionFieldEditors.js';
+import { buildBuiltInAction } from './flow-built-in-templates.js';
 import {
   buildApiOperationAction,
   buildRunAfter,
@@ -117,8 +118,16 @@ export function AddFlowActionModal(props: {
     setSelectedOperation(operation);
     setSelectedTemplate(null);
     setSelectedSchema(null);
+    const initialName = uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action'));
+    setActionName(initialName);
+    if (operation.isBuiltIn || !operation.hasConnectorSchema) {
+      const builtIn = buildBuiltInAction(operation);
+      if (builtIn) {
+        setOperationDraft({ ...builtIn, runAfter: buildRunAfter(runAfter) });
+        return;
+      }
+    }
     setOperationDraft(buildApiOperationAction(props.source, operation, buildRunAfter(runAfter)));
-    setActionName(uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action')));
   }
 
   function selectTemplate(template: BuiltInActionTemplate) {
@@ -132,6 +141,10 @@ export function AddFlowActionModal(props: {
   useEffect(() => {
     let cancelled = false;
     if (!selectedOperation) return;
+    // Built-ins (Control, DataOperation, Variable, Http, Request, Schedule, ...) have no
+    // server-side schema — selectOperation already populates operationDraft from a hardcoded
+    // WDL template, so skip the schema fetch and avoid the 404.
+    if (selectedOperation.isBuiltIn || !selectedOperation.hasConnectorSchema) return;
     const apiRef = selectedOperation.apiId || selectedOperation.apiName;
     if (!apiRef || !selectedOperation.name) {
       setSelectedSchema(null);
@@ -243,7 +256,10 @@ export function AddFlowActionModal(props: {
                 >
                   {operation.iconUri ? <img className="add-action-operation-icon" src={operation.iconUri} alt="" /> : <span className="add-action-operation-icon add-action-operation-icon-placeholder" />}
                   <span className="add-action-operation-text">
-                    <span className="add-action-operation-title">{operation.summary || operation.name}</span>
+                    <span className="add-action-operation-title">
+                      {operation.summary || operation.name}
+                      {operation.isBuiltIn && !operation.hasConnectorSchema ? <span className="add-action-builtin-badge">Built-in</span> : null}
+                    </span>
                     <span className="add-action-operation-meta">{operation.apiDisplayName || operation.apiName || 'Connector'} &middot; {operation.name}</span>
                     {operation.description ? <span className="add-action-operation-desc">{operation.description}</span> : null}
                   </span>
@@ -301,15 +317,21 @@ export function AddFlowActionModal(props: {
                 </div>
 
                 {selectedOperation ? (
-                  <div className="add-action-note">
-                    Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
-                    {' '}
-                    {schemaLoading
-                      ? 'Loading operation metadata…'
-                      : selectedSchema
-                        ? `${visibleSelectedSchemaFields.length} parameter${visibleSelectedSchemaFields.length === 1 ? '' : 's'} found${visibleSelectedSchemaFields.some((field) => field.required) ? `, ${visibleSelectedSchemaFields.filter((field) => field.required).length} required` : ''}.`
-                        : 'No detailed operation metadata found.'}
-                  </div>
+                  selectedOperation.isBuiltIn && !selectedOperation.hasConnectorSchema ? (
+                    <div className="add-action-note">
+                      Built-in workflow action — inserts with its default shape (type <code>{String(operationDraft?.type || selectedOperation.operationType || '')}</code>). Fill in parameters in the JSON editor after insertion.
+                    </div>
+                  ) : (
+                    <div className="add-action-note">
+                      Will use the matching connection reference when one exists, otherwise inserts a placeholder for {selectedOperation.apiDisplayName || selectedOperation.apiName || 'the connector'}.
+                      {' '}
+                      {schemaLoading
+                        ? 'Loading operation metadata…'
+                        : selectedSchema
+                          ? `${visibleSelectedSchemaFields.length} parameter${visibleSelectedSchemaFields.length === 1 ? '' : 's'} found${visibleSelectedSchemaFields.some((field) => field.required) ? `, ${visibleSelectedSchemaFields.filter((field) => field.required).length} required` : ''}.`
+                          : 'No detailed operation metadata found.'}
+                    </div>
+                  )
                 ) : null}
 
                 {selectedOperation && visibleSelectedSchemaFields.length && operationDraft ? (

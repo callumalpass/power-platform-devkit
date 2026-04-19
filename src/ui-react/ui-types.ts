@@ -108,6 +108,19 @@ export type FlowApiOperation = {
   apiName?: string;
   apiDisplayName?: string;
   iconUri?: string;
+  /**
+   * True when the operation belongs to a first-party operationGroup (Control, DataOperation,
+   * Variable, Http, Request, Schedule, Datetime, TextFunctions, NumberFunctions, etc.) — i.e. a
+   * Workflow Definition Language primitive rather than a connector operation. Built-ins do not
+   * have a discoverable schema at /apis/{group}; attempting to load one 404s.
+   */
+  isBuiltIn?: boolean;
+  /**
+   * True when loadFlowApiOperationSchema will produce a useful connector schema. Only true for
+   * operationType === 'OpenApiConnection' | 'ApiConnection'.
+   */
+  hasConnectorSchema?: boolean;
+  groupName?: string;
   raw?: unknown;
 };
 
@@ -233,6 +246,8 @@ export type FlowAnalysisOutlineItem = {
   runAfter?: string[];
   /** Human-readable control-flow/dependency hint, e.g. "after Compose" or "parallel" */
   dependency?: string;
+  /** Stable reference to the run action represented by this outline node. */
+  runActionRef?: string;
   from?: number;
   to?: number;
   children?: FlowAnalysisOutlineItem[];

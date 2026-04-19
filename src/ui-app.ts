@@ -454,7 +454,9 @@ export function renderHtml(): string {
     .add-action-operation-icon { width: 28px; height: 28px; border-radius: 5px; object-fit: contain; flex-shrink: 0; }
     .add-action-operation-icon-placeholder { display: block; background: var(--border); border-radius: 5px; }
     .add-action-operation-text { display: grid; gap: 2px; min-width: 0; }
-    .add-action-operation-title { font-weight: 600; font-size: 0.8125rem; line-height: 1.2; }
+    .add-action-operation-title { font-weight: 600; font-size: 0.8125rem; line-height: 1.2; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .add-action-builtin-badge { display: inline-flex; align-items: center; font-size: 0.5625rem; font-weight: 700; padding: 1px 6px; border-radius: 0; background: transparent; color: var(--muted); border: 1px solid var(--border); letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.4; }
+    .add-action-operation.active .add-action-builtin-badge { color: var(--accent); border-color: var(--accent); }
     .add-action-operation-meta { color: var(--muted); font-family: var(--mono); font-size: 0.625rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .add-action-operation-desc { color: var(--muted); font-size: 0.6875rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .add-action-config-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 32px 24px; text-align: center; color: var(--muted); }
