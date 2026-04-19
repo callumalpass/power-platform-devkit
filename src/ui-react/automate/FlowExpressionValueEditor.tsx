@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { useEffect, useRef } from 'react';
 import { completeFlowExpression } from '../../flow-language.js';
 import { applyMonacoAppTheme } from '../monaco-support.js';
+import { FLOW_EXPRESSION_TOKEN_RULES } from './flow-monaco-tokens.js';
 
 const FLOW_FIELD_LANGUAGE_ID = 'pp-flow-field-expression';
 let flowFieldLanguageRegistered = false;
@@ -53,22 +54,27 @@ export function FlowExpressionValueEditor(props: {
     const completionProvider = monaco.languages.registerCompletionItemProvider(FLOW_FIELD_LANGUAGE_ID, {
       triggerCharacters: ['@', "'", '(', ',', '[', '?'],
       provideCompletionItems: (completionModel, position) => {
-        if (completionModel.uri.toString() !== model.uri.toString()) return { suggestions: [] };
-        const cursor = completionModel.getOffsetAt(position);
-        const context = findFieldExpressionCompletionContext(completionModel.getValue(), cursor);
-        if (!context) return { suggestions: [] };
-        const range = rangeFromOffsets(completionModel, context.replaceFrom, cursor);
-        return {
-          suggestions: completeFlowExpression(sourceRef.current, context.text, context.relativeCursor).map((item) => ({
-            label: item.label,
-            kind: completionKind(item.type),
-            detail: item.detail || item.type,
-            documentation: item.info,
-            insertText: item.apply || item.label,
-            insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-            range,
-          })),
-        };
+        try {
+          if (completionModel.uri.toString() !== model.uri.toString()) return { suggestions: [] };
+          const cursor = completionModel.getOffsetAt(position);
+          const context = findFieldExpressionCompletionContext(completionModel.getValue(), cursor);
+          if (!context) return { suggestions: [] };
+          const range = rangeFromOffsets(completionModel, context.replaceFrom, cursor);
+          return {
+            suggestions: completeFlowExpression(sourceRef.current, context.text, context.relativeCursor).map((item) => ({
+              label: item.label,
+              kind: completionKind(item.type),
+              detail: item.detail || item.type,
+              documentation: item.info,
+              insertText: item.apply || item.label,
+              insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+              range,
+            })),
+          };
+        } catch (error) {
+          console.error('Flow expression completions failed', error);
+          return { suggestions: [] };
+        }
       },
     });
 
@@ -139,15 +145,7 @@ function ensureFlowFieldLanguage() {
   monaco.languages.setMonarchTokensProvider(FLOW_FIELD_LANGUAGE_ID, {
     defaultToken: '',
     tokenizer: {
-      root: [
-        [/"([^"\\]|\\.)*"(?=\s*:)/, 'attribute.name'],
-        [/"([^"\\]|\\.)*"/, 'string'],
-        [/'([^'\\]|\\.)*'/, 'string'],
-        [/@[A-Za-z_][A-Za-z0-9_]*/, 'keyword'],
-        [/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
-        [/\b(?:true|false|null)\b/, 'keyword'],
-        [/[{}[\](),:]/, 'delimiter'],
-      ],
+      root: FLOW_EXPRESSION_TOKEN_RULES,
     },
   });
 }

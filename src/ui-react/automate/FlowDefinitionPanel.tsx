@@ -8,6 +8,7 @@ import { FlowProblemsPanel } from './FlowProblemsPanel.js';
 import type { FlowEditorHandle, FlowOperation, FlowProblem } from './types.js';
 import { useResizableWidth } from '../setup/use-resizable-width.js';
 import { useFlowEditorSchemaIndex } from './flow-editor-schema-index.js';
+import type { FlowConnectionModel } from './flow-connections.js';
 
 export function FlowDefinitionPanel(props: {
   active: boolean;
@@ -23,6 +24,7 @@ export function FlowDefinitionPanel(props: {
   flowOutlineActivePath: string[];
   flowProblems: FlowProblem[];
   flowValidation: FlowValidationResult | null;
+  connectionModel: FlowConnectionModel;
   hasBlockingServiceErrors: boolean;
   isFlowDirty: boolean;
   isFlowEditable: boolean;
@@ -129,6 +131,7 @@ export function FlowDefinitionPanel(props: {
                 validation={props.flowValidation}
                 analysis={props.analysis}
                 schemaIndex={schemaIndex}
+                connectionModel={props.connectionModel}
                 vimEnabled={props.vimEnabled}
                 onVimMode={props.onVimMode}
                 toast={props.toast}

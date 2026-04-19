@@ -16,6 +16,12 @@ import {
   type FlowEditorSchemaIndex,
 } from './flow-editor-schema-index.js';
 import { FLOW_SNIPPETS } from './flow-code-snippets.js';
+import { JSON_LIKE_TOKEN_RULES } from './flow-monaco-tokens.js';
+import {
+  flowEditorConnectionCompletionItems,
+  type FlowEditorConnectionCompletionItem,
+} from './flow-editor-connection-completions.js';
+import type { FlowConnectionModel } from './flow-connections.js';
 
 const FLOW_JSON_LANGUAGE_ID = 'pp-flow-json';
 let flowJsonLanguageRegistered = false;
@@ -27,11 +33,12 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   validation: FlowValidationResult | null;
   analysis: FlowAnalysis | null;
   schemaIndex?: FlowEditorSchemaIndex;
+  connectionModel?: FlowConnectionModel;
   vimEnabled: boolean;
   onVimMode: (mode: string) => void;
   toast: ToastFn;
 }>((props, ref) => {
-  const { value, onChange, diagnostics, validation, analysis, schemaIndex, vimEnabled, onVimMode, toast } = props;
+  const { value, onChange, diagnostics, validation, analysis, schemaIndex, connectionModel, vimEnabled, onVimMode, toast } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const vimStatusRef = useRef<HTMLSpanElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -45,6 +52,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   const validationRef = useRef(validation);
   const analysisRef = useRef(analysis);
   const schemaIndexRef = useRef<FlowEditorSchemaIndex>(schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX);
+  const connectionModelRef = useRef<FlowConnectionModel | null>(connectionModel || null);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
@@ -52,6 +60,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   useEffect(() => { validationRef.current = validation; }, [validation]);
   useEffect(() => { analysisRef.current = analysis; }, [analysis]);
   useEffect(() => { schemaIndexRef.current = schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX; }, [schemaIndex]);
+  useEffect(() => { connectionModelRef.current = connectionModel || null; }, [connectionModel]);
   useEffect(() => {
     vimEnabledRef.current = vimEnabled;
     vimAttachmentRef.current?.setEnabled(vimEnabled);
@@ -144,8 +153,9 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
           analysisRef.current = currentAnalysis;
           return {
             suggestions: [
-              ...flowAnalysisCompletions(completionModel, position, currentAnalysis),
               ...flowSchemaCompletions(completionModel, position, currentAnalysis, schemaIndexRef.current),
+              ...flowConnectionCompletions(completionModel, position, currentAnalysis, connectionModelRef.current),
+              ...flowAnalysisCompletions(completionModel, position, currentAnalysis),
               ...flowSnippetCompletions(completionModel, position),
             ],
           };
@@ -238,14 +248,7 @@ function ensureFlowJsonLanguage() {
   monaco.languages.setMonarchTokensProvider(FLOW_JSON_LANGUAGE_ID, {
     defaultToken: '',
     tokenizer: {
-      root: [
-        [/"([^"\\]|\\.)*"(?=\s*:)/, 'attribute.name'],
-        [/"([^"\\]|\\.)*"/, 'string'],
-        [/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
-        [/\b(?:true|false)\b/, 'keyword'],
-        [/\bnull\b/, 'keyword'],
-        [/[{}[\],:]/, 'delimiter'],
-      ],
+      root: JSON_LIKE_TOKEN_RULES,
     },
   });
 }
@@ -321,6 +324,25 @@ function flowSchemaCompletions(
     detail: item.detail,
     documentation: item.documentation,
     insertText: item.insertText,
+    sortText: item.sortText,
+    range,
+  }));
+}
+
+function flowConnectionCompletions(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  analysis: FlowAnalysis,
+  connectionModel: FlowConnectionModel | null,
+): monaco.languages.CompletionItem[] {
+  const range = wordCompletionRange(model, position);
+  return flowEditorConnectionCompletionItems(analysis, connectionModel).map((item: FlowEditorConnectionCompletionItem) => ({
+    label: item.label,
+    kind: item.kind === 'property' ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.Value,
+    detail: item.detail,
+    documentation: item.documentation,
+    insertText: item.insertText,
+    sortText: item.sortText,
     range,
   }));
 }

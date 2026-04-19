@@ -48,6 +48,7 @@ export type FlowEditorSchemaCompletionItem = {
   detail?: string;
   documentation?: string;
   insertText: string;
+  sortText?: string;
 };
 
 type FlowEditorCursorContext = {
@@ -297,12 +298,14 @@ function fieldKeyCompletions(entry: FlowEditorSchemaActionEntry, parentPath: str
   return entry.fields
     .filter((field) => pathsEqual(connectorFieldPath(field).slice(0, -1), parentPath))
     .filter((field) => !existing.has(field.name) || field.name === currentName)
+    .sort((left, right) => fieldSortKey(left).localeCompare(fieldSortKey(right)))
     .map((field) => ({
       label: field.name,
       kind: 'property' as const,
       detail: fieldDetail(field),
       documentation: field.description || undefined,
       insertText: escapeJsonStringContent(field.name),
+      sortText: fieldSortKey(field),
     }));
 }
 
@@ -321,10 +324,43 @@ function fieldValueCompletions(entry: FlowEditorSchemaActionEntry, valuePath: st
         detail: fieldDetail(field),
         documentation: option.title || field.description || undefined,
         insertText: escapeJsonStringContent(option.value),
+        sortText: `${field.required ? '10' : '20'}_${field.name}_${String(option.title || option.value).toLowerCase()}`,
       });
+    }
+    if (!options.length) {
+      for (const fallback of fallbackValueCompletions(field)) completions.push(fallback);
     }
   }
   return completions;
+}
+
+function fallbackValueCompletions(field: FlowApiOperationSchemaField): FlowEditorSchemaCompletionItem[] {
+  if (field.defaultValue !== undefined && field.defaultValue !== null) {
+    const value = typeof field.defaultValue === 'string' ? field.defaultValue : JSON.stringify(field.defaultValue);
+    return [{
+      label: value,
+      kind: 'value',
+      detail: fieldDetail(field),
+      documentation: field.description || undefined,
+      insertText: escapeJsonStringContent(value),
+      sortText: `${field.required ? '30' : '40'}_${field.name}_default`,
+    }];
+  }
+  if (field.type === 'boolean') {
+    return ['true', 'false'].map((value, index) => ({
+      label: value,
+      kind: 'value' as const,
+      detail: fieldDetail(field),
+      documentation: field.description || undefined,
+      insertText: value,
+      sortText: `${field.required ? '30' : '40'}_${field.name}_${index}`,
+    }));
+  }
+  return [];
+}
+
+function fieldSortKey(field: FlowApiOperationSchemaField): string {
+  return `${field.required ? '10' : '20'}_${connectorFieldPath(field).join('.')}_${field.name}`;
 }
 
 function schemaEntryForContext(cursor: number, context: FlowEditorCursorContext, index: FlowEditorSchemaIndex): FlowEditorSchemaActionEntry | undefined {

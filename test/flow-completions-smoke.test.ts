@@ -15,7 +15,9 @@ import {
   flowEditorSchemaCompletionItems,
   type FlowEditorSchemaActionEntry,
 } from '../src/ui-react/automate/flow-editor-schema-index.js';
+import { flowEditorConnectionCompletionItems } from '../src/ui-react/automate/flow-editor-connection-completions.js';
 import { fieldSchemaKey, visibleConnectorSchemaFields } from '../src/ui-react/automate/flow-dynamic-schema.js';
+import { buildFlowConnectionModel, type FlowEnvironmentConnection } from '../src/ui-react/automate/flow-connections.js';
 import type { FlowApiOperation, FlowApiOperationSchemaField } from '../src/ui-react/ui-types.js';
 
 type SnippetExpectation = {
@@ -127,6 +129,15 @@ const RICH_COMPLETION_FLOW = JSON.stringify({
     },
   },
 }, null, 2);
+
+const DATAVERSE_CONNECTION: FlowEnvironmentConnection = {
+  name: 'shared-commondataser-da8725a8',
+  id: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps/connections/shared-commondataser-da8725a8',
+  displayName: 'callum@example.test',
+  apiName: 'shared_commondataserviceforapps',
+  apiId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+  status: 'Connected',
+};
 
 function builtInOperation(name: string, operationType: string): FlowApiOperation {
   return {
@@ -393,6 +404,11 @@ test('expression completions expose the WDL functions used by flow and modal edi
   }
 
   assert.match(expectCompletion(completions, 'outputs()').apply || '', /PrepareValue/);
+  assert.equal(expectCompletion(completions, "outputs('PrepareValue')").apply, "outputs('PrepareValue')");
+  assert.equal(expectCompletion(completions, "body('PrepareValue')").apply, "body('PrepareValue')");
+  assert.equal(expectCompletion(completions, "items('For_each_record')").apply, "items('For_each_record')");
+  assert.equal(expectCompletion(completions, "variables('counter')").apply, "variables('counter')");
+  assert.equal(expectCompletion(completions, "parameters('targetValue')").apply, "parameters('targetValue')");
   assert.match(expectCompletion(completions, 'items()').apply || '', /For_each_record/);
   assert.doesNotMatch(expectCompletion(completions, 'items()').apply || '', /PrepareValue/);
   assert.match(expectCompletion(completions, 'variables()').apply || '', /counter/);
@@ -501,6 +517,28 @@ test('flow JSON analysis completions cover root keys, action keys, runAfter targ
     expectCompletion(runAfterCompletions, status, 'value');
   }
 
+  const runAfterStatusSource = JSON.stringify({
+    definition: {
+      actions: {
+        First: {
+          type: 'Compose',
+          inputs: '',
+          runAfter: {},
+        },
+        Second: {
+          type: 'Compose',
+          inputs: '',
+          runAfter: {
+            First: ['Suc'],
+          },
+        },
+      },
+    },
+  }, null, 2);
+  const runAfterStatusCompletions = analyzeFlow(runAfterStatusSource, runAfterStatusSource.indexOf('"Suc"') + 4).completions;
+  expectCompletion(runAfterStatusCompletions, 'Succeeded', 'value');
+  expectCompletion(runAfterStatusCompletions, 'Failed', 'value');
+
   const typeValueSource = JSON.stringify({
     definition: {
       actions: {
@@ -570,6 +608,7 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
   assert.ok(keyCompletions.some((item) => item.label === 'table' && item.kind === 'property'));
   assert.ok(keyCompletions.some((item) => item.label === '$filter' && item.kind === 'property'));
   assert.equal(keyCompletions.some((item) => item.label === 'dataset'), false, 'already-filled fields should not be suggested again');
+  assert.equal(keyCompletions[0]?.label, 'table', 'required schema fields should rank before optional fields');
 
   const tableValueSource = connectorFlow({ dataset: 'https://contoso.sharepoint.com/sites/Team', table: 'Lis' });
   const tableValueAnalysis = analyzeFlow(tableValueSource, tableValueSource.indexOf('"Lis"') + 4);
@@ -583,6 +622,58 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
   const datasetValueCompletions = flowEditorSchemaCompletionItems(datasetValueSource.indexOf('"http"') + 5, datasetValueAnalysis, index);
   assert.ok(datasetValueCompletions.some((item) => item.label.includes('Team Site') && item.insertText.includes('contoso')));
   assert.ok(datasetValueCompletions.some((item) => item.label.includes('Quoted Archive') && item.insertText === 'https://contoso.sharepoint.com/sites/\\"Quoted\\"\\\\Archive'));
+});
+
+test('connection-aware completions suggest connector host keys and values from the flow connection model', () => {
+  const source = JSON.stringify({
+    properties: {
+      connectionReferences: {
+        shared_commondataserviceforapps: {
+          connectionName: DATAVERSE_CONNECTION.name,
+          api: {
+            name: 'shared_commondataserviceforapps',
+            id: DATAVERSE_CONNECTION.apiId,
+            displayName: 'Microsoft Dataverse',
+          },
+        },
+      },
+      definition: {
+        actions: {
+          List_rows: {
+            type: 'OpenApiConnection',
+            inputs: {
+              host: {
+                connectionReferenceName: 'shared_commondataserviceforapps',
+                operationId: 'ListRecords',
+                con: '',
+              },
+              parameters: {
+                entityName: 'accounts',
+              },
+            },
+            runAfter: {},
+          },
+        },
+      },
+    },
+  }, null, 2);
+  const model = buildFlowConnectionModel(source, [DATAVERSE_CONNECTION]);
+
+  const keyCursor = source.indexOf('"con"') + 4;
+  const keyAnalysis = analyzeFlow(source, keyCursor);
+  const keyCompletions = flowEditorConnectionCompletionItems(keyAnalysis, model);
+  assert.ok(keyCompletions.some((item) => item.label === 'connectionReferenceName' && item.kind === 'property'));
+  assert.ok(keyCompletions.some((item) => item.label === 'operationId' && item.kind === 'property'));
+
+  const referenceSource = source.replace('"connectionReferenceName": "shared_commondataserviceforapps"', '"connectionReferenceName": "shared_comm"');
+  const referenceCursor = referenceSource.indexOf('"shared_comm"') + 12;
+  const referenceCompletions = flowEditorConnectionCompletionItems(analyzeFlow(referenceSource, referenceCursor), model);
+  assert.ok(referenceCompletions.some((item) => item.label === 'shared_commondataserviceforapps' && item.insertText === 'shared_commondataserviceforapps'));
+
+  const operationSource = source.replace('"ListRecords"', '"List"');
+  const operationCursor = operationSource.indexOf('"List"') + 5;
+  const operationCompletions = flowEditorConnectionCompletionItems(analyzeFlow(operationSource, operationCursor), model);
+  assert.ok(operationCompletions.some((item) => item.label === 'ListRecords' && item.detail?.includes('Operation id')));
 });
 
 test('live flow API metadata drives the same completions as the editor schema index', {
@@ -675,4 +766,56 @@ test('live flow API metadata drives the same completions as the editor schema in
   assert.ok(completions.some((item) => item.label === '$filter' && item.kind === 'property'));
   assert.ok(completions.some((item) => item.label === '$top' && item.kind === 'property'));
   assert.equal(completions.some((item) => item.label === '$select'), false, 'existing live API fields should not be suggested again');
+
+  const officeConnection = valueArray(connections).find((connection) => {
+    const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';
+    return id.includes('/apis/shared_office365users/');
+  });
+  if (officeConnection) {
+    const officeCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
+      method: 'POST',
+      query: { '$top': '25' },
+      body: buildFlowOperationSearchBody('Office 365 Users', 'action'),
+    });
+    const officeOperation = valueArray(officeCatalog).find((operation) => {
+      return apiNameFromOperation(operation) === 'shared_office365users'
+        && firstString(readPath(operation, 'properties.operationType')) === 'OpenApiConnection';
+    });
+    assert.ok(officeOperation, 'the live operation catalog should expose at least one Office 365 Users action');
+    const officeOperationId = firstString(readPath(officeOperation, 'name'));
+    assert.ok(officeOperationId);
+    const officeRawConnector = await liveRequest<unknown>('flow', '/apis/shared_office365users');
+    const officeSchema = normalizeFlowApiOperationSchema(
+      'shared_office365users',
+      '/providers/Microsoft.PowerApps/apis/shared_office365users',
+      officeOperationId,
+      officeRawConnector,
+    );
+    assert.ok(officeSchema, 'the Office 365 Users connector swagger should normalize to an operation schema');
+    const officeFields = visibleConnectorSchemaFields(officeSchema.fields);
+    assert.ok(officeFields.length > 0, 'Office 365 Users operation should expose editable schema fields');
+    const firstOfficeField = officeFields[0]!;
+    const officeSource = liveConnectorFlow({
+      apiName: 'shared_office365users',
+      apiId: '/providers/Microsoft.PowerApps/apis/shared_office365users',
+      connectionName: firstString(readPath(officeConnection, 'name')) || '',
+      operationId: officeOperationId,
+      parameters: {
+        [firstOfficeField.name.slice(0, 1) || 'x']: '',
+      },
+    });
+    const officeCursor = officeSource.indexOf(Object.keys(JSON.parse(officeSource).properties.definition.actions.List_rows.inputs.parameters)[0]) + 2;
+    const officeAnalysis = analyzeFlow(officeSource, officeCursor);
+    const officeTarget = collectFlowEditorSchemaTargets(officeSource, officeAnalysis)[0];
+    assert.ok(officeTarget);
+    const officeIndex = buildFlowEditorSchemaIndex([{
+      ...officeTarget,
+      schema: officeSchema,
+      fields: officeFields,
+      options: {},
+      status: 'ready',
+    }], false);
+    const officeCompletions = flowEditorSchemaCompletionItems(officeCursor, officeAnalysis, officeIndex);
+    assert.ok(officeCompletions.some((item) => item.label === firstOfficeField.name && item.kind === 'property'));
+  }
 });

@@ -761,6 +761,7 @@ export function AutomateTab(props: {
               flowOutlineActivePath={flowOutlineActivePath}
               flowProblems={flowProblems}
               flowValidation={flowValidation}
+              connectionModel={connectionModel}
               hasBlockingServiceErrors={hasBlockingServiceErrors}
               isFlowDirty={isFlowDirty}
               isFlowEditable={Boolean(isFlowEditable)}

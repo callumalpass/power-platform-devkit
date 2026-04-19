@@ -598,7 +598,7 @@ export function renderHtml(options: { scriptSrc?: string } = {}): string {
     .flow-action-monaco-editor { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
     .flow-action-monaco-editor:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
     .flow-action-monaco-editor.text { height: 34px; }
-    .flow-action-monaco-editor.json { height: 96px; min-height: 86px; }
+    .flow-action-monaco-editor.json { height: 96px; min-height: 86px; resize: vertical; max-height: 70vh; }
     .flow-action-edit-section > .flow-action-monaco-editor.json { height: 320px; }
     .flow-action-monaco-editor .monaco-editor,
     .flow-action-monaco-editor .monaco-editor-background,

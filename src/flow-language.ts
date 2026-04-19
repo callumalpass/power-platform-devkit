@@ -693,6 +693,9 @@ function buildCompletions(context: FlowCursorContext, model: FlowDocumentModel, 
   if (context.kind === 'property-value' && context.propertyName === 'type') {
     return ACTION_TYPE_OPTIONS.map((item) => ({ label: item, type: 'value' as const, apply: `"${item}"` }));
   }
+  if (context.kind === 'property-value' && context.path.includes('runAfter')) {
+    return RUN_AFTER_STATUSES.map((item) => ({ label: item, type: 'value' as const, apply: item }));
+  }
   return [];
 }
 
@@ -712,16 +715,38 @@ function completeExpression(
   parameters: FlowParameterNode[],
 ): FlowCompletionItem[] {
   const before = text.slice(0, Math.min(text.length, Math.max(0, relativeCursor)));
-  const targetNamePrefixMatch = before.match(/(?:actions|body|outputs|items|variables|parameters|result)\(\s*'([^']*)$/i);
-  if (targetNamePrefixMatch) {
-    const prefix = targetNamePrefixMatch[1] ?? '';
-    const functionName = before.match(/([A-Za-z_][A-Za-z0-9_]*)\(\s*'[^']*$/)?.[1]?.toLowerCase();
-    return filterCompletionPrefix(targetNameCompletions(functionName, actions, variables, parameters), prefix);
+  const targetContext = readTargetNameCompletionContext(before);
+  if (targetContext) {
+    return filterCompletionPrefix(targetNameCompletions(targetContext.functionName, actions, variables, parameters), targetContext.prefix);
   }
   if (isInsideExpressionString(before)) return [];
   const functionPrefix = expressionFunctionPrefix(before);
   if (functionPrefix === undefined) return [];
   return filterCompletionPrefix(expressionFunctionCompletions(actions, triggers, variables, parameters), functionPrefix);
+}
+
+function readTargetNameCompletionContext(before: string): { functionName: string; prefix: string } | undefined {
+  const quoteStart = findCurrentWdlStringStart(before);
+  if (quoteStart < 0) return undefined;
+  const functionMatch = before.slice(0, quoteStart).match(/([A-Za-z_][A-Za-z0-9_]*)\(\s*$/);
+  const functionName = functionMatch?.[1]?.toLowerCase();
+  if (!functionName || !['actions', 'body', 'outputs', 'items', 'variables', 'parameters', 'result'].includes(functionName)) return undefined;
+  return {
+    functionName,
+    prefix: before.slice(quoteStart + 1).replace(/''/g, '\''),
+  };
+}
+
+function findCurrentWdlStringStart(value: string): number {
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    if (value[index] !== '\'') continue;
+    if (index > 0 && value[index - 1] === '\'') {
+      index -= 1;
+      continue;
+    }
+    return index;
+  }
+  return -1;
 }
 
 function targetNameCompletions(
@@ -786,6 +811,7 @@ function expressionFunctionCompletions(
   const parameterChoice = expressionChoice(parameters.map((item) => item.name), 'parameterName');
   const triggerChoice = expressionChoice(triggers.map((item) => item.name), 'triggerName');
   return [
+    ...dynamicContentCompletions(actions, variables, parameters),
     expressionSnippet('triggerBody()', 'triggerBody()', 'Trigger body', 'Return the trigger body.'),
     expressionSnippet('triggerOutputs()', 'triggerOutputs()', 'Trigger outputs', 'Return the trigger outputs.'),
     expressionSnippet('trigger()', 'trigger()', 'Trigger object', 'Return the trigger object.'),
@@ -807,11 +833,71 @@ function expressionFunctionCompletions(
     expressionSnippet('equals()', 'equals(${1:left}, ${2:right})', 'Equality check', 'Compare two values.'),
     expressionSnippet('if()', 'if(${1:condition}, ${2:trueValue}, ${3:falseValue})', 'Conditional value', 'Return one of two values.'),
     expressionSnippet('contains()', 'contains(${1:collection}, ${2:value})', 'Contains check', 'Check whether a collection contains a value.'),
+    expressionSnippet('startsWith()', 'startsWith(${1:text}, ${2:prefix})', 'Starts with', 'Check whether text starts with a prefix.'),
+    expressionSnippet('endsWith()', 'endsWith(${1:text}, ${2:suffix})', 'Ends with', 'Check whether text ends with a suffix.'),
     expressionSnippet('length()', 'length(${1:value})', 'Length', 'Return string or array length.'),
+    expressionSnippet('first()', 'first(${1:collection})', 'First item', 'Return the first item from a string or array.'),
+    expressionSnippet('last()', 'last(${1:collection})', 'Last item', 'Return the last item from a string or array.'),
+    expressionSnippet('take()', 'take(${1:collection}, ${2:count})', 'Take items', 'Return the first items from a collection.'),
+    expressionSnippet('skip()', 'skip(${1:collection}, ${2:count})', 'Skip items', 'Skip items from the start of a collection.'),
+    expressionSnippet('split()', 'split(${1:text}, ${2:separator})', 'Split text', 'Split text into an array.'),
+    expressionSnippet('join()', 'join(${1:array}, ${2:separator})', 'Join array', 'Join array values into text.'),
+    expressionSnippet('createArray()', 'createArray(${1:value})', 'Create array', 'Create an array from values.'),
+    expressionSnippet('union()', 'union(${1:collection}, ${2:collection})', 'Union', 'Return unique values from collections.'),
+    expressionSnippet('intersection()', 'intersection(${1:collection}, ${2:collection})', 'Intersection', 'Return shared values from collections.'),
     expressionSnippet('json()', 'json(${1:value})', 'Parse JSON', 'Return a JSON value from a string or XML.'),
+    expressionSnippet('string()', 'string(${1:value})', 'String', 'Convert a value to text.'),
+    expressionSnippet('int()', 'int(${1:value})', 'Integer', 'Convert a value to an integer.'),
+    expressionSnippet('float()', 'float(${1:value})', 'Float', 'Convert a value to a floating-point number.'),
+    expressionSnippet('bool()', 'bool(${1:value})', 'Boolean', 'Convert a value to a boolean.'),
+    expressionSnippet('add()', 'add(${1:left}, ${2:right})', 'Add', 'Add two numbers.'),
+    expressionSnippet('sub()', 'sub(${1:left}, ${2:right})', 'Subtract', 'Subtract two numbers.'),
+    expressionSnippet('mul()', 'mul(${1:left}, ${2:right})', 'Multiply', 'Multiply two numbers.'),
+    expressionSnippet('div()', 'div(${1:left}, ${2:right})', 'Divide', 'Divide two numbers.'),
+    expressionSnippet('mod()', 'mod(${1:left}, ${2:right})', 'Modulo', 'Return the remainder after division.'),
+    expressionSnippet('greater()', 'greater(${1:left}, ${2:right})', 'Greater than', 'Compare two values.'),
+    expressionSnippet('greaterOrEquals()', 'greaterOrEquals(${1:left}, ${2:right})', 'Greater or equal', 'Compare two values.'),
+    expressionSnippet('less()', 'less(${1:left}, ${2:right})', 'Less than', 'Compare two values.'),
+    expressionSnippet('lessOrEquals()', 'lessOrEquals(${1:left}, ${2:right})', 'Less or equal', 'Compare two values.'),
+    expressionSnippet('and()', 'and(${1:condition}, ${2:condition})', 'And', 'Return true when all conditions are true.'),
+    expressionSnippet('or()', 'or(${1:condition}, ${2:condition})', 'Or', 'Return true when any condition is true.'),
+    expressionSnippet('not()', 'not(${1:condition})', 'Not', 'Invert a boolean condition.'),
     expressionSnippet('utcNow()', 'utcNow()', 'Current UTC time', 'Return the current UTC timestamp.'),
     expressionSnippet('formatDateTime()', 'formatDateTime(${1:timestamp}, ${2:format})', 'Format timestamp', 'Format a timestamp.'),
+    expressionSnippet('addDays()', 'addDays(${1:timestamp}, ${2:days})', 'Add days', 'Add days to a timestamp.'),
+    expressionSnippet('addHours()', 'addHours(${1:timestamp}, ${2:hours})', 'Add hours', 'Add hours to a timestamp.'),
+    expressionSnippet('addMinutes()', 'addMinutes(${1:timestamp}, ${2:minutes})', 'Add minutes', 'Add minutes to a timestamp.'),
+    expressionSnippet('formatNumber()', 'formatNumber(${1:number}, ${2:format})', 'Format number', 'Format a number.'),
   ];
+}
+
+function dynamicContentCompletions(
+  actions: FlowActionNode[],
+  variables: FlowVariableNode[],
+  parameters: FlowParameterNode[],
+): FlowCompletionItem[] {
+  return [
+    ...actions.flatMap((action) => [
+      expressionReferenceSnippet(`outputs('${action.name}')`, `outputs('${escapeWdlStringValue(action.name)}')`, 'Action outputs', action.type),
+      expressionReferenceSnippet(`body('${action.name}')`, `body('${escapeWdlStringValue(action.name)}')`, 'Action body', action.type),
+    ]),
+    ...loopActions(actions).map((action) => expressionReferenceSnippet(`items('${action.name}')`, `items('${escapeWdlStringValue(action.name)}')`, 'Loop item', action.type)),
+    ...scopedResultActions(actions).map((action) => expressionReferenceSnippet(`result('${action.name}')`, `result('${escapeWdlStringValue(action.name)}')`, 'Scoped result', action.type)),
+    ...variables.map((variable) => expressionReferenceSnippet(`variables('${variable.name}')`, `variables('${escapeWdlStringValue(variable.name)}')`, 'Variable value', variable.type)),
+    ...parameters.map((parameter) => expressionReferenceSnippet(`parameters('${parameter.name}')`, `parameters('${escapeWdlStringValue(parameter.name)}')`, 'Parameter value', parameter.type)),
+  ];
+}
+
+function expressionReferenceSnippet(label: string, apply: string, detail: string, info?: string): FlowCompletionItem {
+  return {
+    label,
+    type: 'keyword',
+    detail,
+    info,
+    apply,
+    snippet: false,
+    boost: -1,
+  };
 }
 
 function expressionSnippet(label: string, apply: string, detail: string, info?: string): FlowCompletionItem {
@@ -883,15 +969,16 @@ function escapeSnippetChoiceValue(value: string): string {
 function filterCompletionPrefix<T extends FlowCompletionItem>(items: T[], prefix: string): T[] {
   const normalized = prefix.toLowerCase();
   const filtered = normalized ? items.filter((item) => item.label.toLowerCase().includes(normalized)) : items;
-  return filtered.sort((a, b) => scoreCompletion(a, normalized) - scoreCompletion(b, normalized)).slice(0, 30);
+  return filtered.sort((a, b) => scoreCompletion(a, normalized) - scoreCompletion(b, normalized)).slice(0, 80);
 }
 
 function scoreCompletion(item: FlowCompletionItem, prefix: string): number {
-  if (!prefix) return 0;
+  const boost = item.boost ?? 0;
+  if (!prefix) return boost;
   const label = item.label.toLowerCase();
-  if (label.startsWith(prefix)) return 0;
+  if (label.startsWith(prefix)) return boost;
   const index = label.indexOf(prefix);
-  return index >= 0 ? index + 5 : 1000;
+  return index >= 0 ? index + 5 + boost : 1000 + boost;
 }
 
 function readCursorContext(root: JsonObjectNode, source: string, cursor: number, model: FlowDocumentModel): FlowCursorContext | undefined {

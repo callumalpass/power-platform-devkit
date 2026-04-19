@@ -123,10 +123,10 @@ function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text
     />
   );
   return props.label ? (
-    <label className="flow-action-value-editor">
+    <div className="flow-action-value-editor" role="group" aria-label={props.label}>
       <span>{props.label}</span>
       {content}
-    </label>
+    </div>
   ) : content;
 }
 function optionValue(option: ActionValueOption) {
