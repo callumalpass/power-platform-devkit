@@ -22,7 +22,8 @@ import {
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 import { useMonacoVimPreference } from './monaco-support.js';
-import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, findSiblingActionNames, readOutlineEditTarget, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
+import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, findSiblingActionNames, readOutlineEditTarget, removeActionFromFlowDocument, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
+import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { FlowDefinitionPanel } from './automate/FlowDefinitionPanel.js';
 import { FlowDetailHeader } from './automate/FlowDetailHeader.js';
 import { FlowInventorySidebar } from './automate/FlowInventorySidebar.js';
@@ -59,6 +60,7 @@ export function AutomateTab(props: {
 }) {
   const { active, environment, openConsole, toast } = props;
   const detail = useRecordDetail();
+  const confirm = useConfirm();
   const [flows, setFlows] = useState<FlowItem[]>([]);
   const [flowSource, setFlowSource] = useState<'flow' | 'dv'>('flow');
   const [loadedEnvironment, setLoadedEnvironment] = useState('');
@@ -372,6 +374,47 @@ export function AutomateTab(props: {
     setShowAddAction(true);
   }
 
+  function countDescendantActions(item: FlowAnalysisOutlineItem): number {
+    let count = 0;
+    for (const child of item.children || []) {
+      if (isActionLikeOutlineItem(child) && child.name && child.name !== 'actions') count += 1;
+      count += countDescendantActions(child);
+    }
+    return count;
+  }
+
+  function handleRemoveAction(item: FlowAnalysisOutlineItem) {
+    const name = item.name;
+    if (!name) {
+      toast('This outline node has no name to remove.', true);
+      return;
+    }
+    const childCount = countDescendantActions(item);
+    confirm.open({
+      title: `Remove ${name}?`,
+      destructive: true,
+      confirmLabel: 'Remove action',
+      body: childCount > 0 ? (
+        <>Removing this action also deletes {childCount} nested action{childCount === 1 ? '' : 's'}. Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that dependency.</>
+      ) : (
+        <>Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that dependency.</>
+      ),
+      onConfirm: () => {
+        try {
+          const next = removeActionFromFlowDocument(flowDocument, name);
+          updateFlowDocument(next);
+          if (flowOutlineActiveKey === outlineKey(item)) {
+            setFlowOutlineActiveKey('');
+            setFlowOutlineActivePath([]);
+          }
+          toast(`Removed ${name}`);
+        } catch (error) {
+          toast(error instanceof Error ? error.message : String(error), true);
+        }
+      },
+    });
+  }
+
   function handleHighlightJson(item: FlowAnalysisOutlineItem) {
     if (item.from === undefined || item.to === undefined) {
       toast('This outline node has no JSON range to highlight.', true);
@@ -640,6 +683,7 @@ export function AutomateTab(props: {
               onAddAfter={handleAddActionAfter}
               onAddInside={handleAddActionInside}
               onHighlightJson={handleHighlightJson}
+              onRemoveAction={handleRemoveAction}
               onCheckErrors={() => { void runFlowValidation('errors'); }}
               onCheckWarnings={() => { void runFlowValidation('warnings'); }}
               onDocumentChange={updateFlowDocument}
@@ -689,6 +733,7 @@ export function AutomateTab(props: {
               onAddAfter={handleAddActionAfter}
               onAddInside={handleAddActionInside}
               onHighlightJson={handleHighlightJson}
+              onRemoveAction={handleRemoveAction}
               onEditAction={openActionEditor}
               onReorderAction={handleReorderAction}
               onSelectOutline={selectOutlineItem}
@@ -724,6 +769,7 @@ export function AutomateTab(props: {
           toast={toast}
         />
       ) : null}
+      <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </div>
   );
 }

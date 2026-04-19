@@ -19,6 +19,7 @@ export function FlowOutlineCanvas(props: {
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
+  onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   const { items } = props;
@@ -49,6 +50,7 @@ export function FlowOutlineCanvas(props: {
             onAddAfter={props.onAddAfter}
             onAddInside={props.onAddInside}
             onHighlightJson={props.onHighlightJson}
+            onRemove={props.onRemove}
             onReorder={props.onReorder}
           />
         ) : (
@@ -71,6 +73,7 @@ function OutlineNodeList(props: {
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
+  onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
   return (
@@ -89,6 +92,7 @@ function OutlineNodeList(props: {
           onAddAfter={props.onAddAfter}
           onAddInside={props.onAddInside}
           onHighlightJson={props.onHighlightJson}
+          onRemove={props.onRemove}
           onReorder={props.onReorder}
         />
       ))}
@@ -110,9 +114,10 @@ function OutlineNode(props: {
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
+  onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
-  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onAddInside, onHighlightJson, onReorder } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onAddInside, onHighlightJson, onRemove, onReorder } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
@@ -173,6 +178,22 @@ function OutlineNode(props: {
   }
   if (onHighlightJson && item.from !== undefined && item.to !== undefined) {
     menuItems.push({ label: 'Highlight JSON', onClick: () => onHighlightJson(item) });
+  }
+  // Remove is allowed on action-like rows with a name, except triggers (deleting a trigger would
+  // break the flow) and synthetic wrappers like the top-level "actions" container.
+  const removable = Boolean(
+    onRemove
+    && item.name
+    && isActionLikeOutlineItem(item)
+    && String(item.kind || '').toLowerCase() !== 'trigger'
+    && !isActionsContainer,
+  );
+  if (removable) {
+    menuItems.push({
+      label: 'Remove action',
+      destructive: true,
+      onClick: () => onRemove?.(item),
+    });
   }
   const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
   const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);

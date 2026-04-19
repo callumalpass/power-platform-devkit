@@ -11,6 +11,7 @@ export function FlowOutlinePanel(props: {
   onAddAfter: (item: FlowAnalysisOutlineItem) => void;
   onAddInside: (item: FlowAnalysisOutlineItem) => void;
   onHighlightJson: (item: FlowAnalysisOutlineItem) => void;
+  onRemoveAction: (item: FlowAnalysisOutlineItem) => void;
   onEditAction: (item: FlowAnalysisOutlineItem) => void;
   onReorderAction: (actionName: string, targetName: string, position: 'before' | 'after') => void;
   onSelectOutline: (item: FlowAnalysisOutlineItem) => void;
@@ -35,6 +36,7 @@ export function FlowOutlinePanel(props: {
             onAddAfter={props.onAddAfter}
             onAddInside={props.onAddInside}
             onHighlightJson={props.onHighlightJson}
+            onRemove={props.onRemoveAction}
             onReorder={props.onReorderAction}
           />
         ) : null}

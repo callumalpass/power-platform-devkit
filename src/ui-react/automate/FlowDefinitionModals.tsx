@@ -5,6 +5,7 @@ export {
   addActionToFlowDocument,
   findSiblingActionNames,
   readOutlineEditTarget,
+  removeActionFromFlowDocument,
   reorderActionInFlowDocument,
   replaceOutlineItemInFlowDocument,
 } from './flow-action-document.js';

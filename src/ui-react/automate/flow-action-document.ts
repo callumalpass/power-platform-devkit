@@ -65,6 +65,33 @@ export function addActionToFlowDocument(
   return JSON.stringify(root, null, 2);
 }
 
+/**
+ * Delete an action from the flow definition, and strip the removed name from every runAfter
+ * map in the document so no dangling references remain. Throws if the name isn't found.
+ */
+export function removeActionFromFlowDocument(source: string, actionName: string): string {
+  const root = JSON.parse(source) as unknown;
+  if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
+  const container = findActionsContainer(root, actionName);
+  if (!container) throw new Error(`Could not find action "${actionName}".`);
+  delete container[actionName];
+  stripRunAfterReferences(root, actionName);
+  return JSON.stringify(root, null, 2);
+}
+
+function stripRunAfterReferences(node: unknown, actionName: string) {
+  if (!isObject(node)) return;
+  if (isObject(node.runAfter)) {
+    const runAfter = node.runAfter as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(runAfter, actionName)) {
+      delete runAfter[actionName];
+    }
+  }
+  for (const value of Object.values(node)) {
+    if (value && typeof value === 'object') stripRunAfterReferences(value, actionName);
+  }
+}
+
 /** Returns the action object itself (not its containing actions map). */
 function findMutableActionByName(root: unknown, name: string): Record<string, unknown> | null {
   if (!isObject(root)) return null;

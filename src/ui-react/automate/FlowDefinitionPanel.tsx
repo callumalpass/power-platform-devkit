@@ -31,6 +31,7 @@ export function FlowDefinitionPanel(props: {
   onAddAfter: (item: FlowAnalysisOutlineItem) => void;
   onAddInside: (item: FlowAnalysisOutlineItem) => void;
   onHighlightJson: (item: FlowAnalysisOutlineItem) => void;
+  onRemoveAction: (item: FlowAnalysisOutlineItem) => void;
   onCheckErrors: () => void;
   onCheckWarnings: () => void;
   onDocumentChange: (value: string) => void;
@@ -97,6 +98,7 @@ export function FlowDefinitionPanel(props: {
                 onAddAfter={props.onAddAfter}
                 onAddInside={props.onAddInside}
                 onHighlightJson={props.onHighlightJson}
+                onRemove={props.onRemoveAction}
                 onReorder={props.onReorderAction}
               />
               <div
