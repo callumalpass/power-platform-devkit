@@ -18,6 +18,7 @@ export function FlowOutlineCanvas(props: {
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onAddTrigger?: () => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
@@ -49,6 +50,7 @@ export function FlowOutlineCanvas(props: {
             onEditAction={props.onEditAction}
             onAddAfter={props.onAddAfter}
             onAddInside={props.onAddInside}
+            onAddTrigger={props.onAddTrigger}
             onHighlightJson={props.onHighlightJson}
             onRemove={props.onRemove}
             onReorder={props.onReorder}
@@ -72,6 +74,7 @@ function OutlineNodeList(props: {
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onAddTrigger?: () => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
@@ -91,6 +94,7 @@ function OutlineNodeList(props: {
           onEditAction={props.onEditAction}
           onAddAfter={props.onAddAfter}
           onAddInside={props.onAddInside}
+          onAddTrigger={props.onAddTrigger}
           onHighlightJson={props.onHighlightJson}
           onRemove={props.onRemove}
           onReorder={props.onReorder}
@@ -113,11 +117,12 @@ function OutlineNode(props: {
   onEditAction?: (item: FlowAnalysisOutlineItem) => void;
   onAddAfter?: (item: FlowAnalysisOutlineItem) => void;
   onAddInside?: (item: FlowAnalysisOutlineItem) => void;
+  onAddTrigger?: () => void;
   onHighlightJson?: (item: FlowAnalysisOutlineItem) => void;
   onRemove?: (item: FlowAnalysisOutlineItem) => void;
   onReorder?: (actionName: string, targetName: string, position: 'before' | 'after') => void;
 }) {
-  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onAddInside, onHighlightJson, onRemove, onReorder } = props;
+  const { item, depth, problems, activeKey, activePath, onSelect, canSelect, onEditAction, onAddAfter, onAddInside, onAddTrigger, onHighlightJson, onRemove, onReorder } = props;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const itemKey = outlineKey(item);
   const active = activeKey === itemKey;
@@ -144,8 +149,10 @@ function OutlineNode(props: {
   const notRun = statusBadge?.className === 'not-run';
 
   const isAction = isActionLikeOutlineItem(item);
+  const isTrigger = kind === 'trigger';
   const isActionsContainer = item.kind === 'action' && item.name === 'actions' && hasChildren;
-  const canAddAfter = (isAction || isActionsContainer) && Boolean(onAddAfter) && !isBranchOutlineItem(item);
+  const isTriggersContainer = item.kind === 'trigger' && item.name === 'triggers';
+  const canAddAfter = ((isAction && !isTrigger) || isActionsContainer) && Boolean(onAddAfter) && !isBranchOutlineItem(item);
   const canAddInside = canHoldChildActions(item) && Boolean(onAddInside);
   const kindLower = String(item.kind || '').toLowerCase();
   const isMultiBranchContainer = kindLower === 'condition' || kindLower === 'switch';
@@ -158,6 +165,9 @@ function OutlineNode(props: {
       label: isActionsContainer ? 'Add action' : 'Add action after',
       onClick: () => onAddAfter?.(item),
     });
+  }
+  if (isTriggersContainer && onAddTrigger) {
+    menuItems.push({ label: 'Add trigger', onClick: () => onAddTrigger() });
   }
   if (canAddInside) {
     const label = isSingleBodyContainer(item)
@@ -174,7 +184,7 @@ function OutlineNode(props: {
     });
   }
   if (editable) {
-    menuItems.push({ label: 'Edit action', onClick: () => onEditAction?.(item) });
+    menuItems.push({ label: isTrigger ? 'Edit trigger' : 'Edit action', onClick: () => onEditAction?.(item) });
   }
   if (onHighlightJson && item.from !== undefined && item.to !== undefined) {
     menuItems.push({ label: 'Highlight JSON', onClick: () => onHighlightJson(item) });
@@ -185,7 +195,7 @@ function OutlineNode(props: {
     onRemove
     && item.name
     && isActionLikeOutlineItem(item)
-    && String(item.kind || '').toLowerCase() !== 'trigger'
+    && !isTrigger
     && !isActionsContainer,
   );
   if (removable) {
@@ -195,8 +205,8 @@ function OutlineNode(props: {
       onClick: () => onRemove?.(item),
     });
   }
-  const draggable = isAction && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
-  const isDropTarget = isAction && !isActionsContainer && Boolean(item.name);
+  const draggable = isAction && !isTrigger && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
+  const isDropTarget = isAction && !isTrigger && !isActionsContainer && Boolean(item.name);
 
   const rowClasses = [
     'flow-outline-row',
@@ -278,13 +288,13 @@ function OutlineNode(props: {
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <OverflowMenu items={menuItems} label="Action menu" />
+            <OverflowMenu items={menuItems} label="Outline menu" />
           </span>
         ) : null}
       </div>
       {dragOver === 'after' && <div className="flow-outline-drop-line" />}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onAddInside={onAddInside} onHighlightJson={onHighlightJson} onReorder={onReorder} />
+        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onAddInside={onAddInside} onAddTrigger={onAddTrigger} onHighlightJson={onHighlightJson} onRemove={onRemove} onReorder={onReorder} />
       )}
     </>
   );

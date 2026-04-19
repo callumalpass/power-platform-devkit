@@ -32,6 +32,7 @@ export function FlowDefinitionPanel(props: {
   onAddAction: () => void;
   onAddAfter: (item: FlowAnalysisOutlineItem) => void;
   onAddInside: (item: FlowAnalysisOutlineItem) => void;
+  onAddTrigger: () => void;
   onHighlightJson: (item: FlowAnalysisOutlineItem) => void;
   onRemoveAction: (item: FlowAnalysisOutlineItem) => void;
   onCheckErrors: () => void;
@@ -77,6 +78,7 @@ export function FlowDefinitionPanel(props: {
             <div className="fetchxml-editor-toolbar-left">
               <button className="btn btn-ghost" type="button" disabled={props.flowBusy} onClick={props.onReload}>{props.flowOperation === 'reload' ? 'Reloading…' : 'Reload'}</button>
               <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onFormat}>Format JSON</button>
+              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddTrigger}>Add Trigger</button>
               <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddAction}>Add Action</button>
               <button className="btn btn-ghost" type="button" disabled={!props.isFlowDirty} onClick={props.onShowDiff}>View Changes</button>
               <button className="btn btn-ghost" type="button" onClick={props.onToggleFullscreen}>{props.flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
@@ -105,6 +107,7 @@ export function FlowDefinitionPanel(props: {
                 onEditAction={props.onEditAction}
                 onAddAfter={props.onAddAfter}
                 onAddInside={props.onAddInside}
+                onAddTrigger={props.onAddTrigger}
                 onHighlightJson={props.onHighlightJson}
                 onRemove={props.onRemoveAction}
                 onReorder={props.onReorderAction}

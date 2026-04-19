@@ -65,6 +65,24 @@ export function addActionToFlowDocument(
   return JSON.stringify(root, null, 2);
 }
 
+export function addTriggerToFlowDocument(
+  source: string,
+  triggerName: string,
+  trigger: Record<string, unknown>,
+): string {
+  const root = JSON.parse(source) as unknown;
+  if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
+  const definition = findMutableWorkflowDefinition(root);
+  if (!definition) throw new Error('Could not find workflow definition triggers.');
+  const triggers = isObject(definition.triggers) ? definition.triggers : {};
+  definition.triggers = triggers;
+  if (Object.prototype.hasOwnProperty.call(triggers, triggerName)) {
+    throw new Error(`${triggerName} already exists.`);
+  }
+  triggers[triggerName] = trigger;
+  return JSON.stringify(root, null, 2);
+}
+
 /**
  * Delete an action from the flow definition, and strip the removed name from every runAfter
  * map in the document so no dangling references remain. Throws if the name isn't found.
@@ -76,6 +94,18 @@ export function removeActionFromFlowDocument(source: string, actionName: string)
   if (!container) throw new Error(`Could not find action "${actionName}".`);
   delete container[actionName];
   stripRunAfterReferences(root, actionName);
+  return JSON.stringify(root, null, 2);
+}
+
+export function removeTriggerFromFlowDocument(source: string, triggerName: string): string {
+  const root = JSON.parse(source) as unknown;
+  if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
+  const definition = findMutableWorkflowDefinition(root);
+  const triggers = definition && isObject(definition.triggers) ? definition.triggers : null;
+  if (!triggers || !Object.prototype.hasOwnProperty.call(triggers, triggerName)) {
+    throw new Error(`Could not find trigger "${triggerName}".`);
+  }
+  delete triggers[triggerName];
   return JSON.stringify(root, null, 2);
 }
 
@@ -424,7 +454,18 @@ export function reorderActionInFlowDocument(source: string, actionName: string, 
 }
 
 export function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>, schema?: FlowApiOperationSchema, connectionReferenceNameOverride?: string): Record<string, unknown> {
-  const connectionReferenceName = connectionReferenceNameOverride || findConnectionReferenceName(source, operation) || (operation.apiName ? `shared_${operation.apiName}` : 'shared_connector');
+  return {
+    ...buildApiOperationNode(source, operation, schema, connectionReferenceNameOverride),
+    runAfter,
+  };
+}
+
+export function buildApiOperationTrigger(source: string, operation: FlowApiOperation, schema?: FlowApiOperationSchema, connectionReferenceNameOverride?: string): Record<string, unknown> {
+  return buildApiOperationNode(source, operation, schema, connectionReferenceNameOverride);
+}
+
+function buildApiOperationNode(source: string, operation: FlowApiOperation, schema?: FlowApiOperationSchema, connectionReferenceNameOverride?: string): Record<string, unknown> {
+  const connectionReferenceName = connectionReferenceNameOverride || findConnectionReferenceName(source, operation) || defaultConnectionReferenceName(operation);
   const host: Record<string, unknown> = {
     connectionReferenceName,
     operationId: operation.name,
@@ -436,7 +477,6 @@ export function buildApiOperationAction(source: string, operation: FlowApiOperat
       host,
       parameters: {},
     },
-    runAfter,
   };
   if (schema?.fields.length) {
     for (const field of schema.fields) {
@@ -448,6 +488,11 @@ export function buildApiOperationAction(source: string, operation: FlowApiOperat
     }
   }
   return action;
+}
+
+function defaultConnectionReferenceName(operation: FlowApiOperation): string {
+  if (!operation.apiName) return 'shared_connector';
+  return operation.apiName.startsWith('shared_') ? operation.apiName : `shared_${operation.apiName}`;
 }
 
 function defaultValueForSchemaField(field: FlowApiOperationSchemaField): unknown {
@@ -499,6 +544,12 @@ export function topLevelActionNames(analysis: FlowAnalysis | null): string[] {
   return (actions?.children || []).map((item) => item.name).filter((name): name is string => Boolean(name));
 }
 
+export function topLevelTriggerNames(analysis: FlowAnalysis | null): string[] {
+  const workflow = analysis?.outline?.find((item) => item.kind === 'workflow') || analysis?.outline?.[0];
+  const triggers = workflow?.children?.find((item) => item.name === 'triggers' && item.kind === 'trigger');
+  return (triggers?.children || []).map((item) => item.name).filter((name): name is string => Boolean(name));
+}
+
 export function uniqueActionName(source: string, preferred: string): string {
   const base = sanitizeActionName(preferred || 'Action') || 'Action';
   const existing = new Set<string>();
@@ -508,6 +559,25 @@ export function uniqueActionName(source: string, preferred: string): string {
       const definition = findMutableWorkflowDefinition(root);
       const actions = definition && isObject(definition.actions) ? definition.actions : {};
       for (const key of Object.keys(actions)) existing.add(key);
+    }
+  } catch {}
+  if (!existing.has(base)) return base;
+  for (let index = 2; index < 1000; index++) {
+    const next = `${base}_${index}`;
+    if (!existing.has(next)) return next;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+export function uniqueTriggerName(source: string, preferred: string): string {
+  const base = sanitizeActionName(preferred || 'Trigger') || 'Trigger';
+  const existing = new Set<string>();
+  try {
+    const root = JSON.parse(source) as unknown;
+    if (isObject(root)) {
+      const definition = findMutableWorkflowDefinition(root);
+      const triggers = definition && isObject(definition.triggers) ? definition.triggers : {};
+      for (const key of Object.keys(triggers)) existing.add(key);
     }
   } catch {}
   if (!existing.has(base)) return base;

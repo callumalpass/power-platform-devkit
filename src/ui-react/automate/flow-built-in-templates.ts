@@ -1,6 +1,7 @@
 import type { FlowApiOperation } from '../ui-types.js';
 
 export type BuiltInActionCategory = 'control' | 'data' | 'variable' | 'http' | 'schedule' | 'response' | 'flow' | 'expression';
+export type BuiltInTriggerCategory = 'manual' | 'schedule' | 'http';
 
 export type BuiltInActionField = {
   label: string;
@@ -20,6 +21,17 @@ export type BuiltInActionTemplate = {
   action: () => Record<string, unknown>;
 };
 
+export type BuiltInTriggerTemplate = {
+  key: string;
+  category: BuiltInTriggerCategory;
+  label: string;
+  desc: string;
+  name: string;
+  operationName?: string;
+  operationType?: string;
+  trigger: () => Record<string, unknown>;
+};
+
 export const BUILT_IN_CATEGORIES: Array<{ key: BuiltInActionCategory; label: string; hint: string }> = [
   { key: 'control', label: 'Control flow', hint: 'Branch and loop without a connector' },
   { key: 'data', label: 'Data operations', hint: 'Shape arrays, objects, and JSON' },
@@ -29,6 +41,12 @@ export const BUILT_IN_CATEGORIES: Array<{ key: BuiltInActionCategory; label: str
   { key: 'response', label: 'Responses', hint: 'Return data to the caller' },
   { key: 'flow', label: 'Flows', hint: 'Run another cloud flow' },
   { key: 'expression', label: 'Expression helpers', hint: 'Insert common expression actions' },
+];
+
+export const BUILT_IN_TRIGGER_CATEGORIES: Array<{ key: BuiltInTriggerCategory; label: string; hint: string }> = [
+  { key: 'manual', label: 'Manual', hint: 'Start from Power Automate, Power Apps, or another caller' },
+  { key: 'schedule', label: 'Schedule', hint: 'Start on a recurrence' },
+  { key: 'http', label: 'HTTP', hint: 'Start from an incoming request' },
 ];
 
 /**
@@ -98,6 +116,65 @@ export const BUILT_IN_ACTION_TEMPLATES: BuiltInActionTemplate[] = [
   { key: 'substring', category: 'expression', label: 'Substring', desc: 'Extract part of text', name: 'Substring', operationName: 'Substring', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@substring('', 0, 1)" }) },
 ];
 
+export const BUILT_IN_TRIGGER_TEMPLATES: BuiltInTriggerTemplate[] = [
+  {
+    key: 'manual',
+    category: 'manual',
+    label: 'Manually trigger a flow',
+    desc: 'Start from Power Automate, Power Apps, or a child-flow caller',
+    name: 'manual',
+    operationName: 'Manual',
+    operationType: 'Request',
+    trigger: () => ({
+      type: 'Request',
+      kind: 'Button',
+      inputs: {
+        schema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+    }),
+  },
+  {
+    key: 'recurrence',
+    category: 'schedule',
+    label: 'Recurrence',
+    desc: 'Start automatically on a schedule',
+    name: 'Recurrence',
+    operationName: 'Recurrence',
+    operationType: 'Recurrence',
+    trigger: () => ({
+      type: 'Recurrence',
+      recurrence: {
+        frequency: 'Day',
+        interval: 1,
+      },
+    }),
+  },
+  {
+    key: 'http-request',
+    category: 'http',
+    label: 'When an HTTP request is received',
+    desc: 'Start when a caller posts to the trigger URL',
+    name: 'When_a_HTTP_request_is_received',
+    operationName: 'Request',
+    operationType: 'Request',
+    trigger: () => ({
+      type: 'Request',
+      kind: 'Http',
+      inputs: {
+        schema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+    }),
+  },
+];
+
 const BUILT_IN_BY_NAME = Object.fromEntries(
   BUILT_IN_ACTION_TEMPLATES
     .filter((template) => template.operationName)
@@ -132,6 +209,17 @@ const BUILT_IN_BY_TYPE: Record<string, () => Record<string, unknown>> = {
   Expression: BUILT_IN_BY_NAME.Compose!,
 };
 
+const BUILT_IN_TRIGGER_BY_NAME = Object.fromEntries(
+  BUILT_IN_TRIGGER_TEMPLATES
+    .filter((template) => template.operationName)
+    .map((template) => [template.operationName, template.trigger]),
+) as Record<string, () => Record<string, unknown>>;
+
+const BUILT_IN_TRIGGER_BY_TYPE: Record<string, () => Record<string, unknown>> = {
+  Recurrence: BUILT_IN_TRIGGER_BY_NAME.Recurrence!,
+  Request: BUILT_IN_TRIGGER_BY_NAME.Manual!,
+};
+
 export const WDL_ACTION_TYPES = [
   'ApiConnection',
   'AppendToArrayVariable',
@@ -162,6 +250,15 @@ export const WDL_ACTION_TYPES = [
   'Workflow',
 ] as const;
 
+export const WDL_TRIGGER_TYPES = [
+  'ApiConnection',
+  'Http',
+  'HttpWebhook',
+  'OpenApiConnection',
+  'Recurrence',
+  'Request',
+] as const;
+
 /**
  * Build a default WDL JSON payload for a built-in action. Returns null if the operation does
  * not appear to be a built-in. Unknown built-ins get a bare stub ({ type: operationType,
@@ -177,6 +274,16 @@ export function buildBuiltInAction(operation: FlowApiOperation): Record<string, 
   return null;
 }
 
+export function buildBuiltInTrigger(operation: FlowApiOperation): Record<string, unknown> | null {
+  if (!operation.isBuiltIn) return null;
+  const byName = operation.name ? BUILT_IN_TRIGGER_BY_NAME[operation.name] : undefined;
+  if (byName) return byName();
+  const byType = operation.operationType ? BUILT_IN_TRIGGER_BY_TYPE[operation.operationType] : undefined;
+  if (byType) return byType();
+  if (operation.operationType) return { type: operation.operationType, inputs: {} };
+  return null;
+}
+
 /** True when the operation is a built-in whose shape we have a hardcoded template for. */
 export function hasKnownBuiltInTemplate(operation: FlowApiOperation): boolean {
   if (!operation.isBuiltIn) return false;
@@ -185,8 +292,19 @@ export function hasKnownBuiltInTemplate(operation: FlowApiOperation): boolean {
   return false;
 }
 
+export function hasKnownBuiltInTriggerTemplate(operation: FlowApiOperation): boolean {
+  if (!operation.isBuiltIn) return false;
+  if (operation.name && BUILT_IN_TRIGGER_BY_NAME[operation.name]) return true;
+  if (operation.operationType && BUILT_IN_TRIGGER_BY_TYPE[operation.operationType]) return true;
+  return false;
+}
+
 export function builtInFieldsForAction(action: Record<string, unknown>): BuiltInActionField[] {
   const type = String(action.type || '').toLowerCase();
+  const kind = String(action.kind || '').toLowerCase();
+  if (type === 'recurrence') return recurrenceFields();
+  if (type === 'request' && kind === 'http') return httpRequestTriggerFields();
+  if (type === 'request') return requestTriggerFields();
   if (type === 'http') return httpFields();
   if (type === 'httpswagger') return httpSwaggerFields();
   if (type === 'httpwebhook') return httpWebhookFields();
@@ -211,6 +329,31 @@ export function builtInFieldsForAction(action: Record<string, unknown>): BuiltIn
     return variableMutationFields(type);
   }
   return [];
+}
+
+function recurrenceFields(): BuiltInActionField[] {
+  return [
+    { label: 'Frequency', path: ['recurrence', 'frequency'], kind: 'select', options: ['Second', 'Minute', 'Hour', 'Day', 'Week', 'Month'] },
+    { label: 'Interval', path: ['recurrence', 'interval'] },
+    { label: 'Start time', path: ['recurrence', 'startTime'] },
+    { label: 'Time zone', path: ['recurrence', 'timeZone'] },
+    { label: 'Schedule', path: ['recurrence', 'schedule'], kind: 'json' },
+  ];
+}
+
+function requestTriggerFields(): BuiltInActionField[] {
+  return [
+    { label: 'Kind', path: ['kind'], kind: 'select', options: ['Button', 'PowerApp', 'Http'] },
+    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
+  ];
+}
+
+function httpRequestTriggerFields(): BuiltInActionField[] {
+  return [
+    { label: 'Method', path: ['inputs', 'method'], kind: 'select', options: ['GET', 'POST', 'PUT', 'PATCH'] },
+    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
+    { label: 'Relative path', path: ['inputs', 'relativePath'] },
+  ];
 }
 
 function httpFields(): BuiltInActionField[] {

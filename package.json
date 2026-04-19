@@ -43,7 +43,7 @@
     "build": "pnpm run build:version && tsup src/index.ts src/mcp.ts src/mcp-server.ts --format esm,cjs --dts --clean && pnpm run build:desktop",
     "prepack": "pnpm run build",
     "build:sea": "pnpm run build && node scripts/build-sea.mjs",
-    "dev:desktop": "pnpm run build && electron dist/desktop/main.cjs",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "package:desktop": "pnpm run build && electron-builder --dir --config electron-builder.json",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",

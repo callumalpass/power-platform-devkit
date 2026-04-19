@@ -120,9 +120,16 @@ export type FlowApiOperation = {
    * operationType === 'OpenApiConnection' | 'ApiConnection'.
    */
   hasConnectorSchema?: boolean;
+  /**
+   * True for connector-backed actions/triggers that need a flow connection reference, including
+   * trigger catalog entries that use WDL Request but still belong to a connector operation group.
+   */
+  needsConnectionReference?: boolean;
   groupName?: string;
   raw?: unknown;
 };
+
+export type FlowApiOperationKind = 'action' | 'trigger';
 
 export type FlowApiOperationSchemaField = {
   name: string;

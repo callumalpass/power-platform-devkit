@@ -26,7 +26,7 @@ import {
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 import { useMonacoVimPreference } from './monaco-support.js';
-import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, findSiblingActionNames, readOutlineEditTarget, removeActionFromFlowDocument, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
+import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, addTriggerToFlowDocument, findSiblingActionNames, readOutlineEditTarget, removeActionFromFlowDocument, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { FlowDefinitionPanel } from './automate/FlowDefinitionPanel.js';
 import { FlowConnectionsPanel, type FlowConnectionInspectSeed } from './automate/FlowConnectionsPanel.js';
@@ -91,6 +91,7 @@ export function AutomateTab(props: {
   const [flowOutlineActiveKey, setFlowOutlineActiveKey] = useState('');
   const [flowOutlineActivePath, setFlowOutlineActivePath] = useState<string[]>([]);
   const [showAddAction, setShowAddAction] = useState(false);
+  const [showAddTrigger, setShowAddTrigger] = useState(false);
   const [addActionRunAfter, setAddActionRunAfter] = useState<string | undefined>(undefined);
   const [addActionContainer, setAddActionContainer] = useState<OutlineContainerTarget | null>(null);
   const [editingAction, setEditingAction] = useState<FlowActionEditTarget | null>(null);
@@ -365,6 +366,18 @@ export function AutomateTab(props: {
       setAddActionContainer(null);
       setAddActionRunAfter(undefined);
       toast(`Added ${actionName}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  function addTriggerToDocument(triggerName: string, trigger: Record<string, unknown>) {
+    try {
+      const next = addTriggerToFlowDocument(flowDocument, triggerName, trigger);
+      setFlowDocument(next);
+      setFlowValidation(null);
+      setShowAddTrigger(false);
+      toast(`Added ${triggerName}`);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     }
@@ -757,6 +770,7 @@ export function AutomateTab(props: {
               onAddAction={() => { setAddActionRunAfter(undefined); setAddActionContainer(null); setShowAddAction(true); }}
               onAddAfter={handleAddActionAfter}
               onAddInside={handleAddActionInside}
+              onAddTrigger={() => setShowAddTrigger(true)}
               onHighlightJson={handleHighlightJson}
               onRemoveAction={handleRemoveAction}
               onCheckErrors={() => { void runFlowValidation('errors'); }}
@@ -808,6 +822,7 @@ export function AutomateTab(props: {
               flowOutlineActivePath={flowOutlineActivePath}
               onAddAfter={handleAddActionAfter}
               onAddInside={handleAddActionInside}
+              onAddTrigger={() => setShowAddTrigger(true)}
               onHighlightJson={handleHighlightJson}
               onRemoveAction={handleRemoveAction}
               onEditAction={openActionEditor}
@@ -837,6 +852,7 @@ export function AutomateTab(props: {
       ) : null}
       {showAddAction && currentFlow ? (
         <AddFlowActionModal
+          kind="action"
           environment={environment}
           source={flowDocument}
           analysis={analysis}
@@ -845,6 +861,18 @@ export function AutomateTab(props: {
           containerTarget={addActionContainer}
           onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); setAddActionContainer(null); }}
           onAdd={addActionToDocument}
+          toast={toast}
+        />
+      ) : null}
+      {showAddTrigger && currentFlow ? (
+        <AddFlowActionModal
+          kind="trigger"
+          environment={environment}
+          source={flowDocument}
+          analysis={analysis}
+          connectionModel={connectionModel}
+          onClose={() => setShowAddTrigger(false)}
+          onAdd={addTriggerToDocument}
           toast={toast}
         />
       ) : null}

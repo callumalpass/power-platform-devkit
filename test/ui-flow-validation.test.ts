@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildFlowOperationSearchBody,
   extractFlowCallbackUrl,
   flowActivationRequest,
   flowCallbackTriggerNames,
@@ -149,4 +150,19 @@ test('flow activation requests prefer Dataverse workflow state when workflow id 
 test('Dataverse flow fallback maps statecode 1 to Started and 0 to Stopped', () => {
   assert.equal(normalizeDataverseFlow({ name: 'On flow', workflowid: 'on-id', statecode: 1 }).properties?.state, 'Started');
   assert.equal(normalizeDataverseFlow({ name: 'Off flow', workflowid: 'off-id', statecode: 0 }).properties?.state, 'Stopped');
+});
+
+test('flow operation catalog search body separates actions from triggers', () => {
+  assert.deepEqual(buildFlowOperationSearchBody(' rows ', 'action'), {
+    searchText: 'rows',
+    visibleHideKeys: [],
+    allTagsToInclude: ['Action', 'Important'],
+    anyTagsToExclude: ['Deprecated', 'Agentic', 'Trigger'],
+  });
+  assert.deepEqual(buildFlowOperationSearchBody(' event ', 'trigger'), {
+    searchText: 'event',
+    visibleHideKeys: [],
+    allTagsToInclude: ['Trigger'],
+    anyTagsToExclude: ['Deprecated', 'Agentic', 'Action'],
+  });
 });

@@ -1,11 +1,18 @@
 import path from 'node:path';
+import { watch } from 'node:fs';
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import { createDesktopApiContext, handleDesktopApiRequest, type DesktopApiRequest } from '../desktop-api.js';
 
 let mainWindow: BrowserWindow | undefined;
+let devReloadWatcher: ReturnType<typeof watch> | undefined;
+const isDesktopDev = process.env.PP_DESKTOP_DEV === '1';
 const e2eWindowMode = process.env.PP_DESKTOP_E2E_WINDOW_MODE;
 const keepWindowHiddenForE2E = e2eWindowMode === 'hidden';
 const useBackgroundWindowForE2E = e2eWindowMode === 'background';
+
+if (isDesktopDev) {
+  app.setPath('userData', path.join(app.getPath('userData'), 'dev'));
+}
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -15,6 +22,18 @@ if (!gotLock) {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     if (!keepWindowHiddenForE2E && !useBackgroundWindowForE2E) mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
+    void createWindow();
+  });
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
   });
 }
 
@@ -70,16 +89,27 @@ async function createWindow(): Promise<void> {
   });
 
   await mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  watchDevRendererReload(mainWindow);
 }
 
-app.whenReady().then(() => {
-  void createWindow();
-});
+function watchDevRendererReload(window: BrowserWindow): void {
+  const reloadFile = process.env.PP_DESKTOP_DEV_RELOAD_FILE;
+  if (!reloadFile) return;
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  devReloadWatcher?.close();
+  const reloadDir = path.dirname(reloadFile);
+  const reloadName = path.basename(reloadFile);
+  let reloadTimer: NodeJS.Timeout | undefined;
+  devReloadWatcher = watch(reloadDir, (_event, filename) => {
+    if (filename && filename.toString() !== reloadName) return;
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      if (!window.isDestroyed()) window.webContents.reloadIgnoringCache();
+    }, 50);
+  });
+  window.once('closed', () => {
+    clearTimeout(reloadTimer);
+    devReloadWatcher?.close();
+    devReloadWatcher = undefined;
+  });
+}

@@ -1,5 +1,5 @@
 import { ApiRequestError, api, prop } from './utils.js';
-import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, FlowAction, FlowAnalysis, FlowApiOperation, FlowApiOperationKind, FlowApiOperationSchema, FlowApiOperationSchemaField, FlowDynamicValueOption, FlowItem, FlowRun } from './ui-types.js';
 import type { FlowEnvironmentConnection } from './automate/flow-connections.js';
 
 const DATAVERSE_FLOW_FALLBACK_PATH = "/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200";
@@ -301,21 +301,25 @@ function isSignedTriggerUrl(value: string): boolean {
   }
 }
 
-export async function loadFlowApiOperations(environment: string, search: string): Promise<FlowApiOperation[]> {
+export async function loadFlowApiOperations(environment: string, search: string, kind: FlowApiOperationKind = 'action'): Promise<FlowApiOperation[]> {
   const result = await executeRequest<{ value?: unknown[] }>(
     environment,
     'flow',
     '/operations?api-version=2016-11-01&$top=250',
     true,
     'POST',
-    {
-      searchText: search.trim(),
-      visibleHideKeys: [],
-      allTagsToInclude: ['Action', 'Important'],
-      anyTagsToExclude: ['Deprecated', 'Agentic', 'Trigger'],
-    },
+    buildFlowOperationSearchBody(search, kind),
   );
   return (result.response?.value || []).map(normalizeFlowApiOperation);
+}
+
+export function buildFlowOperationSearchBody(search: string, kind: FlowApiOperationKind) {
+  return {
+    searchText: search.trim(),
+    visibleHideKeys: [],
+    allTagsToInclude: kind === 'trigger' ? ['Trigger'] : ['Action', 'Important'],
+    anyTagsToExclude: kind === 'trigger' ? ['Deprecated', 'Agentic', 'Action'] : ['Deprecated', 'Agentic', 'Trigger'],
+  };
 }
 
 export async function loadFlowApiConnections(environment: string): Promise<FlowEnvironmentConnection[]> {
@@ -720,6 +724,9 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
   const tagsValue = properties.tags ?? operation.tags;
   const tags = Array.isArray(tagsValue) ? tagsValue.map((item) => String(item)) : [];
   const isBuiltIn = api.isBuiltIn === true || tags.includes('BuiltIn');
+  const rawApiId = firstString(api.id, properties.apiId, operation.apiId);
+  const apiId = normalizeOperationApiId(rawApiId, apiName);
+  const needsConnectionReference = !isBuiltIn && Boolean(apiName && (tags.includes('Api') || tags.includes('OpenApi') || operationType === 'OpenApiConnection' || operationType === 'ApiConnection' || rawApiId));
   const hasConnectorSchema = operationType === 'OpenApiConnection' || operationType === 'ApiConnection';
   return {
     name,
@@ -727,15 +734,22 @@ function normalizeFlowApiOperation(value: unknown): FlowApiOperation {
     summary: firstString(properties.summary, operation.summary, properties.displayName, operation.displayName, name),
     description: firstString(properties.description, operation.description),
     operationType,
-    apiId: firstString(api.id, properties.apiId, operation.apiId),
+    apiId,
     apiName,
     apiDisplayName,
     iconUri: firstString(api.iconUri, api.iconUriValue, properties.iconUri, operation.iconUri),
     isBuiltIn,
     hasConnectorSchema,
+    needsConnectionReference,
     groupName: firstString(api.name),
     raw: value,
   };
+}
+
+function normalizeOperationApiId(value: string | undefined, apiName: string | undefined): string | undefined {
+  if (!value) return apiName && apiName.startsWith('shared_') ? `/providers/Microsoft.PowerApps/apis/${apiName}` : value;
+  if (apiName && value.toLowerCase().includes('/operationgroups/')) return `/providers/Microsoft.PowerApps/apis/${apiName}`;
+  return value;
 }
 
 function normalizeFlowApiConnection(value: unknown): FlowEnvironmentConnection {

@@ -13,7 +13,7 @@ import {
   resolveActionOperation,
   setPathValue,
 } from './flow-action-document.js';
-import { WDL_ACTION_TYPES } from './flow-built-in-templates.js';
+import { WDL_ACTION_TYPES, WDL_TRIGGER_TYPES } from './flow-built-in-templates.js';
 import { Combobox, Select } from '../Select.js';
 import {
   connectorLocationLabel,
@@ -145,6 +145,9 @@ export function EditFlowActionModal(props: {
 
   const type = String(draft.type || props.target.item.type || '');
   const actionLike = isActionLikeOutlineItem(props.target.item);
+  const isTrigger = String(props.target.item.kind || '').toLowerCase() === 'trigger';
+  const noun = isTrigger ? 'trigger' : 'action';
+  const titleNoun = isTrigger ? 'Trigger' : 'Action';
   const dynamicSchemaFields = useFlowDynamicSchemaFields(props.environment, draft, schema, operationRef, props.toast);
   const connectorFields = visibleConnectorSchemaFields(expandDynamicSchemaFields(schema?.fields || [], dynamicSchemaFields));
   const existingParameterFields = existingConnectorParameterFields(draft, connectorFields);
@@ -188,9 +191,9 @@ export function EditFlowActionModal(props: {
                 <Combobox
                   value={type}
                   onChange={(next) => updateDraft(['type'], next)}
-                  options={WDL_ACTION_TYPES.map((item) => ({ value: item, label: item }))}
+                  options={(isTrigger ? WDL_TRIGGER_TYPES : WDL_ACTION_TYPES).map((item) => ({ value: item, label: item }))}
                   placeholder="e.g. OpenApiConnection"
-                  aria-label="Action type"
+                  aria-label={`${titleNoun} type`}
                 />
               </label>
             ) : null}
@@ -221,7 +224,7 @@ export function EditFlowActionModal(props: {
                     />
                   ) : (
                     <div className="flow-connection-issue warning">
-                      No compatible reference exists for {operationRef.apiName || operationRef.apiId || 'this connector'}.
+                      No compatible reference exists for {operationRef.apiName || operationRef.apiId || `this connector ${noun}`}.
                     </div>
                   )}
                 </div>
@@ -275,7 +278,7 @@ export function EditFlowActionModal(props: {
           )}
         </div>
         <div className="flow-action-edit-footer">
-          <span className="flow-action-edit-footer-text">Updates the editor only — use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
+          <span className="flow-action-edit-footer-text">Updates the editor only - use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
           <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>Apply Changes</button>
         </div>
       </div>

@@ -2,17 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadFlowApiOperationSchema, loadFlowApiOperations } from '../automate-data.js';
 import { Icon } from '../Icon.js';
 import { Select } from '../Select.js';
-import type { FlowAnalysis, FlowApiOperation, FlowApiOperationSchema, ToastFn } from '../ui-types.js';
+import type { FlowAnalysis, FlowApiOperation, FlowApiOperationKind, FlowApiOperationSchema, ToastFn } from '../ui-types.js';
 import type { OutlineContainerTarget } from './outline-utils.js';
 import { CommonActionFields, SchemaFieldEditor } from './FlowActionFieldEditors.js';
 import {
   BUILT_IN_ACTION_TEMPLATES,
   BUILT_IN_CATEGORIES,
+  BUILT_IN_TRIGGER_CATEGORIES,
+  BUILT_IN_TRIGGER_TEMPLATES,
   buildBuiltInAction,
+  buildBuiltInTrigger,
   type BuiltInActionTemplate,
+  type BuiltInTriggerTemplate,
 } from './flow-built-in-templates.js';
 import {
   buildApiOperationAction,
+  buildApiOperationTrigger,
   buildRunAfter,
   connectorFieldPath,
   readPathValue,
@@ -20,7 +25,9 @@ import {
   sanitizeActionName,
   setPathValue,
   topLevelActionNames,
+  topLevelTriggerNames,
   uniqueActionName,
+  uniqueTriggerName,
 } from './flow-action-document.js';
 import {
   expandDynamicSchemaFields,
@@ -38,6 +45,7 @@ import {
 } from './flow-connections.js';
 
 export function AddFlowActionModal(props: {
+  kind?: FlowApiOperationKind;
   environment: string;
   source: string;
   analysis: FlowAnalysis | null;
@@ -49,12 +57,16 @@ export function AddFlowActionModal(props: {
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
 }) {
+  const kind = props.kind || 'action';
+  const label = kind === 'trigger' ? 'trigger' : 'action';
+  const titleLabel = kind === 'trigger' ? 'Trigger' : 'Action';
+  const operationKindLabel = kind === 'trigger' ? 'Triggers' : 'Connectors';
   const [pickerTab, setPickerTab] = useState<'builtin' | 'connector'>('builtin');
   const [search, setSearch] = useState('');
   const [operations, setOperations] = useState<FlowApiOperation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedOperation, setSelectedOperation] = useState<FlowApiOperation | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<BuiltInActionTemplate | BuiltInTriggerTemplate | null>(null);
   const [selectedSchema, setSelectedSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [operationDraft, setOperationDraft] = useState<Record<string, unknown> | null>(null);
@@ -64,14 +76,17 @@ export function AddFlowActionModal(props: {
   const searchRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
+  const topLevelTriggers = useMemo(() => topLevelTriggerNames(props.analysis), [props.analysis]);
   const runAfterOptions = props.containerTarget ? props.containerTarget.siblings : topLevelActions;
+  const builtInCategories = kind === 'trigger' ? BUILT_IN_TRIGGER_CATEGORIES : BUILT_IN_CATEGORIES;
+  const builtInTemplates = kind === 'trigger' ? BUILT_IN_TRIGGER_TEMPLATES : BUILT_IN_ACTION_TEMPLATES;
   const propsRef = useRef(props);
   propsRef.current = props;
 
   const doSearch = useCallback(async (query: string) => {
     setLoading(true);
     try {
-      const result = await loadFlowApiOperations(propsRef.current.environment, query);
+      const result = await loadFlowApiOperations(propsRef.current.environment, query, propsRef.current.kind || 'action');
       setOperations(result);
     } catch (error) {
       propsRef.current.toast(error instanceof Error ? error.message : String(error), true);
@@ -81,9 +96,10 @@ export function AddFlowActionModal(props: {
   }, []);
 
   useEffect(() => {
+    if (kind === 'trigger') return;
     if (props.initialRunAfter !== undefined) return;
     if (!runAfter && runAfterOptions.length) setRunAfter(runAfterOptions[runAfterOptions.length - 1] || '');
-  }, [runAfter, runAfterOptions, props.initialRunAfter]);
+  }, [kind, runAfter, runAfterOptions, props.initialRunAfter]);
 
   useEffect(() => {
     void doSearch('');
@@ -123,25 +139,30 @@ export function AddFlowActionModal(props: {
     setSelectedOperation(operation);
     setSelectedTemplate(null);
     setSelectedSchema(null);
-    const initialName = uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action'));
+    const initialName = kind === 'trigger'
+      ? uniqueTriggerName(props.source, sanitizeActionName(operation.summary || operation.name || 'Trigger'))
+      : uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action'));
     setActionName(initialName);
     if (operation.isBuiltIn && !operation.hasConnectorSchema) {
-      const builtIn = buildBuiltInAction(operation);
+      const builtIn = kind === 'trigger' ? buildBuiltInTrigger(operation) : buildBuiltInAction(operation);
       if (builtIn) {
-        setOperationDraft({ ...builtIn, runAfter: buildRunAfter(runAfter) });
+        setOperationDraft(kind === 'trigger' ? builtIn : { ...builtIn, runAfter: buildRunAfter(runAfter) });
         return;
       }
     }
-    setOperationDraft(buildApiOperationAction(props.source, operation, buildRunAfter(runAfter), undefined, nextReferenceName || undefined));
+    setOperationDraft(kind === 'trigger'
+      ? buildApiOperationTrigger(props.source, operation, undefined, nextReferenceName || undefined)
+      : buildApiOperationAction(props.source, operation, buildRunAfter(runAfter), undefined, nextReferenceName || undefined));
   }
 
-  function selectTemplate(template: BuiltInActionTemplate) {
+  function selectTemplate(template: BuiltInActionTemplate | BuiltInTriggerTemplate) {
     setSelectedTemplate(template);
     setSelectedOperation(null);
     setSelectedConnectionReferenceName('');
     setSelectedSchema(null);
-    setOperationDraft({ ...template.action(), runAfter: buildRunAfter(runAfter) });
-    setActionName(uniqueActionName(props.source, template.name));
+    const draft = templateDraft(template);
+    setOperationDraft(kind === 'trigger' ? draft : { ...draft, runAfter: buildRunAfter(runAfter) });
+    setActionName(kind === 'trigger' ? uniqueTriggerName(props.source, template.name) : uniqueActionName(props.source, template.name));
   }
 
   useEffect(() => {
@@ -154,7 +175,9 @@ export function AddFlowActionModal(props: {
     const apiRef = selectedOperation.apiId || selectedOperation.apiName;
     if (!apiRef || !selectedOperation.name) {
       setSelectedSchema(null);
-      setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), undefined, selectedConnectionReferenceName || undefined));
+      setOperationDraft(kind === 'trigger'
+        ? buildApiOperationTrigger(props.source, selectedOperation, undefined, selectedConnectionReferenceName || undefined)
+        : buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), undefined, selectedConnectionReferenceName || undefined));
       return;
     }
     setSchemaLoading(true);
@@ -162,12 +185,14 @@ export function AddFlowActionModal(props: {
       .then((schema) => {
         if (cancelled) return;
         setSelectedSchema(schema);
-        setOperationDraft(buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined, selectedConnectionReferenceName || undefined));
+        setOperationDraft(kind === 'trigger'
+          ? buildApiOperationTrigger(props.source, selectedOperation, schema || undefined, selectedConnectionReferenceName || undefined)
+          : buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined, selectedConnectionReferenceName || undefined));
       })
       .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
       .finally(() => { if (!cancelled) setSchemaLoading(false); });
     return () => { cancelled = true; };
-  }, [props.environment, props.source, props.toast, selectedConnectionReferenceName, selectedOperation]);
+  }, [kind, props.environment, props.source, props.toast, runAfter, selectedConnectionReferenceName, selectedOperation]);
 
   const operationDraftRef = useMemo(() => operationDraft ? resolveActionOperation(props.source, operationDraft) : {}, [props.source, operationDraft]);
   const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
@@ -185,16 +210,19 @@ export function AddFlowActionModal(props: {
   function addAction() {
     const runAfterValue = buildRunAfter(runAfter);
     if (selectedOperation) {
-      if (selectedOperation.hasConnectorSchema && !selectedConnectionReferenceName) {
-        props.toast('Select or create a compatible connection reference before inserting this connector action.', true);
+      if ((selectedOperation.hasConnectorSchema || selectedOperation.needsConnectionReference) && !selectedConnectionReferenceName) {
+        props.toast(`Select or create a compatible connection reference before inserting this connector ${label}.`, true);
         return;
       }
-      const action = operationDraft || buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined, selectedConnectionReferenceName || undefined);
-      props.onAdd(actionName, { ...action, runAfter: runAfterValue });
+      const operation = operationDraft || (kind === 'trigger'
+        ? buildApiOperationTrigger(props.source, selectedOperation, selectedSchema || undefined, selectedConnectionReferenceName || undefined)
+        : buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined, selectedConnectionReferenceName || undefined));
+      props.onAdd(actionName, kind === 'trigger' ? operation : { ...operation, runAfter: runAfterValue });
       return;
     }
     if (selectedTemplate) {
-      props.onAdd(actionName, { ...(operationDraft || selectedTemplate.action()), runAfter: runAfterValue });
+      const template = operationDraft || templateDraft(selectedTemplate);
+      props.onAdd(actionName, kind === 'trigger' ? template : { ...template, runAfter: runAfterValue });
     }
   }
 
@@ -205,7 +233,7 @@ export function AddFlowActionModal(props: {
     () => selectedOperation ? compatibleConnectionReferences(props.connectionModel, selectedOperation) : [],
     [props.connectionModel, selectedOperation],
   );
-  const connectorNeedsReference = Boolean(selectedOperation && selectedOperation.hasConnectorSchema);
+  const connectorNeedsReference = Boolean(selectedOperation && (selectedOperation.hasConnectorSchema || selectedOperation.needsConnectionReference));
   const canInsert = Boolean(actionName.trim() && hasSelection && (!connectorNeedsReference || selectedConnectionReferenceName));
 
   return (
@@ -213,11 +241,11 @@ export function AddFlowActionModal(props: {
       <div className="rt-modal size-xxl add-action-modal">
         <div className="rt-modal-header add-action-header">
           <div className="add-action-title">
-            <h2>Add Action</h2>
+            <h2>Add {titleLabel}</h2>
             <span className="add-action-subtitle">
               {props.containerTarget
                 ? <>Inserting into <strong>{props.containerTarget.label}</strong>. Pick a built-in template or connector operation.</>
-                : 'Pick a built-in template or a connector operation, then configure it.'}
+                : `Pick a built-in template or a connector ${label}, then configure it.`}
             </span>
           </div>
           <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
@@ -238,14 +266,16 @@ export function AddFlowActionModal(props: {
                 aria-selected={pickerTab === 'connector'}
                 className={`add-action-picker-tab ${pickerTab === 'connector' ? 'active' : ''}`}
                 onClick={() => setPickerTab('connector')}
-              >Connectors</button>
+              >{operationKindLabel}</button>
             </div>
 
             {pickerTab === 'builtin' ? (
               <div className="add-action-picker-body add-action-picker-builtins">
-                <div className="add-action-section-desc">Workflow primitives that don't need a connector or connection.</div>
-                {BUILT_IN_CATEGORIES.map((group) => {
-                  const items = BUILT_IN_ACTION_TEMPLATES.filter((item) => item.category === group.key);
+                <div className="add-action-section-desc">
+                  {kind === 'trigger' ? "Workflow triggers that don't need a connector or connection." : "Workflow primitives that don't need a connector or connection."}
+                </div>
+                {builtInCategories.map((group) => {
+                  const items = builtInTemplates.filter((item) => item.category === group.key);
                   if (!items.length) return null;
                   return (
                     <div key={group.key} className="add-action-subgroup">
@@ -274,7 +304,9 @@ export function AddFlowActionModal(props: {
               <div className="add-action-picker-body add-action-picker-connectors">
                 <div className="add-action-picker-search-section">
                   <div className="add-action-section-desc">
-                    Operations from Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.
+                    {kind === 'trigger'
+                      ? 'Trigger operations from Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.'
+                      : 'Operations from Dataverse, Outlook, SharePoint, and other Power Platform connectors. Require a connection reference.'}
                     {loading ? <span className="add-action-searching" style={{ marginLeft: 8 }}>Searching…</span> : null}
                   </div>
                   <div className="add-action-search">
@@ -283,7 +315,7 @@ export function AddFlowActionModal(props: {
                       ref={searchRef}
                       type="text"
                       value={search}
-                      placeholder="Search connectors and actions…"
+                      placeholder={kind === 'trigger' ? 'Search connectors and triggers…' : 'Search connectors and actions…'}
                       onChange={(event) => onSearchChange(event.target.value)}
                       onKeyDown={(event) => { if (event.key === 'Enter') void doSearch(search); }}
                     />
@@ -315,10 +347,10 @@ export function AddFlowActionModal(props: {
 
           <div className="add-action-pane add-action-config">
             {!hasSelection ? (
-              <div className="add-action-config-empty">
-                <div className="add-action-config-empty-icon" aria-hidden="true"><Icon name="plus" size={22} /></div>
-                <div className="add-action-config-empty-title">Select an action to configure</div>
-                <div className="add-action-config-empty-desc">Pick a built-in template or search for a connector operation on the left. Its parameters will appear here.</div>
+                <div className="add-action-config-empty">
+                  <div className="add-action-config-empty-icon" aria-hidden="true"><Icon name="plus" size={22} /></div>
+                <div className="add-action-config-empty-title">Select a {label} to configure</div>
+                <div className="add-action-config-empty-desc">Pick a built-in template or search for a connector {label} on the left. Its parameters will appear here.</div>
               </div>
             ) : (
               <>
@@ -332,7 +364,7 @@ export function AddFlowActionModal(props: {
                     <div className="add-action-config-title">
                       {selectedOperation
                         ? selectedOperation.summary || selectedOperation.name
-                        : selectedTemplate?.label || 'Action'}
+                        : selectedTemplate?.label || titleLabel}
                     </div>
                     <div className="add-action-config-meta">
                       {selectedOperation
@@ -344,31 +376,35 @@ export function AddFlowActionModal(props: {
 
                 <div className="add-action-config-form">
                   <label>
-                    <span>Action name</span>
+                    <span>{titleLabel} name</span>
                     <input type="text" value={actionName} onChange={(event) => setActionName(sanitizeActionName(event.target.value))} />
                   </label>
-                  <label>
-                    <span>Run after</span>
-                    <Select
-                      aria-label="Run after"
-                      value={runAfter}
-                      onChange={setRunAfter}
-                      options={[
-                        { value: '', label: 'none' },
-                        ...runAfterOptions.map((name) => ({ value: name, label: name })),
-                      ]}
-                    />
-                  </label>
+                  {kind === 'action' ? (
+                    <label>
+                      <span>Run after</span>
+                      <Select
+                        aria-label="Run after"
+                        value={runAfter}
+                        onChange={setRunAfter}
+                        options={[
+                          { value: '', label: 'none' },
+                          ...runAfterOptions.map((name) => ({ value: name, label: name })),
+                        ]}
+                      />
+                    </label>
+                  ) : topLevelTriggers.length ? (
+                    <div className="add-action-note">Existing triggers: {topLevelTriggers.join(', ')}</div>
+                  ) : null}
                 </div>
 
                 {selectedOperation ? (
                   selectedOperation.isBuiltIn && !selectedOperation.hasConnectorSchema ? (
                     <div className="add-action-note">
-                      Built-in workflow action — inserts as WDL type <code>{String(operationDraft?.type || selectedOperation.operationType || '')}</code>.
+                      Built-in workflow {label} - inserts as WDL type <code>{String(operationDraft?.type || selectedOperation.operationType || '')}</code>.
                     </div>
                   ) : (
                     <div className="add-action-note">
-                      Select the connection reference this action should use. Create or repair references in the Connections tab.
+                      Select the connection reference this {label} should use. Create or repair references in the Connections tab.
                       {' '}
                       {schemaLoading
                         ? 'Loading operation metadata…'
@@ -417,7 +453,7 @@ export function AddFlowActionModal(props: {
                           onChange={(value) => updateOperationDraft(connectorFieldPath(field), value)}
                         />
                       ))}
-                      {visibleSelectedSchemaFields.length > 16 ? <div className="flow-action-edit-note">Showing the first 16 parameters. More fields are available after insertion via Edit Action.</div> : null}
+                      {visibleSelectedSchemaFields.length > 16 ? <div className="flow-action-edit-note">Showing the first 16 parameters. More fields are available after insertion via Edit {titleLabel}.</div> : null}
                     </div>
                   </div>
                 ) : null}
@@ -426,12 +462,16 @@ export function AddFlowActionModal(props: {
           </div>
         </div>
         <div className="add-action-footer">
-          <span className="add-action-footer-hint">{hasSelection ? 'Inserts the action into the editor only — Check & Save when ready.' : 'Select an action to enable Insert.'}</span>
-          <button className="btn btn-primary" type="button" disabled={!canInsert} onClick={addAction}>Insert Action</button>
+          <span className="add-action-footer-hint">{hasSelection ? `Inserts the ${label} into the editor only - Check & Save when ready.` : `Select a ${label} to enable Insert.`}</span>
+          <button className="btn btn-primary" type="button" disabled={!canInsert} onClick={addAction}>Insert {titleLabel}</button>
         </div>
       </div>
     </div>
   );
+}
+
+function templateDraft(template: BuiltInActionTemplate | BuiltInTriggerTemplate) {
+  return 'trigger' in template ? template.trigger() : template.action();
 }
 
 function referenceOption(reference: FlowConnectionReference) {
