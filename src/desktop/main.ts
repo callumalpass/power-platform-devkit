@@ -10,6 +10,7 @@ const isDesktopE2E = process.env.PP_DESKTOP_E2E === '1';
 const e2eWindowMode = process.env.PP_DESKTOP_E2E_WINDOW_MODE;
 const keepWindowHiddenForE2E = e2eWindowMode === 'hidden';
 const useBackgroundWindowForE2E = e2eWindowMode === 'background';
+const iconPath = path.join(__dirname, process.platform === 'win32' ? 'pp-icon.ico' : 'pp-icon-256x256.png');
 
 if (isDesktopDev || isDesktopE2E) {
   app.setPath('userData', path.join(app.getPath('userData'), isDesktopE2E ? 'e2e' : 'dev'));
@@ -26,6 +27,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    if (process.platform === 'darwin') app.dock?.setIcon(iconPath);
     void createWindow();
   });
 
@@ -62,6 +64,7 @@ async function createWindow(): Promise<void> {
     x: useBackgroundWindowForE2E ? -32000 : undefined,
     y: useBackgroundWindowForE2E ? -32000 : undefined,
     title: 'PP Desktop',
+    icon: iconPath,
     backgroundColor: '#f6f6f5',
     show: false,
     skipTaskbar: useBackgroundWindowForE2E,

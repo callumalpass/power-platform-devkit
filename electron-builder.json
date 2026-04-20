@@ -2,24 +2,29 @@
   "appId": "com.pp.desktop",
   "productName": "PP Desktop",
   "directories": {
+    "app": "dist/desktop",
     "output": "release/electron"
   },
   "files": [
-    "dist/desktop/**/*",
-    "package.json"
+    "**/*"
   ],
   "extraMetadata": {
-    "main": "dist/desktop/main.cjs"
+    "main": "main.cjs",
+    "dependencies": {},
+    "devDependencies": {}
   },
   "asar": true,
+  "npmRebuild": false,
   "win": {
     "icon": "packaging/windows/assets/pp-icon.ico",
     "target": ["dir"]
   },
   "linux": {
+    "icon": "packaging/windows/assets/pp-icon-1024x1024.png",
     "target": ["dir"]
   },
   "mac": {
+    "icon": "packaging/windows/assets/pp-icon-1024x1024.png",
     "target": ["dir"]
   }
 }

@@ -87,6 +87,7 @@ export interface DesktopApiResponse {
 export interface DesktopApiContext {
   configOptions: ConfigStoreOptions;
   allowInteractiveAuth: boolean;
+  appKind: 'pp-desktop' | 'pp-setup';
   jobs: UiJobStore;
   authSessions: AuthSessionStore;
   canvasSessions: CanvasSessionStore;
@@ -98,6 +99,7 @@ export interface DesktopApiContext {
 export function createDesktopApiContext(options: {
   configDir?: string;
   allowInteractiveAuth?: boolean;
+  appKind?: DesktopApiContext['appKind'];
   quit?: () => void;
 } = {}): DesktopApiContext {
   const configOptions = options.configDir ? { configDir: options.configDir } : {};
@@ -106,6 +108,7 @@ export function createDesktopApiContext(options: {
   return {
     configOptions,
     allowInteractiveAuth: options.allowInteractiveAuth ?? true,
+    appKind: options.appKind ?? 'pp-desktop',
     jobs: new UiJobStore(),
     authSessions: new AuthSessionStore(),
     canvasSessions,
@@ -124,7 +127,7 @@ export async function handleDesktopApiRequest(context: DesktopApiContext, reques
     if (method === 'GET') {
       if (url.pathname === '/api/app/status' || url.pathname === '/api/ui/status') {
         return json(200, ok({
-          kind: 'pp-desktop',
+          kind: context.appKind,
           configDir: getConfigDir(context.configOptions),
           pid: process.pid,
         }));

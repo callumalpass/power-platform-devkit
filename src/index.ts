@@ -25,6 +25,7 @@ import { invokeCanvasAuthoring, probeAndCleanCanvasSessions, requestCanvasAuthor
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { VERSION } from './version.js';
 import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
+import { runSetupCli } from './setup-cli.js';
 
 const TOP_LEVEL_COMMANDS = [
   'auth',
@@ -42,6 +43,7 @@ const TOP_LEVEL_COMMANDS = [
   'powerapps',
   'canvas-authoring',
   'mcp',
+  'setup',
   'migrate-config',
   'update',
   'version',
@@ -108,6 +110,8 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
         allowInteractiveAuth: hasFlag(rest, '--allow-interactive-auth'),
       });
       return 0;
+    case 'setup':
+      return runSetupCli(rest);
     case 'migrate-config':
       return runMigrateConfig(rest);
     case 'update':
@@ -907,6 +911,7 @@ function printHelp(): void {
       '  powerapps       Shortcut for "request --api powerapps"',
       '  canvas-authoring  Canvas authoring helper commands and request shortcut',
       '  mcp             Start the MCP server',
+      '  setup           Open the browser-based Setup Manager',
       '  migrate-config  Migrate legacy config into pp config',
       '  update          Check GitHub releases for updates',
       '  version         Print the current version',

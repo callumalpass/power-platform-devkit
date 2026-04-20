@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, formatBytes } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
-import { JsonViewer } from '../JsonViewer.js';
 import { Select } from '../Select.js';
 
 const APIS = [
@@ -205,7 +204,16 @@ function filterResponseBody(body: string, query: string): { text: string; matche
   return { text: output.join('\n'), matches: matches.length };
 }
 
-export function ConsoleTab(props: { active: boolean; environment: string; seed: any; clearSeed: () => void; toast: (message: string, isError?: boolean) => void }) {
+type ConsoleTabProps = {
+  active: boolean;
+  environment: string;
+  seed: any;
+  clearSeed: () => void;
+  toast: (message: string, isError?: boolean) => void;
+  renderResponseBody?: (value: string) => ReactNode;
+};
+
+export function ConsoleTab(props: ConsoleTabProps) {
   const { active, environment, seed, clearSeed, toast } = props;
   const [apiKey, setApiKey] = useState('dv');
   const [method, setMethod] = useState('GET');
@@ -662,7 +670,7 @@ export function ConsoleTab(props: { active: boolean; environment: string; seed: 
           ) : null}
           <div className="console-response-viewer">
             {response.body && response.body !== 'Send a request to see the response.' ? (
-              <JsonViewer value={filteredResponseBody.text || (responseFilter ? `/* No matches for "${responseFilter}". */` : response.body)} />
+              renderResponseBody(props.renderResponseBody, filteredResponseBody.text || (responseFilter ? `/* No matches for "${responseFilter}". */` : response.body))
             ) : (
               <EmptyState icon={<Icon name="refresh" size={18} />} title="No response yet" description="Pick an API, method and path above, then Send." compact />
             )}
@@ -783,4 +791,9 @@ export function ConsoleTab(props: { active: boolean; environment: string; seed: 
       </aside>
     </div>
   );
+}
+
+function renderResponseBody(render: ConsoleTabProps['renderResponseBody'], value: string): ReactNode {
+  if (render) return render(value);
+  return <pre className="viewer">{value}</pre>;
 }

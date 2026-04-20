@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { TabName } from './app-tabs.js';
 
 type Shortcut = { keys: string[]; description: string };
 type Group = { title: string; items: Shortcut[] };
@@ -31,11 +32,12 @@ const GROUPS: Group[] = [
   },
 ];
 
-type Props = { onClose: () => void };
+type Props = { onClose: () => void; tabs?: readonly TabName[]; showConsoleShortcuts?: boolean };
 
-export function ShortcutHelpModal({ onClose }: Props) {
+export function ShortcutHelpModal({ onClose, tabs, showConsoleShortcuts = true }: Props) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const groups = tabs ? shortcutGroups(tabs, showConsoleShortcuts) : GROUPS;
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -67,7 +69,7 @@ export function ShortcutHelpModal({ onClose }: Props) {
           <button ref={closeRef} type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
         </div>
         <div className="shortcut-help-body">
-          {GROUPS.map((group) => (
+          {groups.map((group) => (
             <section key={group.title} className="shortcut-help-group">
               <h3>{group.title}</h3>
               <dl>
@@ -91,4 +93,24 @@ export function ShortcutHelpModal({ onClose }: Props) {
       </div>
     </div>
   );
+}
+
+function shortcutGroups(tabs: readonly TabName[], showConsoleShortcuts: boolean): Group[] {
+  const [navigation, ...rest] = GROUPS;
+  const tabShortcut = tabs.length > 1
+    ? [{
+        keys: ['Alt', `1-${tabs.length}`],
+        description: `Jump to tab (${tabs.join(', ')})`,
+      }]
+    : [];
+  return [
+    {
+      ...navigation,
+      items: [
+        ...tabShortcut,
+        ...navigation.items.slice(1),
+      ],
+    },
+    ...(showConsoleShortcuts ? rest : rest.filter((group) => group.title !== 'Console')),
+  ];
 }

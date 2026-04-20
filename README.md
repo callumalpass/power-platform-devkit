@@ -2,40 +2,42 @@
 
 # pp
 
-Desktop app, CLI, MCP server, and library for working with Microsoft Power Platform.
+Desktop app, Setup Manager, CLI, MCP server, and library for working with Microsoft Power Platform.
 
-`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, SharePoint REST, BAP, and Power Apps APIs. It includes PP Desktop for managing accounts, environments, and Power Platform workspaces, plus an MCP server for AI assistant integration.
+`pp` provides authenticated access to Dataverse, Power Automate, Microsoft Graph, SharePoint REST, BAP, and Power Apps APIs. It includes PP Desktop for full Power Platform workspaces, PP Setup Manager for lightweight account and environment setup, plus an MCP server for AI assistant integration.
 
 ## Install
 
-`pp` is distributed as three related artifacts that share the same config and auth cache:
+`pp` is distributed as four related artifacts that share the same config and auth cache:
 
 - **PP Desktop** -- Electron app for account setup, environment management, and Power Platform workspaces.
+- **PP Setup Manager** -- `pp setup` / `pp-setup`, a lightweight local browser setup surface for accounts, environments, and MCP help.
 - **CLI** -- `pp`, the command-line tool for scripted and terminal use.
 - **MCP server** -- `pp-mcp`, a stdio server for AI clients.
 
-`pp` is not published on npm. Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Prebuilt CLI and MCP binaries are available for Windows, macOS (arm64), and Linux (x64). PP Desktop is packaged by the Windows installer and as standalone macOS/Linux Electron archives.
+`pp` is not published on npm. Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Prebuilt CLI, Setup Manager, and MCP binaries are available for Windows, macOS (arm64), and Linux (x64). PP Desktop is packaged by the Windows installer and as standalone macOS/Linux Electron archives.
 
 ### Windows
 
-Download `pp-setup.exe` from the latest [GitHub Release](../../releases) and run the installer. The installer offers these components:
+Download `pp-installer.exe` from the latest [GitHub Release](../../releases) and run the installer. The installer offers these components:
 
 - **PP Desktop** installs the Electron app under `Program Files\PP\desktop` and creates a Start menu shortcut.
+- **PP Setup Manager** installs `pp-setup.exe` under `Program Files\PP` and creates a Start menu shortcut.
 - **MCP server** installs `pp-mcp.exe` under `Program Files\PP` for MCP clients.
 - **Command-line tools** installs `pp.exe` under `Program Files\PP`.
 
-Leave **Add pp command-line tools to PATH** checked if you want to use `pp` and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
+Leave **Add pp command-line tools to PATH** checked if you want to use `pp`, `pp setup`, and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, launch Setup Manager from the Start menu and point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
 
-PP Desktop is the recommended Windows experience. It uses the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Desktop talks to its backend through Electron IPC; there is no local web server to start and no `pp ui` command.
+PP Desktop is the full Windows workspace. Setup Manager is the smaller browser-based auth and configuration surface. Both use the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Desktop talks to its backend through Electron IPC; Setup Manager binds to `127.0.0.1` with a random per-run token. There is no `pp ui` command.
 
 ### macOS
 
-Download `pp-darwin-arm64.tar.gz` from the latest [GitHub Release](../../releases), extract it, and place the `pp` and `pp-mcp` binaries somewhere on your `PATH`:
+Download `pp-darwin-arm64.tar.gz` from the latest [GitHub Release](../../releases), extract it, and place the `pp`, `pp-setup`, and `pp-mcp` binaries somewhere on your `PATH`:
 
 ```sh
 curl -LO https://github.com/callumalpass/power-platform-devkit/releases/latest/download/pp-darwin-arm64.tar.gz
 tar -xzf pp-darwin-arm64.tar.gz
-sudo mv pp pp-mcp /usr/local/bin/
+sudo mv pp pp-setup pp-mcp /usr/local/bin/
 ```
 
 For PP Desktop, download `pp-desktop-darwin-arm64.zip`, unzip it, and move `PP Desktop.app` to `/Applications`. The macOS desktop archive is currently unsigned and not notarized, so treat it as a development/pre-release build.
@@ -47,7 +49,7 @@ Download `pp-linux-x64.tar.gz` from the latest [GitHub Release](../../releases),
 ```sh
 curl -LO https://github.com/callumalpass/power-platform-devkit/releases/latest/download/pp-linux-x64.tar.gz
 tar -xzf pp-linux-x64.tar.gz
-sudo mv pp pp-mcp /usr/local/bin/
+sudo mv pp pp-setup pp-mcp /usr/local/bin/
 ```
 
 For PP Desktop, download `pp-desktop-linux-x64.tar.gz`, extract it, and run the bundled Electron app:
@@ -60,9 +62,15 @@ tar -xzf pp-desktop-linux-x64.tar.gz
 
 ### Unreleased builds
 
-For unreleased builds, download the `pp-<platform>-<arch>-<commit>` artifact from the latest successful CI workflow run. Linux and macOS artifacts include both the CLI/MCP archive and the PP Desktop archive.
+For unreleased builds, download the `pp-<platform>-<arch>-<commit>` artifact from the latest successful CI workflow run. Linux and macOS artifacts include both the CLI/Setup/MCP archive and the PP Desktop archive.
 
 ## Quick start
+
+Open the setup surface:
+
+```sh
+pp setup
+```
 
 Log in with a browser-based auth flow:
 
@@ -106,6 +114,7 @@ pp dv /accounts --env dev
 | `pp ping --env ALIAS` | Check API connectivity |
 | `pp token --env ALIAS` | Print a bearer token |
 | `pp mcp` | Start the MCP server |
+| `pp setup` | Open Setup Manager in a local browser |
 | `pp migrate-config` | Migrate legacy config |
 | `pp update [--check]` | Check GitHub releases for a newer version |
 | `pp completion [zsh\|bash\|powershell]` | Print shell completion script |
@@ -210,7 +219,19 @@ PP Desktop provides:
 - **Platform** -- Inspect platform environment metadata
 - **FetchXML** -- Execute FetchXML queries
 
-Desktop communicates with the local backend through Electron IPC. There is no public `pp ui` command and no localhost browser UI mode.
+Desktop communicates with the local backend through Electron IPC. There is no public `pp ui` command.
+
+## PP Setup Manager
+
+Setup Manager is a smaller browser surface for configuration:
+
+```sh
+pp setup        # or: pp-setup
+```
+
+It includes the setup tools from Desktop, including account management, environment management, access checks, and MCP setup guidance. It does not include the Console, Dataverse, Automate, Apps, Canvas, or Platform workspaces.
+
+Setup Manager starts a loopback-only HTTP server on `127.0.0.1` with a random available port and a random per-run token. The token is required for API calls, the server is not exposed on the LAN, and the process stops through the Quit action, Ctrl+C, or the idle timeout.
 
 ## MCP server
 
@@ -307,7 +328,7 @@ pnpm install
 pnpm build
 ```
 
-This produces ESM and CJS outputs in `dist/`, including the `pp` and `pp-mcp` binaries plus the bundled PP Desktop assets under `dist/desktop/`.
+This produces ESM and CJS outputs in `dist/`, including the `pp`, `pp-setup`, and `pp-mcp` binaries plus the bundled PP Desktop assets under `dist/desktop/` and Setup Manager assets under `dist/setup/`.
 
 Run PP Desktop from source with live rebuilds:
 
@@ -333,7 +354,7 @@ Build self-contained executables with:
 pnpm run build:sea
 ```
 
-This emits `pp` and `pp-mcp` for the current host under `release/<platform>-<arch>/`, with `.exe` extensions on Windows.
+This emits `pp`, `pp-setup`, and `pp-mcp` for the current host under `release/<platform>-<arch>/`, with `.exe` extensions on Windows.
 
 Build the Electron desktop directory with:
 
@@ -341,4 +362,4 @@ Build the Electron desktop directory with:
 pnpm run package:desktop
 ```
 
-The SEA build emits `pp` and `pp-mcp` under `release/<platform>-<arch>/`. The Electron packaging step emits the desktop app under `release/electron/`; CI archives this as `pp-desktop-linux-x64.tar.gz` on Linux and `pp-desktop-darwin-arm64.zip` on macOS. The Inno Setup installer definition at `packaging/windows/pp.iss` installs into `Program Files\PP`, offers Desktop, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates a Start menu shortcut for PP Desktop, and registers uninstall support.
+The SEA build emits `pp`, `pp-setup`, and `pp-mcp` under `release/<platform>-<arch>/`. The Electron packaging step emits the desktop app under `release/electron/`; CI archives this as `pp-desktop-linux-x64.tar.gz` on Linux and `pp-desktop-darwin-arm64.zip` on macOS. The Inno Setup installer definition at `packaging/windows/pp.iss` emits `release/installer/pp-installer.exe`, installs into `Program Files\PP`, offers Desktop, Setup Manager, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates Start menu shortcuts for PP Desktop and PP Setup Manager, and registers uninstall support.

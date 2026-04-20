@@ -115,7 +115,7 @@ export function formatUpdateNotice(result: UpdateCheckResult): string {
   return `${base} See ${result.releaseUrl}`;
 }
 
-const PASSIVE_EXCLUDED_COMMANDS = new Set(['mcp', 'token', 'completion', 'update', 'version', '--version']);
+const PASSIVE_EXCLUDED_COMMANDS = new Set(['mcp', 'setup', 'token', 'completion', 'update', 'version', '--version']);
 
 export function shouldShowUpdateNotice(command: string | undefined): boolean {
   if (!process.stderr.isTTY) return false;

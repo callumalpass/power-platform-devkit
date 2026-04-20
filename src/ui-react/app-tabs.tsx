@@ -11,20 +11,23 @@ const TAB_LABELS: Record<TabName, string> = {
 };
 
 const TAB_ORDER: TabName[] = ['setup', 'console', 'dataverse', 'automate', 'apps', 'canvas', 'platform'];
+const SETUP_TAB_ORDER: TabName[] = ['setup'];
 
-export function currentTabFromHash(): TabName {
+export function currentTabFromHash(tabs: readonly TabName[] = TAB_ORDER, fallback: TabName = 'dataverse'): TabName {
   const hash = window.location.hash.slice(1);
-  return isTabName(hash) ? hash : 'dataverse';
+  return isTabName(hash, tabs) ? hash : fallback;
 }
 
-export function PrimaryTabs(props: { activeTab: TabName; setActiveTab: (tab: TabName) => void }) {
+export function PrimaryTabs(props: { activeTab: TabName; setActiveTab: (tab: TabName) => void; tabs?: readonly TabName[] }) {
+  const tabs = props.tabs ?? TAB_ORDER;
   return (
     <nav className="tabs">
       <div className="tabs-inner">
-        {TAB_ORDER.map((tabName, index) => (
+        {tabs.map((tabName, index) => (
           <FragmentTab
             key={tabName}
             index={index}
+            tabs={tabs}
             tabName={tabName}
             activeTab={props.activeTab}
             setActiveTab={props.setActiveTab}
@@ -35,19 +38,19 @@ export function PrimaryTabs(props: { activeTab: TabName; setActiveTab: (tab: Tab
   );
 }
 
-function isTabName(value: string): value is TabName {
-  return TAB_ORDER.includes(value as TabName);
+function isTabName(value: string, tabs: readonly TabName[] = TAB_ORDER): value is TabName {
+  return tabs.includes(value as TabName);
 }
 
-function tabNumber(tabName: TabName): string {
-  const n = TAB_ORDER.indexOf(tabName) + 1;
+function tabNumber(tabName: TabName, tabs: readonly TabName[]): string {
+  const n = tabs.indexOf(tabName) + 1;
   return n.toString().padStart(2, '0');
 }
 
-function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabName; setActiveTab: (tab: TabName) => void }) {
-  const { index, tabName, activeTab, setActiveTab } = props;
-  const needsSep = index === 2;
-  const number = tabNumber(tabName);
+function FragmentTab(props: { index: number; tabs: readonly TabName[]; tabName: TabName; activeTab: TabName; setActiveTab: (tab: TabName) => void }) {
+  const { index, tabs, tabName, activeTab, setActiveTab } = props;
+  const needsSep = tabs.length > 2 && index === 2;
+  const number = tabNumber(tabName, tabs);
   return (
     <>
       {needsSep ? <div className="tab-sep"></div> : null}
@@ -55,7 +58,7 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
         className={`tab ${activeTab === tabName ? 'active' : ''}`}
         data-tab={tabName}
         onClick={() => setActiveTab(tabName)}
-        title={`${TAB_LABELS[tabName]} (Alt+${TAB_ORDER.indexOf(tabName) + 1})`}
+        title={`${TAB_LABELS[tabName]} (Alt+${tabs.indexOf(tabName) + 1})`}
       >
         <span className="tab-num" aria-hidden="true">{number}</span>
         <span className="tab-label">{TAB_LABELS[tabName]}</span>
@@ -64,4 +67,4 @@ function FragmentTab(props: { index: number; tabName: TabName; activeTab: TabNam
   );
 }
 
-export { TAB_ORDER };
+export { SETUP_TAB_ORDER, TAB_ORDER };

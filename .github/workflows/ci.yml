@@ -95,7 +95,7 @@ jobs:
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: pnpm exec electron-builder --dir --config electron-builder.json
+        run: node scripts/package-desktop.mjs
 
       - name: Install Inno Setup
         if: matrix.platform == 'win32'

@@ -10,6 +10,9 @@
 #ifndef MyAppExeName
   #define MyAppExeName "pp.exe"
 #endif
+#ifndef MySetupExeName
+  #define MySetupExeName "pp-setup.exe"
+#endif
 #ifndef MyUiExeName
   #define MyUiExeName "PP Desktop.exe"
 #endif
@@ -31,19 +34,21 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 OutputDir=..\..\release\installer
-OutputBaseFilename=pp-setup
+OutputBaseFilename=pp-installer
 
 [Tasks]
 Name: "addtopath"; Description: "Add pp command-line tools to PATH"; GroupDescription: "Additional tasks:"; Flags: unchecked; Components: cli
 Name: "desktopicon"; Description: "Create a desktop shortcut for PP Desktop"; GroupDescription: "Additional tasks:"; Flags: unchecked; Components: desktop
 
 [Types]
-Name: "full"; Description: "Desktop, MCP server, and command-line tools"
+Name: "full"; Description: "Desktop, Setup Manager, MCP server, and command-line tools"
 Name: "desktop"; Description: "Desktop app only"
+Name: "setup"; Description: "Setup Manager only"
 Name: "custom"; Description: "Custom installation"; Flags: iscustom
 
 [Components]
-Name: "desktop"; Description: "PP Desktop"; Types: full desktop custom; Flags: fixed
+Name: "desktop"; Description: "PP Desktop"; Types: full desktop custom
+Name: "setup"; Description: "PP Setup Manager"; Types: full setup custom
 Name: "mcp"; Description: "MCP server for AI clients"; Types: full custom
 Name: "cli"; Description: "Command-line tools"; Types: full custom
 
@@ -51,10 +56,12 @@ Name: "cli"; Description: "Command-line tools"; Types: full custom
 Source: "..\..\release\electron\win-unpacked\*"; DestDir: "{app}\desktop"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: desktop
 Source: "..\..\release\win32-x64\pp.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: cli
 Source: "..\..\release\win32-x64\pp-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: mcp
-Source: "assets\pp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion; Components: desktop
+Source: "..\..\release\win32-x64\pp-setup.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: setup
+Source: "assets\pp-icon.ico"; DestDir: "{app}"; Flags: ignoreversion; Components: desktop setup
 
 [Icons]
 Name: "{autoprograms}\PP Desktop"; Filename: "{app}\desktop\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Components: desktop
+Name: "{autoprograms}\PP Setup Manager"; Filename: "{app}\{#MySetupExeName}"; IconFilename: "{app}\pp-icon.ico"; Components: setup
 Name: "{autodesktop}\PP Desktop"; Filename: "{app}\desktop\{#MyUiExeName}"; IconFilename: "{app}\pp-icon.ico"; Tasks: desktopicon; Components: desktop
 
 [Run]

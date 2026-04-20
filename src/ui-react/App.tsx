@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, getDefaultSelectedColumns, summarizeError } from './utils.js';
+import { api, getAppDisplayName, getAppMode, getDefaultSelectedColumns, summarizeError } from './utils.js';
 import { AutomateTab } from './AutomateTab.js';
 import { SetupTab } from './SetupTab.js';
 import { EnvironmentPickerModal } from './EnvironmentPickerModal.js';
@@ -7,7 +7,7 @@ import { HeaderActions } from './HeaderActions.js';
 import { ShortcutHelpModal } from './ShortcutHelpModal.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { touchEnvironmentRecency } from './env-recency.js';
-import { currentTabFromHash, PrimaryTabs, TAB_ORDER, type TabName } from './app-tabs.js';
+import { currentTabFromHash, PrimaryTabs, SETUP_TAB_ORDER, TAB_ORDER, type TabName } from './app-tabs.js';
 import { ToastViewport, useToasts } from './toasts.js';
 import { ConsoleTab } from './console/ConsoleTab.js';
 import { DataverseTab } from './dataverse/DataverseTab.js';
@@ -15,13 +15,19 @@ import { AppsTab, type AppsState } from './apps/AppsTab.js';
 import { CanvasTab, type CanvasState } from './canvas/CanvasTab.js';
 import { PlatformTab, type PlatformState } from './platform/PlatformTab.js';
 import { isMonacoKeyboardEvent } from './monaco-support.js';
+import { JsonViewer } from './JsonViewer.js';
 import type { DataverseState } from './ui-types.js';
 
 export function App() {
+  const appMode = getAppMode();
+  const appName = getAppDisplayName();
+  const availableTabs = appMode === 'setup' ? SETUP_TAB_ORDER : TAB_ORDER;
+  const defaultTab: TabName = appMode === 'setup' ? 'setup' : 'dataverse';
+  const setupMode = appMode === 'setup';
   const { toasts, pushToast, dismissToast, log: toastLog, clearLog: clearToastLog } = useToasts();
   const [toastTrayOpen, setToastTrayOpen] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabName>(currentTabFromHash());
+  const [activeTab, setActiveTab] = useState<TabName>(() => currentTabFromHash(availableTabs, defaultTab));
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('pp-theme');
     if (saved === 'dark' || saved === 'light') return saved;
@@ -81,7 +87,7 @@ export function App() {
 
   useEffect(() => {
     const handler = (event: HashChangeEvent) => {
-      setActiveTab(currentTabFromHash());
+      setActiveTab(currentTabFromHash(availableTabs, defaultTab));
       if (event.newURL) void event.newURL;
     };
     window.addEventListener('hashchange', handler);
@@ -125,9 +131,9 @@ export function App() {
       }
       if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
         const digit = Number.parseInt(event.key, 10);
-        if (Number.isInteger(digit) && digit >= 1 && digit <= TAB_ORDER.length) {
+        if (Number.isInteger(digit) && digit >= 1 && digit <= availableTabs.length) {
           event.preventDefault();
-          setActiveTab(TAB_ORDER[digit - 1]);
+          setActiveTab(availableTabs[digit - 1]);
         }
       }
       if (event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -163,6 +169,7 @@ export function App() {
 
   useEffect(() => {
     const listener = (event: Event) => {
+      if (setupMode) return;
       const detail = (event as CustomEvent).detail || {};
       setActiveTab('console');
       setConsoleSeed({
@@ -177,6 +184,7 @@ export function App() {
 
   useEffect(() => {
     const listener = (event: Event) => {
+      if (setupMode) return;
       const detail = (event as CustomEvent).detail || {};
       if (!detail.entity) return;
       setActiveTab('dataverse');
@@ -189,6 +197,7 @@ export function App() {
 
   useEffect(() => {
     const listener = (event: MouseEvent) => {
+      if (setupMode) return;
       const target = event.target as HTMLElement | null;
       const link = target?.closest('.record-link') as HTMLElement | null;
       if (!link?.dataset.entity) return;
@@ -394,6 +403,7 @@ export function App() {
           </div>
           <div className="header-flex-spacer" aria-hidden="true" />
           <HeaderActions
+            appName={appName}
             theme={theme}
             onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
             toastLog={toastLog}
@@ -408,7 +418,7 @@ export function App() {
         </div>
       </header>
 
-      <PrimaryTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <PrimaryTabs activeTab={activeTab} setActiveTab={setActiveTab} tabs={availableTabs} />
 
       <div className="app-main">
         <div className={`tab-panel stack ${activeTab === 'setup' ? 'active' : ''}`} id="panel-setup">
@@ -421,17 +431,18 @@ export function App() {
           />
         </div>
 
-        <div className={`tab-panel stack ${activeTab === 'console' ? 'active' : ''}`} id="panel-console">
+        {!setupMode ? <div className={`tab-panel stack ${activeTab === 'console' ? 'active' : ''}`} id="panel-console">
           <ConsoleTab
             active={activeTab === 'console'}
             environment={globalEnvironment}
             seed={consoleSeed}
             clearSeed={() => setConsoleSeed(null)}
             toast={pushToast}
+            renderResponseBody={(value) => <JsonViewer value={value} />}
           />
-        </div>
+        </div> : null}
 
-        <div className={`tab-panel ${activeTab === 'dataverse' ? 'active' : ''}`} id="panel-dataverse">
+        {!setupMode ? <div className={`tab-panel ${activeTab === 'dataverse' ? 'active' : ''}`} id="panel-dataverse">
           <DataverseTab
             dataverse={dataverse}
             setDataverse={setDataverse}
@@ -442,9 +453,9 @@ export function App() {
             loadRecordPreview={loadRecordPreview}
             toast={pushToast}
           />
-        </div>
+        </div> : null}
 
-        <AutomateTab
+        {!setupMode ? <AutomateTab
           active={activeTab === 'automate'}
           environment={globalEnvironment}
           openConsole={(seed) => {
@@ -452,9 +463,9 @@ export function App() {
             setActiveTab('console');
           }}
           toast={pushToast}
-        />
+        /> : null}
 
-        <div className={`tab-panel ${activeTab === 'apps' ? 'active' : ''}`} id="panel-apps">
+        {!setupMode ? <div className={`tab-panel ${activeTab === 'apps' ? 'active' : ''}`} id="panel-apps">
           <AppsTab
             state={appsState}
             setState={setAppsState}
@@ -466,9 +477,9 @@ export function App() {
             }}
             toast={pushToast}
           />
-        </div>
+        </div> : null}
 
-        <div className={`tab-panel ${activeTab === 'canvas' ? 'active' : ''}`} id="panel-canvas">
+        {!setupMode ? <div className={`tab-panel ${activeTab === 'canvas' ? 'active' : ''}`} id="panel-canvas">
           <CanvasTab
             state={canvasState}
             setState={setCanvasState}
@@ -479,9 +490,9 @@ export function App() {
             loadApps={loadApps}
             toast={pushToast}
           />
-        </div>
+        </div> : null}
 
-        <div className={`tab-panel ${activeTab === 'platform' ? 'active' : ''}`} id="panel-platform">
+        {!setupMode ? <div className={`tab-panel ${activeTab === 'platform' ? 'active' : ''}`} id="panel-platform">
           <PlatformTab
             state={platformState}
             setState={setPlatformState}
@@ -493,7 +504,7 @@ export function App() {
             }}
             toast={pushToast}
           />
-        </div>
+        </div> : null}
       </div>
 
       {stateLoading ? <div className="app-loading-bar" aria-hidden="true"><span /></div> : null}
@@ -520,7 +531,7 @@ export function App() {
       ) : null}
 
       {shortcutHelpOpen ? (
-        <ShortcutHelpModal onClose={() => setShortcutHelpOpen(false)} />
+        <ShortcutHelpModal tabs={availableTabs} onClose={() => setShortcutHelpOpen(false)} />
       ) : null}
 
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />

@@ -6,6 +6,7 @@ import type { ConfirmRequest } from './setup/ConfirmDialog.js';
 type ToastLogItem = { id: number; message: string; isError: boolean; timestamp: number };
 
 type Props = {
+  appName: string;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   toastLog: ToastLogItem[];
@@ -48,8 +49,8 @@ export function HeaderActions(props: Props) {
 
   function requestShutdown() {
     props.openConfirm({
-      title: 'Quit PP Desktop?',
-      body: 'This closes the desktop app. Background CLI and MCP processes are not affected.',
+      title: `Quit ${props.appName}?`,
+      body: `This closes ${props.appName}. Background CLI and MCP processes are not affected.`,
       destructive: true,
       confirmLabel: 'Quit',
       onConfirm: async () => {
@@ -133,7 +134,7 @@ export function HeaderActions(props: Props) {
               onClick={() => { props.setHeaderMenuOpen(false); requestShutdown(); }}
             >
               <Icon name="power" size={14} />
-              <span>Quit PP Desktop</span>
+              <span>Quit {props.appName}</span>
             </button>
           </div>
         ) : null}

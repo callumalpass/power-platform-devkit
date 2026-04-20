@@ -24,8 +24,14 @@ type DesktopApiTestHook = {
   request?(input: { path: string; method?: string; body?: unknown }): Promise<{ status: number; body: unknown } | undefined> | { status: number; body: unknown } | undefined;
 };
 
+export type AppMode = 'desktop' | 'setup';
+
 declare global {
   interface Window {
+    ppApp?: {
+      mode?: AppMode;
+      setupToken?: string;
+    };
     ppDesktop?: DesktopApiBridge;
     ppDesktopTest?: DesktopApiTestHook;
   }
@@ -42,10 +48,10 @@ export async function api<T = any>(path: string, options?: ApiOptions): Promise<
     const response = await window.ppDesktopTest?.request?.(request) ?? await window.ppDesktop?.request(request);
     if (response) return readApiResponse<T>(response, allowFailure);
   }
-  const response = await fetch(path, {
-    headers: { 'content-type': 'application/json' },
-    ...fetchOptions,
-  });
+  const headers = new Headers(fetchOptions.headers);
+  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  if (window.ppApp?.setupToken) headers.set('x-pp-setup-token', window.ppApp.setupToken);
+  const response = await fetch(path, { ...fetchOptions, headers });
   const text = await response.text();
   let data: any;
   try {
@@ -60,6 +66,14 @@ export async function api<T = any>(path: string, options?: ApiOptions): Promise<
     throw new ApiRequestError(summarizeError(data), data, response.status);
   }
   return data as T;
+}
+
+export function getAppMode(): AppMode {
+  return window.ppApp?.mode === 'setup' ? 'setup' : 'desktop';
+}
+
+export function getAppDisplayName(): string {
+  return getAppMode() === 'setup' ? 'PP Setup Manager' : 'PP Desktop';
 }
 
 function readApiResponse<T>(response: { status: number; body: unknown }, allowFailure: boolean): T {
