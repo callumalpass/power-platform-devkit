@@ -4,6 +4,10 @@ import { CopyButton, copyTextToClipboard } from '../CopyButton.js';
 import type { ToastFn } from '../ui-types.js';
 import type { AuthSession, LoginTarget } from './types.js';
 
+function loginTargetLabel(target: LoginTarget | null | undefined): string {
+  return target?.label || target?.api || 'service';
+}
+
 export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) => Promise<void>) {
   const [activeSession, setActiveSession] = useState<AuthSession | null>(null);
   const [loginTargets, setLoginTargets] = useState<LoginTarget[]>([]);
@@ -75,26 +79,29 @@ export function LoginProgress(props: {
   const currentIndex = currentTarget ? loginTargets.indexOf(currentTarget) + 1 : completedCount + 1;
   const currentDeviceCode = currentTarget?.action?.kind === 'device-code' ? currentTarget.action : null;
   const terminal = session?.status === 'completed' || session?.status === 'failed' || session?.status === 'cancelled';
+  const accountLabel = session?.accountName?.trim() || 'selected account';
+  const activeTargetLabel = loginTargetLabel(currentTarget);
+  const title = session?.status === 'failed'
+    ? `Authentication needs attention for ${accountLabel}`
+    : completedCount === total && total > 0
+    ? `Authentication complete for ${accountLabel}`
+    : currentTarget
+      ? currentTarget.status === 'waiting_for_user'
+        ? `Sign in as ${accountLabel} for ${activeTargetLabel} (${currentIndex} of ${total})`
+        : `Connecting ${accountLabel} to ${activeTargetLabel} (${currentIndex} of ${total})`
+      : `Preparing sign-in for ${accountLabel}...`;
 
   return (
     <div className="login-progress-panel">
       <div className="login-progress-header">
         <div className="login-progress-title">
-          {session?.status === 'failed'
-            ? 'Authentication needs attention'
-            : completedCount === total && total > 0
-            ? 'Authentication complete'
-            : currentTarget
-              ? currentTarget.status === 'waiting_for_user'
-                ? `Sign in to ${currentTarget.label || currentTarget.api || 'service'} (${currentIndex} of ${total})`
-                : `Connecting to ${currentTarget.label || currentTarget.api || 'service'} (${currentIndex} of ${total})`
-              : 'Waiting for sign-in links...'}
+          {title}
         </div>
         <div className="login-progress-actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => {
             const links = loginTargets
               .filter((t) => t.action?.kind === 'browser-url')
-              .map((t) => `${t.label || t.api || t.resource}: ${t.action?.kind === 'browser-url' ? t.action.url : ''}`);
+              .map((t) => (t.action?.kind === 'browser-url' ? t.action.url : ''));
             void copyTextToClipboard(links.join('\n'))
               .then(() => toast('Copied login URLs'))
               .catch((error) => toast(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, true));
@@ -135,7 +142,7 @@ export function LoginProgress(props: {
             <div key={`${target.resource || target.api || index}`} className={`login-progress-step ${isActive ? 'active' : ''}`}>
               <div className="login-progress-step-head">
                 <span className={`health-dot ${dotClass}`}></span>
-                <strong>{target.label || target.api || target.resource}</strong>
+                <strong>{loginTargetLabel(target) || target.resource}</strong>
                 <span className={`login-progress-step-badge ${isDone ? 'done' : isFailed ? 'failed' : isActive ? 'active' : 'pending'}`}>
                   {isDone ? 'connected' : isFailed ? 'failed' : isActive ? (target.status === 'waiting_for_user' ? 'action required' : 'connecting') : 'pending'}
                 </span>

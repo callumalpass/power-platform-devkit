@@ -478,6 +478,11 @@ export function AccountsPanel(props: {
   }
 
   async function handleLogin(account: any) {
+    const accountEnvironmentAlias = globalEnvironment && environments.some((environment: any) => (
+      environment.alias === globalEnvironment && environment.account === account.name
+    ))
+      ? globalEnvironment
+      : undefined;
     try {
       const started = await api<any>('/api/auth/sessions', {
         method: 'POST',
@@ -487,7 +492,7 @@ export function AccountsPanel(props: {
           loginHint: account.loginHint || account.accountUsername,
           tenantId: account.tenantId,
           clientId: account.clientId,
-          environmentAlias: globalEnvironment || undefined,
+          environmentAlias: accountEnvironmentAlias,
           excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name]),
         }),
       });
