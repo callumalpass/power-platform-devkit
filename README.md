@@ -15,7 +15,7 @@ Desktop app, Setup Manager, CLI, MCP server, and library for working with Micros
 - **CLI** -- `pp`, the command-line tool for scripted and terminal use.
 - **MCP server** -- `pp-mcp`, a stdio server for AI clients.
 
-`pp` is not published on npm. Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Prebuilt CLI, Setup Manager, and MCP binaries are available for Windows, macOS (arm64), and Linux (x64). PP Desktop is packaged by the Windows installer and as standalone macOS/Linux Electron archives.
+Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Current release assets include CLI, Setup Manager, and MCP binaries for Windows, macOS (arm64), and Linux (x64), plus PP Desktop as a Windows installer component and standalone macOS/Linux Electron archives.
 
 ### Windows
 
@@ -28,7 +28,7 @@ Download `pp-installer.exe` from the latest [GitHub Release](../../releases) and
 
 Leave **Add pp command-line tools to PATH** checked if you want to use `pp`, `pp setup`, and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, launch Setup Manager from the Start menu and point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
 
-PP Desktop is the full Windows workspace. Setup Manager is the smaller browser-based auth and configuration surface. Both use the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Desktop talks to its backend through Electron IPC; Setup Manager binds to `127.0.0.1` with a random per-run token. There is no `pp ui` command.
+PP Desktop is the full Windows workspace. Setup Manager is the smaller browser-based auth and configuration surface. Both use the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Use `pp setup` for the lightweight browser flow and PP Desktop for the full graphical workspace. Desktop talks to its backend through Electron IPC; Setup Manager binds to `127.0.0.1` with a random per-run token.
 
 ### macOS
 
@@ -40,7 +40,7 @@ tar -xzf pp-darwin-arm64.tar.gz
 sudo mv pp pp-setup pp-mcp /usr/local/bin/
 ```
 
-For PP Desktop, download `pp-desktop-darwin-arm64.zip`, unzip it, and move `PP Desktop.app` to `/Applications`. The macOS desktop archive is currently unsigned and not notarized, so treat it as a development/pre-release build.
+For PP Desktop, download `pp-desktop-darwin-arm64.zip`, unzip it, and move `PP Desktop.app` to `/Applications`. The current macOS desktop archive is an unsigned development build, so macOS may ask you to approve it in System Settings before first launch.
 
 ### Linux
 
@@ -121,7 +121,7 @@ pp dv /accounts --env dev
 
 All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location and `--no-interactive-auth` to disable browser-based auth prompts.
 
-`pp update` checks the latest GitHub Release and prints the appropriate npm or Windows release download instructions. It does not install updates automatically.
+`pp update` checks the latest GitHub Release and prints the appropriate download instructions for your current install path.
 
 ### Auth flows
 
@@ -181,7 +181,7 @@ SharePoint REST requests require a full SharePoint URL. The token audience is th
 
 `canvas-authoring` targets the Power Apps canvas authoring service used by Studio and the Microsoft canvas authoring MCP server. Relative paths are rooted at the environment cluster-discovery host (`https://<encoded-environment-id>.environment.api.powerplatform.com`), so `/gateway/cluster` is the first low-level probe. Fully qualified authoring gateway URLs are preserved and authenticated with the canvas authoring resource. The `session start` helper wraps the known cluster discovery and authoring session start flow, and redacts session secrets from output unless `--raw` is provided. `session request` sends a versioned request with the active session headers; the `yaml`, `controls`, `apis`, `datasources`, and `accessibility` commands are thin wrappers around those MCP-style REST endpoints. `invoke` posts directly to `/api/v2/invoke`; `rpc` uses the authoring SignalR channel and waits for the matching document-server response.
 
-`pp canvas-authoring yaml validate` is not a purely offline linter. It calls the live session-backed `validate-directory` endpoint; valid YAML can update the dirty draft visible in Maker/Studio, while invalid YAML returns diagnostics.
+`pp canvas-authoring yaml validate` uses the live session-backed `validate-directory` endpoint. Valid YAML can update the dirty draft visible in Maker/Studio, while invalid YAML returns diagnostics.
 
 Canvas authoring is a first-party Microsoft resource that rejects pp's normal public client during interactive auth. For user and device-code accounts that do not already specify `--client-id`, pp uses the Power Apps Studio public client for `canvas-authoring` requests only, defaults that login to device code because the Studio client does not allow pp's localhost browser callback, and keeps that token in a separate cache entry so other APIs continue to use the normal pp client.
 
@@ -195,7 +195,7 @@ Request commands can apply a jq expression to JSON responses before printing the
 pp dv /accounts --env dev --query '$select=name,accountid' --query '$top=50' --jq '.value | map({name, accountid})'
 ```
 
-This runs jq in-process through WebAssembly; it does not shell out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned.
+This runs jq in-process through WebAssembly instead of shelling out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned.
 
 ## PP Desktop
 
@@ -219,7 +219,7 @@ PP Desktop provides:
 - **Platform** -- Inspect platform environment metadata
 - **FetchXML** -- Execute FetchXML queries
 
-Desktop communicates with the local backend through Electron IPC. There is no public `pp ui` command.
+Desktop communicates with the local backend through Electron IPC. Launch the lightweight browser surface with `pp setup`, or use PP Desktop for the full workspace.
 
 ## PP Setup Manager
 
@@ -229,9 +229,9 @@ Setup Manager is a smaller browser surface for configuration:
 pp setup        # or: pp-setup
 ```
 
-It includes the setup tools from Desktop, including account management, environment management, access checks, and MCP setup guidance. It does not include the Console, Dataverse, Automate, Apps, Canvas, or Platform workspaces.
+It focuses on account management, environment management, access checks, and MCP setup guidance from the Desktop app.
 
-Setup Manager starts a loopback-only HTTP server on `127.0.0.1` with a random available port and a random per-run token. The token is required for API calls, the server is not exposed on the LAN, and the process stops through the Quit action, Ctrl+C, or the idle timeout.
+Setup Manager starts a loopback-only HTTP server on `127.0.0.1` with a random available port and a random per-run token. The token gates API calls, the server stays local to the machine, and the process stops through the Quit action, Ctrl+C, or the idle timeout.
 
 ## MCP server
 
