@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ToastFn } from './ui-types.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { useAuthSession, LoginProgress } from './setup/login.js';
@@ -40,30 +40,59 @@ export function SetupTab(props: SetupTabProps) {
 
   const login = useAuthSession(toast, refreshState);
   const confirm = useConfirm();
+  const tokenStatusRunRef = useRef(0);
+  const healthRunRef = useRef(0);
   const accounts = shellData?.accounts || [];
   const environments = shellData?.environments || [];
 
   useEffect(() => {
     if (!active || !shellData) return;
-    void checkTokenStatuses(accounts);
-    void checkHealth(environments);
+    const tokenRun = beginTokenStatusRun();
+    const healthRun = beginHealthRun();
+    void checkTokenStatuses(accounts, tokenRun);
+    void checkHealth(environments, healthRun);
+    return () => {
+      tokenStatusRunRef.current += 1;
+      healthRunRef.current += 1;
+    };
   }, [active, shellData]);
 
-  async function checkTokenStatuses(accountList: any[]) {
+  function beginTokenStatusRun(): number {
+    tokenStatusRunRef.current += 1;
+    return tokenStatusRunRef.current;
+  }
+
+  function beginHealthRun(): number {
+    healthRunRef.current += 1;
+    return healthRunRef.current;
+  }
+
+  function isCurrentTokenStatusRun(runId: number): boolean {
+    return tokenStatusRunRef.current === runId;
+  }
+
+  function isCurrentHealthRun(runId: number): boolean {
+    return healthRunRef.current === runId;
+  }
+
+  async function checkTokenStatuses(accountList: any[], runId: number) {
     await Promise.all(accountList.map(async (account) => {
       try {
         const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
+        if (!isCurrentTokenStatusRun(runId)) return;
         setTokenStatus((current) => ({
           ...current,
           [account.name]: data.success && data.data ? data.data : { authenticated: false },
         }));
       } catch {
+        if (!isCurrentTokenStatusRun(runId)) return;
         setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
       }
     }));
   }
 
-  async function pingApi(alias: string, apiName: string) {
+  async function pingApi(alias: string, apiName: string, runId: number) {
+    if (!isCurrentHealthRun(runId)) return;
     setHealth((current) => ({
       ...current,
       [alias]: {
@@ -78,11 +107,13 @@ export function SetupTab(props: SetupTabProps) {
         allowFailure: true,
       });
       const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
+      if (!isCurrentHealthRun(runId)) return;
       setHealth((current) => ({
         ...current,
         [alias]: { ...(current[alias] || {}), [apiName]: value },
       }));
     } catch {
+      if (!isCurrentHealthRun(runId)) return;
       setHealth((current) => ({
         ...current,
         [alias]: {
@@ -93,26 +124,25 @@ export function SetupTab(props: SetupTabProps) {
     }
   }
 
-  async function checkHealth(environmentList: any[]) {
-    for (const environment of environmentList) {
-      for (const apiName of HEALTH_APIS) {
-        await pingApi(environment.alias, apiName);
-      }
-    }
+  async function checkHealth(environmentList: any[], runId: number) {
+    await Promise.all(environmentList.flatMap((environment) => (
+      HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))
+    )));
   }
 
   function recheckHealth() {
-    void checkHealth(environments);
-    void checkTokenStatuses(accounts);
+    void checkHealth(environments, beginHealthRun());
+    void checkTokenStatuses(accounts, beginTokenStatusRun());
     toast('Health checks started');
   }
 
   function recheckApi(alias: string, apiName?: string) {
+    const runId = beginHealthRun();
     if (apiName) {
-      void pingApi(alias, apiName);
+      void pingApi(alias, apiName, runId);
     } else {
       const target = environments.find((env: any) => env.alias === alias);
-      if (target) void checkHealth([target]);
+      if (target) void checkHealth([target], runId);
     }
   }
 
