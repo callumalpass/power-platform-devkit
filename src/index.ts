@@ -89,6 +89,7 @@ export {
   getEnvironmentToken,
   runConnectivityPing,
   runWhoAmICheck,
+  type ApiRequestResult,
 } from './services/api.js';
 
 export {

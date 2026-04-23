@@ -9,6 +9,7 @@ import {
   removeAccountByName,
 } from './services/accounts.js';
 import {
+  type ApiRequestResult,
   executeApiRequest,
   getEnvironmentToken,
   runConnectivityPing,
@@ -33,6 +34,7 @@ import {
   listConfiguredEnvironments,
   removeConfiguredEnvironment,
 } from './services/environments.js';
+import type { OperationResult } from './diagnostics.js';
 
 export interface PpClientOptions extends ConfigStoreOptions {
   loginOptions?: PublicClientLoginOptions;
@@ -86,8 +88,8 @@ export class PpClient {
 
   constructor(private readonly options: PpClientOptions = {}) {}
 
-  request(input: PpRequestInput, loginOptions?: PublicClientLoginOptions) {
-    return executeApiRequest(normalizeRequestInput(input), this.configOptions, this.loginOptions(loginOptions));
+  request<T = unknown>(input: PpRequestInput, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<ApiRequestResult<T>>> {
+    return executeApiRequest<T>(normalizeRequestInput(input), this.configOptions, this.loginOptions(loginOptions));
   }
 
   whoami(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; allowInteractive?: boolean }) {

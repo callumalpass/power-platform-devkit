@@ -1,14 +1,16 @@
 import { createTokenProvider, type PublicClientLoginOptions } from '../auth.js';
 import { getAccount, getEnvironment, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
-import { accountForApi, executeRequest, resourceForApi, type EnvironmentTokenApi, type RequestInput } from '../request.js';
+import { accountForApi, executeRequest, resourceForApi, type EnvironmentTokenApi, type ExecuteRequestResult, type RequestInput } from '../request.js';
 
-export async function executeApiRequest(
+export type ApiRequestResult<T = unknown> = ExecuteRequestResult<T>;
+
+export async function executeApiRequest<T = unknown>(
   input: RequestInput,
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {},
-) {
-  return executeRequest({
+): Promise<OperationResult<ApiRequestResult<T>>> {
+  return executeRequest<T>({
     ...input,
     configOptions,
     loginOptions: { ...loginOptions, ...(input.loginOptions ?? {}) },

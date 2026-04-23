@@ -8,9 +8,17 @@ export interface Diagnostic {
   path?: string;
 }
 
-export interface OperationResult<T> {
-  success: boolean;
-  data?: T;
+export type OperationResult<T> = OperationSuccess<T> | OperationFailure;
+
+export interface OperationSuccess<T> {
+  success: true;
+  data: T;
+  diagnostics: Diagnostic[];
+}
+
+export interface OperationFailure {
+  success: false;
+  data?: undefined;
   diagnostics: Diagnostic[];
 }
 

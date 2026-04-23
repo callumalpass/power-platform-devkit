@@ -53,6 +53,18 @@ await executeApiRequest({
 });
 ```
 
+Use a generic when you know the response shape:
+
+```ts
+const result = await pp.request<{ value: Array<{ name?: string }> }>({
+  env: 'dev',
+  api: 'dv',
+  path: '/accounts',
+  query: { '$select': 'name' },
+  readIntent: true,
+});
+```
+
 The lower-level functions remain available for applications that prefer explicit dependency passing:
 
 ```ts

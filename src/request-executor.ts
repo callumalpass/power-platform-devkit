@@ -48,6 +48,13 @@ export interface PreparedRequest {
   accountName: string;
 }
 
+export interface ExecuteRequestResult<T = unknown> {
+  request: PreparedRequest;
+  response: T;
+  status: number;
+  headers: Record<string, string>;
+}
+
 type EnvironmentScopedApi = 'dv' | 'flow' | 'bap' | 'powerapps' | 'powerautomate' | 'canvas-authoring' | 'custom';
 type AccountScopedApi = 'graph' | 'sharepoint';
 type ApiScope = 'environment' | 'account';
@@ -259,7 +266,7 @@ export function resourceForApi(environment: Environment, api: EnvironmentTokenAp
   return resource(environment);
 }
 
-export async function executeRequest(input: RequestInput): Promise<OperationResult<{ request: PreparedRequest; response: unknown; status: number; headers: Record<string, string> }>> {
+export async function executeRequest<T = unknown>(input: RequestInput): Promise<OperationResult<ExecuteRequestResult<T>>> {
   const method = (input.method ?? 'GET').toUpperCase();
   const configOptions = input.configOptions ?? {};
   const api = detectApi(input.path, input.api);
@@ -296,7 +303,7 @@ export async function executeRequest(input: RequestInput): Promise<OperationResu
   if (!responseData.success) return fail(...responseData.diagnostics);
   return ok({
     request: request.data,
-    response: responseData.data,
+    response: responseData.data as T,
     status: response.data.status,
     headers: response.data.headers,
   });

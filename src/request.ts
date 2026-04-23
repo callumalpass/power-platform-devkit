@@ -13,6 +13,7 @@ export {
   resourceForApi,
   type ApiKind,
   type EnvironmentTokenApi,
+  type ExecuteRequestResult,
   type PreparedRequest,
   type RequestInput,
 } from './request-executor.js';
