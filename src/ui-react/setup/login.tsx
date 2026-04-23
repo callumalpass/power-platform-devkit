@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils.js';
 import { CopyButton, copyTextToClipboard } from '../CopyButton.js';
 import type { ToastFn } from '../ui-types.js';
@@ -11,12 +11,29 @@ function loginTargetLabel(target: LoginTarget | null | undefined): string {
 export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) => Promise<void>) {
   const [activeSession, setActiveSession] = useState<AuthSession | null>(null);
   const [loginTargets, setLoginTargets] = useState<LoginTarget[]>([]);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const pollRunRef = useRef(0);
+  const mountedRef = useRef(true);
 
-  function handleSessionUpdate(session: AuthSession) {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pollRunRef.current += 1;
+      activeSessionIdRef.current = null;
+    };
+  }, []);
+
+  function isCurrentPoll(id: string, runId: number): boolean {
+    return mountedRef.current && pollRunRef.current === runId && activeSessionIdRef.current === id;
+  }
+
+  function handleSessionUpdate(session: AuthSession, runId: number) {
+    if (!isCurrentPoll(session.id, runId)) return;
     setActiveSession(session);
     setLoginTargets(session.targets || []);
     if (session.status === 'completed') {
-      refreshState(true);
+      void refreshState(true);
       toast('Authentication complete');
     } else if (session.status === 'failed') {
       const message = session.result?.diagnostics?.[0]?.message || 'Authentication failed';
@@ -25,22 +42,28 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
   }
 
   function handleLoginStarted(session: AuthSession) {
+    const runId = pollRunRef.current + 1;
+    pollRunRef.current = runId;
+    activeSessionIdRef.current = session.id;
     setActiveSession(session);
     setLoginTargets(session.targets || []);
-    void pollSession(session.id);
+    void pollSession(session.id, runId);
   }
 
-  async function pollSession(id: string) {
+  async function pollSession(id: string, runId: number) {
     let done = false;
     while (!done) {
+      if (!isCurrentPoll(id, runId)) return;
       try {
         const payload = await api<any>(`/api/auth/sessions/${encodeURIComponent(id)}`);
+        if (!isCurrentPoll(id, runId)) return;
         const next = payload.data as AuthSession | undefined;
         if (next) {
-          handleSessionUpdate(next);
+          handleSessionUpdate(next, runId);
           done = next.status === 'completed' || next.status === 'failed' || next.status === 'cancelled';
         }
       } catch {
+        if (!isCurrentPoll(id, runId)) return;
         toast('Authentication status disconnected', true);
         return;
       }
@@ -50,13 +73,19 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
 
   async function handleCancelLogin() {
     if (!activeSession) return;
+    const sessionId = activeSession.id;
+    pollRunRef.current += 1;
+    activeSessionIdRef.current = null;
     try {
-      await api(`/api/auth/sessions/${encodeURIComponent(activeSession.id)}/cancel`, { method: 'POST' });
+      await api(`/api/auth/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' });
     } catch { /* ignore */ }
     setActiveSession(null);
+    setLoginTargets([]);
   }
 
   function clearCompletedLogin() {
+    pollRunRef.current += 1;
+    activeSessionIdRef.current = null;
     setActiveSession(null);
     setLoginTargets([]);
   }
