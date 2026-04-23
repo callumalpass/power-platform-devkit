@@ -8,13 +8,14 @@ import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
 import { api } from '../utils.js';
 import { CreateRecordModal } from './CreateRecordModal.js';
+import type { DataverseAttribute, DataverseEntitySummary, DataverseState } from '../ui-types.js';
 
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
 type ExplorerSubTab = 'metadata' | 'records';
 
 export function DataverseTab(props: {
-  dataverse: any;
-  setDataverse: React.Dispatch<React.SetStateAction<any>>;
+  dataverse: DataverseState;
+  setDataverse: React.Dispatch<React.SetStateAction<DataverseState>>;
   environment: string;
   environmentUrl: string;
   loadEntities: () => Promise<void>;
@@ -37,7 +38,7 @@ export function DataverseTab(props: {
     includeCount: false,
   });
   const filteredEntities = dataverse.entityFilter
-    ? dataverse.entities.filter((item: any) => item.logicalName.includes(dataverse.entityFilter.toLowerCase()) || (item.displayName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()) || (item.entitySetName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()))
+    ? dataverse.entities.filter((item: DataverseEntitySummary) => item.logicalName.includes(dataverse.entityFilter.toLowerCase()) || (item.displayName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()) || (item.entitySetName || '').toLowerCase().includes(dataverse.entityFilter.toLowerCase()))
     : dataverse.entities;
 
   const entityMap = useMemo(() => {
@@ -63,7 +64,7 @@ export function DataverseTab(props: {
   }, [environment]);
 
   const filteredAttributes = dataverse.currentEntityDetail
-    ? (dataverse.currentEntityDetail.attributes || []).filter((attribute: any) => {
+    ? (dataverse.currentEntityDetail.attributes || []).filter((attribute: DataverseAttribute) => {
         if (!dataverse.attrFilter) return true;
         const filter = dataverse.attrFilter.toLowerCase();
         return attribute.logicalName.includes(filter) || (attribute.displayName || '').toLowerCase().includes(filter);
@@ -71,14 +72,15 @@ export function DataverseTab(props: {
     : [];
 
   useEffect(() => {
-    if (!dataverse.currentEntityDetail) return;
+    const entityDetail = dataverse.currentEntityDetail;
+    if (!entityDetail) return;
     setQueryForm((current) => ({
       ...current,
-      entitySetName: dataverse.currentEntityDetail.entitySetName || '',
+      entitySetName: entityDetail.entitySetName || '',
       selectCsv: (dataverse.selectedColumns.length
         ? dataverse.selectedColumns
-        : getDefaultSelectedColumns(dataverse.currentEntityDetail, 0)).join(','),
-      orderByCsv: orderByDefault(dataverse.currentEntityDetail),
+        : getDefaultSelectedColumns(entityDetail, 0)).join(','),
+      orderByCsv: orderByDefault(entityDetail),
     }));
     setCreatedRecordId(null);
   }, [dataverse.currentEntityDetail, dataverse.selectedColumns]);
@@ -295,12 +297,13 @@ export function DataverseTab(props: {
                         .map((diagnostic: any) => diagnostic.message || diagnostic.code || 'Some field metadata could not be loaded.')}
                       onClose={() => setShowCreateRecord(false)}
                       onCreated={(created) => {
+                        const entityDetail = dataverse.currentEntityDetail;
                         setShowCreateRecord(false);
-                        const id = created?.id || created?.record?.[dataverse.currentEntityDetail?.primaryIdAttribute || ''];
+                        const id = created?.id || created?.record?.[entityDetail?.primaryIdAttribute || ''];
                         setCreatedRecordId(typeof id === 'string' ? id : null);
                         void loadRecordPreview();
-                        if (typeof id === 'string') {
-                          detail.open(dataverse.currentEntityDetail.logicalName, dataverse.currentEntityDetail.entitySetName, id);
+                        if (typeof id === 'string' && entityDetail?.entitySetName) {
+                          detail.open(entityDetail.logicalName, entityDetail.entitySetName, id);
                         }
                       }}
                       toast={toast}

@@ -16,7 +16,7 @@ import { CanvasTab, type CanvasState } from './canvas/CanvasTab.js';
 import { PlatformTab, type PlatformState } from './platform/PlatformTab.js';
 import { isMonacoKeyboardEvent } from './monaco-support.js';
 import { JsonViewer } from './JsonViewer.js';
-import type { DataverseState } from './ui-types.js';
+import type { ApiEnvelope, DataverseState, ShellState } from './ui-types.js';
 
 export function App() {
   const appMode = getAppMode();
@@ -33,7 +33,7 @@ export function App() {
     if (saved === 'dark' || saved === 'light') return saved;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
-  const [shellData, setShellData] = useState<any>(null);
+  const [shellData, setShellData] = useState<ShellState | null>(null);
   const [globalEnvironment, setGlobalEnvironment] = useState('');
   const [stateLoading, setStateLoading] = useState(true);
   const [envPickerOpen, setEnvPickerOpen] = useState(false);
@@ -101,9 +101,9 @@ export function App() {
   async function refreshState(silent = false) {
     setStateLoading(true);
     try {
-      const payload = await api<any>('/api/state');
+      const payload = await api<ApiEnvelope<ShellState>>('/api/state');
       setShellData(payload.data);
-      const environments = (payload.data.environments || []).map((item: any) => item.alias);
+      const environments = payload.data.environments.map((item) => item.alias);
       setGlobalEnvironment((current) => {
         if (current && environments.includes(current)) return current;
         return environments[0] || '';
@@ -361,7 +361,7 @@ export function App() {
 
   const currentEnvData = useMemo(() => {
     if (!globalEnvironment || !shellData?.environments) return undefined;
-    return shellData.environments.find((e: any) => e.alias === globalEnvironment);
+    return shellData.environments.find((environment) => environment.alias === globalEnvironment);
   }, [globalEnvironment, shellData]);
 
   const environmentUrl = currentEnvData?.url || '';

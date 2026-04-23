@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ToastFn } from './ui-types.js';
+import type { AccountSummary, EnvironmentSummary, ShellState, ToastFn } from './ui-types.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { useAuthSession, LoginProgress } from './setup/login.js';
 import { OnboardingFlow } from './setup/OnboardingFlow.js';
@@ -19,7 +19,7 @@ import {
 
 type SetupTabProps = {
   active: boolean;
-  shellData: any;
+  shellData: ShellState | null;
   globalEnvironment: string;
   refreshState: (silent?: boolean) => Promise<void>;
   toast: ToastFn;
@@ -42,8 +42,8 @@ export function SetupTab(props: SetupTabProps) {
   const confirm = useConfirm();
   const tokenStatusRunRef = useRef(0);
   const healthRunRef = useRef(0);
-  const accounts = shellData?.accounts || [];
-  const environments = shellData?.environments || [];
+  const accounts: AccountSummary[] = shellData?.accounts || [];
+  const environments: EnvironmentSummary[] = shellData?.environments || [];
 
   useEffect(() => {
     if (!active || !shellData) return;
@@ -75,7 +75,7 @@ export function SetupTab(props: SetupTabProps) {
     return healthRunRef.current === runId;
   }
 
-  async function checkTokenStatuses(accountList: any[], runId: number) {
+  async function checkTokenStatuses(accountList: AccountSummary[], runId: number) {
     await Promise.all(accountList.map(async (account) => {
       try {
         const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
@@ -124,7 +124,7 @@ export function SetupTab(props: SetupTabProps) {
     }
   }
 
-  async function checkHealth(environmentList: any[], runId: number) {
+  async function checkHealth(environmentList: EnvironmentSummary[], runId: number) {
     await Promise.all(environmentList.flatMap((environment) => (
       HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))
     )));
@@ -141,7 +141,7 @@ export function SetupTab(props: SetupTabProps) {
     if (apiName) {
       void pingApi(alias, apiName, runId);
     } else {
-      const target = environments.find((env: any) => env.alias === alias);
+      const target = environments.find((env) => env.alias === alias);
       if (target) void checkHealth([target], runId);
     }
   }

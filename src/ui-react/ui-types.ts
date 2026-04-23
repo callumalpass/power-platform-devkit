@@ -1,3 +1,5 @@
+import type { AccountKind, Environment } from '../config.js';
+
 export type JsonValue =
   | null
   | boolean
@@ -19,6 +21,48 @@ export type ApiExecuteResponse<T> = {
 };
 
 export type ToastFn = (message: string, isError?: boolean) => void;
+
+export type AccountSummary = {
+  name: string;
+  kind?: AccountKind;
+  tenantId?: string;
+  clientId?: string;
+  tokenCacheKey?: string;
+  loginHint?: string;
+  accountUsername?: string;
+  homeAccountId?: string;
+  localAccountId?: string;
+  environmentVariable?: string;
+  clientSecretEnv?: string;
+  hasToken?: boolean;
+  [key: string]: unknown;
+};
+
+export type EnvironmentSummary = Environment;
+
+export type ShellState = {
+  configDir: string;
+  configPath: string;
+  msalCacheDir: string;
+  allowInteractiveAuth: boolean;
+  accounts: AccountSummary[];
+  environments: EnvironmentSummary[];
+  mcp?: {
+    transport?: string;
+    tools?: string[];
+    launchCommand?: string;
+    note?: string;
+  };
+};
+
+export type PowerPlatformInventoryItem = {
+  name: string;
+  id?: string;
+  type?: string;
+  location?: string;
+  properties?: Record<string, unknown>;
+  [key: string]: unknown;
+};
 
 export type DiagnosticItem = {
   level?: 'error' | 'warning' | 'info' | string;

@@ -9,6 +9,7 @@ import { touchEnvironmentRecency } from './env-recency.js';
 import { SETUP_TAB_ORDER } from './app-tabs.js';
 import { ToastViewport, useToasts } from './toasts.js';
 import { isMonacoKeyboardEvent } from './keyboard.js';
+import type { ApiEnvelope, ShellState } from './ui-types.js';
 
 export function SetupApp() {
   const { toasts, pushToast, dismissToast, log: toastLog, clearLog: clearToastLog } = useToasts();
@@ -19,7 +20,7 @@ export function SetupApp() {
     if (saved === 'dark' || saved === 'light') return saved;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
-  const [shellData, setShellData] = useState<any>(null);
+  const [shellData, setShellData] = useState<ShellState | null>(null);
   const [globalEnvironment, setGlobalEnvironment] = useState('');
   const [stateLoading, setStateLoading] = useState(true);
   const [envPickerOpen, setEnvPickerOpen] = useState(false);
@@ -36,9 +37,9 @@ export function SetupApp() {
   async function refreshState(silent = false) {
     setStateLoading(true);
     try {
-      const payload = await api<any>('/api/state');
+      const payload = await api<ApiEnvelope<ShellState>>('/api/state');
       setShellData(payload.data);
-      const environments = (payload.data.environments || []).map((item: any) => item.alias);
+      const environments = payload.data.environments.map((item) => item.alias);
       setGlobalEnvironment((current) => {
         if (current && environments.includes(current)) return current;
         return environments[0] || '';
@@ -80,7 +81,7 @@ export function SetupApp() {
 
   const currentEnvData = useMemo(() => {
     if (!globalEnvironment || !shellData?.environments) return undefined;
-    return shellData.environments.find((e: any) => e.alias === globalEnvironment);
+    return shellData.environments.find((environment) => environment.alias === globalEnvironment);
   }, [globalEnvironment, shellData]);
 
   return (
