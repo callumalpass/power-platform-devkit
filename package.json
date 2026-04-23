@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "docs/library.md",
     "README.md"
   ],
   "engines": {
@@ -36,12 +37,67 @@
       "types": "./dist/mcp-server.d.ts",
       "import": "./dist/mcp-server.js",
       "require": "./dist/mcp-server.cjs"
+    },
+    "./accounts": {
+      "types": "./dist/accounts.d.ts",
+      "import": "./dist/accounts.js",
+      "require": "./dist/accounts.cjs"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js",
+      "require": "./dist/api.cjs"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js",
+      "require": "./dist/auth.cjs"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "require": "./dist/config.cjs"
+    },
+    "./dataverse": {
+      "types": "./dist/dataverse.d.ts",
+      "import": "./dist/dataverse.js",
+      "require": "./dist/dataverse.cjs"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "import": "./dist/diagnostics.js",
+      "require": "./dist/diagnostics.cjs"
+    },
+    "./environments": {
+      "types": "./dist/environments.d.ts",
+      "import": "./dist/environments.js",
+      "require": "./dist/environments.cjs"
+    },
+    "./fetchxml-language": {
+      "types": "./dist/fetchxml-language.d.ts",
+      "import": "./dist/fetchxml-language.js",
+      "require": "./dist/fetchxml-language.cjs"
+    },
+    "./flow-language": {
+      "types": "./dist/flow-language.d.ts",
+      "import": "./dist/flow-language.js",
+      "require": "./dist/flow-language.cjs"
+    },
+    "./request": {
+      "types": "./dist/request.d.ts",
+      "import": "./dist/request.js",
+      "require": "./dist/request.cjs"
+    },
+    "./experimental/canvas-authoring": {
+      "types": "./dist/experimental/canvas-authoring.d.ts",
+      "import": "./dist/experimental/canvas-authoring.js",
+      "require": "./dist/experimental/canvas-authoring.cjs"
     }
   },
   "scripts": {
     "build:desktop": "node scripts/build-desktop.mjs",
     "build:version": "node -e \"const v=require('./package.json').version;require('fs').writeFileSync('src/version.ts','// Generated at build time. Do not edit manually.\\nexport const VERSION = '+JSON.stringify(v)+';\\n')\"",
-    "build": "pnpm run build:version && tsup src/index.ts src/cli.ts src/mcp.ts src/mcp-server.ts src/setup.ts --format esm,cjs --dts --clean && pnpm run build:desktop",
+    "build": "pnpm run build:version && tsup src/index.ts src/cli.ts src/accounts.ts src/api.ts src/auth.ts src/config.ts src/dataverse.ts src/diagnostics.ts src/environments.ts src/experimental/canvas-authoring.ts src/fetchxml-language.ts src/flow-language.ts src/mcp.ts src/mcp-server.ts src/request.ts src/setup.ts --format esm,cjs --dts --clean && pnpm run build:desktop",
     "prepack": "pnpm run build",
     "build:sea": "pnpm run build && node scripts/build-sea.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",

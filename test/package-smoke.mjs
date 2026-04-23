@@ -22,6 +22,27 @@ assert.equal(cjs.stdout, '');
 assert.equal(cjs.stderr, '');
 assertRootExports(cjs.value);
 
+const subpaths = [
+  ['pp/api', 'executeApiRequest'],
+  ['pp/auth', 'AuthService'],
+  ['pp/config', 'loadConfig'],
+  ['pp/dataverse', 'buildFetchXml'],
+  ['pp/diagnostics', 'ok'],
+  ['pp/environments', 'listConfiguredEnvironments'],
+  ['pp/fetchxml-language', 'analyzeFetchXml'],
+  ['pp/flow-language', 'analyzeFlow'],
+  ['pp/request', 'buildRequest'],
+  ['pp/experimental/canvas-authoring', 'startCanvasAuthoringSession'],
+];
+
+for (const [specifier, symbol] of subpaths) {
+  const imported = await captureOutput(() => import(specifier));
+  assert.equal(imported.stdout, '');
+  assert.equal(imported.stderr, '');
+  assert.equal(typeof imported.value[symbol], 'function', `${specifier} should export ${symbol}`);
+  assert.equal(typeof require(specifier)[symbol], 'function', `${specifier} should be require-able`);
+}
+
 assert.equal(pkg.bin.pp, './dist/cli.cjs');
 assert.equal(typeof require('pp').VERSION, 'string');
 

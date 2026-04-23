@@ -291,15 +291,26 @@ See [docs/mcp-clients.md](docs/mcp-clients.md) for setup instructions for Claude
 
 ## Library usage
 
-The package exports three entry points:
+The package exports a side-effect-free TypeScript library, plus CLI and MCP entry points.
 
 ### `pp` (main)
 
-The core library for account management, environment management, and API requests.
+The stable public API for account management, environment management, API requests, Dataverse helpers, Flow and FetchXML language helpers, diagnostics, and MCP server creation.
 
 ```ts
-import { listAccountSummaries, executeApiRequest } from 'pp';
+import { executeApiRequest, listAccountSummaries } from 'pp';
+
+const accounts = await listAccountSummaries();
+const response = await executeApiRequest({
+  environmentAlias: 'dev',
+  api: 'dv',
+  path: '/accounts',
+  query: { '$select': 'name,accountid', '$top': '5' },
+  readIntent: true,
+});
 ```
+
+Focused subpath exports are also available: `pp/api`, `pp/auth`, `pp/config`, `pp/dataverse`, `pp/diagnostics`, `pp/environments`, `pp/fetchxml-language`, `pp/flow-language`, and `pp/request`.
 
 ### `pp/mcp`
 
@@ -318,6 +329,12 @@ const { server, transport } = await startPpMcpServer();
 ### `pp/mcp-server`
 
 Standalone MCP server entry point. Starts the server immediately on import.
+
+### `pp/experimental/canvas-authoring`
+
+Experimental Canvas Authoring helpers. These wrap observed Studio/MCP-backed endpoints and may change more frequently than the stable API.
+
+See [Library usage](docs/library.md) for auth, request, error handling, and testing recipes.
 
 ## Development
 
