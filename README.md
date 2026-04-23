@@ -336,7 +336,7 @@ Standalone MCP server entry point. Starts the server immediately on import.
 
 Experimental Canvas Authoring helpers. These wrap observed Studio/MCP-backed endpoints and may change more frequently than the stable API.
 
-See [Library usage](docs/library.md) for auth, request, error handling, and testing recipes.
+See [Library usage](docs/library.md) for auth, request, error handling, and testing recipes. See [API stability](docs/api-stability.md) for the SemVer policy.
 
 ## Development
 
