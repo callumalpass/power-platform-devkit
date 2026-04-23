@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
+import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
 import { migrateLegacyConfig } from './migrate.js';
 import { detectApi, isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import {
@@ -658,23 +658,8 @@ async function requestKnownCanvasAuthoringEndpoint(
 }
 
 async function readYamlDirectoryFiles(root: string) {
-  const files: Array<{ path: string; content: string }> = [];
-  async function visit(dir: string): Promise<void> {
-    for (const entry of await readdir(dir)) {
-      const fullPath = join(dir, entry);
-      const info = await stat(fullPath);
-      if (info.isDirectory()) {
-        await visit(fullPath);
-      } else if (/\.pa\.ya?ml$/i.test(entry)) {
-        files.push({
-          path: relative(root, fullPath).replace(/\\/g, '/'),
-          content: await readFile(fullPath, 'utf8'),
-        });
-      }
-    }
-  }
   try {
-    await visit(root);
+    const files = await readCanvasYamlDirectory(root);
     return { success: true as const, data: files, diagnostics: [] };
   } catch (error) {
     return argumentFailure('CANVAS_AUTHORING_YAML_DIR_READ_FAILED', `Failed to read YAML directory: ${error instanceof Error ? error.message : String(error)}`);
@@ -682,29 +667,14 @@ async function readYamlDirectoryFiles(root: string) {
 }
 
 async function writeYamlFetchFiles(response: unknown, outDir: string) {
-  const files = readFilesArray(response);
+  const files = readCanvasYamlFetchFiles(response);
   if (!files) return argumentFailure('CANVAS_AUTHORING_YAML_FETCH_SHAPE', 'YAML fetch response did not contain a files array.');
-  const written: string[] = [];
   try {
-    for (const file of files) {
-      const path = String(file.path ?? '');
-      const content = typeof file.content === 'string' ? file.content : undefined;
-      if (!path || content === undefined || path.startsWith('/') || path.split('/').includes('..')) continue;
-      const target = join(outDir, path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, content, 'utf8');
-      written.push(target);
-    }
+    const written = await writeCanvasYamlFiles(outDir, files);
     return { success: true as const, data: written, diagnostics: [] };
   } catch (error) {
     return argumentFailure('CANVAS_AUTHORING_YAML_WRITE_FAILED', `Failed to write YAML files: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-function readFilesArray(value: unknown): Array<Record<string, unknown>> | undefined {
-  const response = value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
-  const files = Array.isArray(response?.files) ? response.files : undefined;
-  return files?.filter((file): file is Record<string, unknown> => Boolean(file && typeof file === 'object'));
 }
 
 async function runFlow(args: string[]): Promise<number> {

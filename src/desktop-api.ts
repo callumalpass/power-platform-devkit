@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { URL } from 'node:url';
 import { DEFAULT_LOGIN_RESOURCE, summarizeAccount, type LoginAccountInput, type LoginTarget } from './auth.js';
+import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
 import {
   getConfigDir,
   getConfigPath,
@@ -607,27 +606,15 @@ async function canvasYamlFetch(body: unknown, context: DesktopApiContext): Promi
   }, context.configOptions, { allowInteractive: context.allowInteractiveAuth });
 
   if (!fetchResult.success) return json(400, fetchResult);
-  const files = readFilesArray(fetchResult.data?.response);
+  const files = readCanvasYamlFetchFiles(fetchResult.data?.response);
   if (!files) return json(400, fail(createDiagnostic('error', 'CANVAS_YAML_FETCH_SHAPE', 'YAML fetch response did not contain a files array.', { source: 'pp/desktop' })));
 
-  const written: string[] = [];
   try {
-    for (const file of files) {
-      const path = String(file.path ?? '');
-      const content = typeof file.content === 'string' ? file.content : undefined;
-      if (!path || content === undefined) continue;
-      const target = await resolveYamlOutputTarget(outDir, path);
-      if (!target) continue;
-      await mkdir(dirname(target), { recursive: true });
-      if (!await isSafeExistingFileTarget(target)) continue;
-      if (!await isSafeRealParent(outDir, dirname(target))) continue;
-      await writeFile(target, content, 'utf8');
-      written.push(path);
-    }
+    const written = await writeCanvasYamlFiles(outDir, files);
+    return json(200, ok({ files: written, outDir }));
   } catch (error) {
     return json(500, fail(createDiagnostic('error', 'CANVAS_YAML_WRITE_FAILED', `Failed to write YAML files: ${error instanceof Error ? error.message : String(error)}`, { source: 'pp/desktop' })));
   }
-  return json(200, ok({ files: written, outDir }));
 }
 
 async function canvasYamlValidate(body: unknown, context: DesktopApiContext): Promise<DesktopApiResponse> {
@@ -640,9 +627,9 @@ async function canvasYamlValidate(body: unknown, context: DesktopApiContext): Pr
   if (!session || session.status !== 'active' || !session.result) {
     return json(400, fail(createDiagnostic('error', 'CANVAS_SESSION_NOT_ACTIVE', 'Session is not active.', { source: 'pp/desktop' })));
   }
-  const yamlFiles: Array<{ path: string; content: string }> = [];
+  let yamlFiles: Array<{ path: string; content: string }>;
   try {
-    await visitYamlDir(dir, dir, yamlFiles);
+    yamlFiles = await readCanvasYamlDirectory(dir);
   } catch (error) {
     return json(400, fail(createDiagnostic('error', 'CANVAS_YAML_DIR_READ_FAILED', `Failed to read YAML directory: ${error instanceof Error ? error.message : String(error)}`, { source: 'pp/desktop' })));
   }
@@ -730,48 +717,6 @@ function accountNameFromBrowserProfilePath(url: URL, suffix: string): string {
   const prefix = '/api/accounts/';
   if (!url.pathname.startsWith(prefix) || !url.pathname.endsWith(suffix)) return '';
   return decodeURIComponent(url.pathname.slice(prefix.length, -suffix.length));
-}
-
-async function visitYamlDir(root: string, dir: string, out: Array<{ path: string; content: string }>): Promise<void> {
-  for (const entry of await readdir(dir)) {
-    const fullPath = join(dir, entry);
-    const info = await stat(fullPath);
-    if (info.isDirectory()) {
-      await visitYamlDir(root, fullPath, out);
-    } else if (/\.pa\.ya?ml$/i.test(entry)) {
-      out.push({ path: relative(root, fullPath).replace(/\\/g, '/'), content: await readFile(fullPath, 'utf8') });
-    }
-  }
-}
-
-async function resolveYamlOutputTarget(rootDir: string, filePath: string): Promise<string | undefined> {
-  if (filePath.includes('\\') || isAbsolute(filePath) || win32.isAbsolute(filePath) || filePath.split('/').includes('..')) return undefined;
-  const root = resolve(rootDir);
-  const target = resolve(root, filePath);
-  const rel = relative(root, target);
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return undefined;
-  return target;
-}
-
-async function isSafeExistingFileTarget(target: string): Promise<boolean> {
-  try {
-    const info = await lstat(target);
-    return !info.isSymbolicLink();
-  } catch (error) {
-    return Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'ENOENT');
-  }
-}
-
-async function isSafeRealParent(rootDir: string, parentDir: string): Promise<boolean> {
-  const [root, parent] = await Promise.all([realpath(rootDir), realpath(parentDir)]);
-  const rel = relative(root, parent);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
-
-function readFilesArray(value: unknown): Array<Record<string, unknown>> | undefined {
-  const response = value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
-  const files = Array.isArray(response?.files) ? response.files : undefined;
-  return files?.filter((file): file is Record<string, unknown> => Boolean(file && typeof file === 'object'));
 }
 
 function extractSessionState(session: unknown): string | undefined {
