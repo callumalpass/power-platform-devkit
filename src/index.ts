@@ -14,6 +14,12 @@ export {
 } from './auth.js';
 
 export {
+  PpClient,
+  type PpClientOptions,
+  type PpRequestInput,
+} from './client.js';
+
+export {
   getBrowserProfilesRoot,
   getCanvasSessionsPath,
   getConfigDir,

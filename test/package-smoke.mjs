@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 
 const expectedRootExports = [
   'AuthService',
+  'PpClient',
   'VERSION',
   'executeApiRequest',
   'listAccountSummaries',
@@ -25,6 +26,7 @@ assertRootExports(cjs.value);
 const subpaths = [
   ['pp/api', 'executeApiRequest'],
   ['pp/auth', 'AuthService'],
+  ['pp/client', 'PpClient'],
   ['pp/config', 'loadConfig'],
   ['pp/dataverse', 'buildFetchXml'],
   ['pp/diagnostics', 'ok'],

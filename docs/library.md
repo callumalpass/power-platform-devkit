@@ -7,6 +7,7 @@
 - `pp` - stable public API.
 - `pp/api` - request helpers such as `executeApiRequest`.
 - `pp/auth` - account and token provider primitives.
+- `pp/client` - the `PpClient` convenience facade.
 - `pp/config` - config file helpers and config model types.
 - `pp/dataverse` - Dataverse metadata, query, create, and FetchXML helpers.
 - `pp/diagnostics` - `OperationResult`, diagnostics, `ok`, and `fail`.
@@ -20,10 +21,12 @@
 ## Requests
 
 ```ts
-import { executeApiRequest } from 'pp';
+import { PpClient } from 'pp';
 
-const result = await executeApiRequest({
-  environmentAlias: 'dev',
+const pp = new PpClient();
+
+const result = await pp.request({
+  env: 'dev',
   api: 'dv',
   path: '/accounts',
   query: { '$select': 'name,accountid', '$top': '5' },
@@ -48,6 +51,18 @@ await executeApiRequest({
   path: '/me',
   readIntent: true,
 });
+```
+
+The lower-level functions remain available for applications that prefer explicit dependency passing:
+
+```ts
+import { executeApiRequest } from 'pp/api';
+
+await executeApiRequest(
+  { environmentAlias: 'dev', api: 'dv', path: '/WhoAmI', readIntent: true },
+  { configDir: './.pp-config' },
+  { allowInteractive: false },
+);
 ```
 
 ## Auth

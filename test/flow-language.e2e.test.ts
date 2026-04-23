@@ -466,7 +466,7 @@ test('analyzeFlow leaves reference validation to canonical Power Automate checks
 });
 
 test('pp flow help only documents the Flow API request shortcut', async () => {
-  const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/index.js');
+  const cliEntry = path.resolve(process.cwd(), '.tmp-test/src/cli.js');
   const { stdout } = await execFileAsync('node', [cliEntry, 'flow', '--help'], { cwd: process.cwd() });
   assert.match(stdout, /Power Automate request shortcut/);
   assert.match(stdout, /pp flow <path> --env ALIAS/);

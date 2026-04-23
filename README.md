@@ -298,11 +298,13 @@ The package exports a side-effect-free TypeScript library, plus CLI and MCP entr
 The stable public API for account management, environment management, API requests, Dataverse helpers, Flow and FetchXML language helpers, diagnostics, and MCP server creation.
 
 ```ts
-import { executeApiRequest, listAccountSummaries } from 'pp';
+import { PpClient } from 'pp';
 
-const accounts = await listAccountSummaries();
-const response = await executeApiRequest({
-  environmentAlias: 'dev',
+const pp = new PpClient();
+
+const accounts = await pp.accounts.list();
+const response = await pp.request({
+  env: 'dev',
   api: 'dv',
   path: '/accounts',
   query: { '$select': 'name,accountid', '$top': '5' },
@@ -310,7 +312,7 @@ const response = await executeApiRequest({
 });
 ```
 
-Focused subpath exports are also available: `pp/api`, `pp/auth`, `pp/config`, `pp/dataverse`, `pp/diagnostics`, `pp/environments`, `pp/fetchxml-language`, `pp/flow-language`, and `pp/request`.
+Focused subpath exports are also available: `pp/api`, `pp/auth`, `pp/client`, `pp/config`, `pp/dataverse`, `pp/diagnostics`, `pp/environments`, `pp/fetchxml-language`, `pp/flow-language`, and `pp/request`.
 
 ### `pp/mcp`
 
