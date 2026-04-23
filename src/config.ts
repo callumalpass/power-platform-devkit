@@ -8,6 +8,56 @@ import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.
 export type AccountKind = 'user' | 'device-code' | 'client-secret' | 'environment-token' | 'static-token';
 export type EnvironmentAccessMode = 'read-write' | 'read-only';
 
+export interface AccountBase {
+  name: string;
+  description?: string;
+  tenantId?: string;
+  clientId?: string;
+  scopes?: string[];
+  tokenCacheKey?: string;
+  loginHint?: string;
+  accountUsername?: string;
+  homeAccountId?: string;
+  localAccountId?: string;
+}
+
+export type Account =
+  | (AccountBase & { kind: 'static-token'; token: string })
+  | (AccountBase & { kind: 'environment-token'; environmentVariable: string })
+  | (AccountBase & { kind: 'client-secret'; tenantId: string; clientId: string; clientSecretEnv: string })
+  | (AccountBase & {
+      kind: 'user';
+      prompt?: 'select_account' | 'login' | 'consent' | 'none';
+      fallbackToDeviceCode?: boolean;
+    })
+  | (AccountBase & { kind: 'device-code' });
+
+export interface Environment {
+  alias: string;
+  account: string;
+  url: string;
+  displayName?: string;
+  makerEnvironmentId: string;
+  tenantId: string;
+  access?: { mode: EnvironmentAccessMode };
+}
+
+export interface BrowserProfile {
+  account: string;
+  kind: 'playwright-chromium';
+  userDataDir: string;
+  createdAt?: string;
+  lastOpenedAt?: string;
+  lastVerifiedAt?: string;
+  lastVerificationUrl?: string;
+}
+
+export interface GlobalConfig {
+  accounts: Record<string, Account>;
+  environments: Record<string, Environment>;
+  browserProfiles: Record<string, BrowserProfile>;
+}
+
 const accountBaseSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
@@ -71,11 +121,6 @@ const globalConfigSchema = z.object({
   environments: z.record(z.string(), environmentSchema).default({}),
   browserProfiles: z.record(z.string(), browserProfileSchema).default({}),
 });
-
-export type Account = z.infer<typeof accountSchema>;
-export type Environment = z.infer<typeof environmentSchema>;
-export type BrowserProfile = z.infer<typeof browserProfileSchema>;
-export type GlobalConfig = z.infer<typeof globalConfigSchema>;
 
 export interface ConfigStoreOptions {
   configDir?: string;
