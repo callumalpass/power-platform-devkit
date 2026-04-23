@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "!dist/desktop",
     "docs/library.md",
     "README.md"
   ],
@@ -118,10 +119,6 @@
     "@azure/msal-node": "^5.0.6",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "jq-wasm": "1.1.0-jq-1.8.1",
-    "monaco-editor": "^0.55.1",
-    "monaco-vim": "^0.4.4",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
     "yaml": "^2.8.1",
     "zod": "^3.24.2"
   },
@@ -133,7 +130,11 @@
     "electron": "^41.2.1",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.25.3",
+    "monaco-editor": "^0.55.1",
+    "monaco-vim": "^0.4.4",
     "postject": "^1.0.0-alpha.6",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2"
   }
