@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatDate, highlightJson, prop } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { EmptyState } from '../EmptyState.js';
@@ -104,6 +104,16 @@ export function CanvasTab(props: {
   const [yamlDir, setYamlDir] = useState('./canvas-src');
   const [yamlBusy, setYamlBusy] = useState(false);
   const [describeTarget, setDescribeTarget] = useState<DescribeTarget | null>(null);
+  const sessionPollsRef = useRef<Map<string, number>>(new Map());
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      sessionPollsRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (!environment || appsLoaded) return;
@@ -182,27 +192,48 @@ export function CanvasTab(props: {
         sessionStarting: false,
       }));
       toast('Canvas session starting…');
-      void pollSession(session.id);
+      void pollSession(session.id, beginSessionPoll(session.id));
     } catch (error) {
       setState((c: any) => ({ ...c, sessionStarting: false }));
       toast(error instanceof Error ? error.message : String(error), true);
     }
   }
 
-  async function pollSession(id: string) {
+  function beginSessionPoll(id: string): number {
+    const next = (sessionPollsRef.current.get(id) ?? 0) + 1;
+    sessionPollsRef.current.set(id, next);
+    return next;
+  }
+
+  function isCurrentSessionPoll(id: string, generation: number): boolean {
+    return mountedRef.current && sessionPollsRef.current.get(id) === generation;
+  }
+
+  function endSessionPoll(id: string, generation: number): void {
+    if (sessionPollsRef.current.get(id) === generation) {
+      sessionPollsRef.current.delete(id);
+    }
+  }
+
+  async function pollSession(id: string, generation: number) {
     for (let i = 0; i < 60; i++) {
+      if (!isCurrentSessionPoll(id, generation)) return;
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!isCurrentSessionPoll(id, generation)) return;
       try {
         const payload = await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`);
+        if (!isCurrentSessionPoll(id, generation)) return;
         const session = payload.data as CanvasSessionEntry;
         setState((c: any) => ({
           ...c,
           sessions: c.sessions.map((s: any) => s.id === id ? session : s),
         }));
-        if (session.status === 'active') { toast('Canvas session active'); return; }
-        if (session.status === 'failed') { toast(session.error || 'Session failed to start.', true); return; }
+        if (session.status === 'active') { endSessionPoll(id, generation); toast('Canvas session active'); return; }
+        if (session.status === 'failed') { endSessionPoll(id, generation); toast(session.error || 'Session failed to start.', true); return; }
       } catch { /* retry */ }
     }
+    if (!isCurrentSessionPoll(id, generation)) return;
+    endSessionPoll(id, generation);
     toast('Session start timed out.', true);
   }
 
