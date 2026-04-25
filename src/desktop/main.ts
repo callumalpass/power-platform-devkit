@@ -59,7 +59,7 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
-    minWidth: 1120,
+    minWidth: 640,
     minHeight: 720,
     x: useBackgroundWindowForE2E ? -32000 : undefined,
     y: useBackgroundWindowForE2E ? -32000 : undefined,
