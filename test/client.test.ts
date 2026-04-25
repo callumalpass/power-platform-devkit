@@ -53,3 +53,19 @@ test('PpClient.request accepts env and account aliases', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('PpClient environment operations report missing env as diagnostics', async () => {
+  const pp = new PpClient();
+
+  const results = await Promise.all([
+    pp.whoami({}),
+    pp.ping({}),
+    pp.token({}),
+  ]);
+
+  for (const result of results) {
+    assert.equal(result.success, false);
+    assert.equal(result.diagnostics[0]?.code, 'ENVIRONMENT_ALIAS_REQUIRED');
+    assert.equal(result.diagnostics[0]?.source, 'pp/client');
+  }
+});

@@ -34,7 +34,7 @@ import {
   listConfiguredEnvironments,
   removeConfiguredEnvironment,
 } from './services/environments.js';
-import type { OperationResult } from './diagnostics.js';
+import { createDiagnostic, fail, type OperationResult } from './diagnostics.js';
 
 export interface PpClientOptions extends ConfigStoreOptions {
   loginOptions?: PublicClientLoginOptions;
@@ -92,26 +92,32 @@ export class PpClient {
     return executeApiRequest<T>(normalizeRequestInput(input), this.configOptions, this.loginOptions(loginOptions));
   }
 
-  whoami(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; allowInteractive?: boolean }) {
+  async whoami(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; allowInteractive?: boolean }): Promise<OperationResult<ApiRequestResult>> {
+    const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'whoami');
+    if (!environmentAlias.success) return environmentAlias;
     return runWhoAmICheck({
-      environmentAlias: requiredEnvironment(input.environmentAlias ?? input.env, 'whoami'),
+      environmentAlias: environmentAlias.data,
       accountName: input.accountName ?? input.account,
       allowInteractive: input.allowInteractive,
     }, this.configOptions);
   }
 
-  ping(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; allowInteractive?: boolean }) {
+  async ping(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; allowInteractive?: boolean }): Promise<OperationResult<{ ok: true; api: EnvironmentTokenApi; environment: string; account: string; status: number; request: unknown }>> {
+    const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'ping');
+    if (!environmentAlias.success) return environmentAlias;
     return runConnectivityPing({
-      environmentAlias: requiredEnvironment(input.environmentAlias ?? input.env, 'ping'),
+      environmentAlias: environmentAlias.data,
       accountName: input.accountName ?? input.account,
       api: input.api,
       allowInteractive: input.allowInteractive,
     }, this.configOptions);
   }
 
-  token(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; preferredFlow?: 'interactive' | 'device-code'; allowInteractive?: boolean }) {
+  async token(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; preferredFlow?: 'interactive' | 'device-code'; allowInteractive?: boolean }): Promise<OperationResult<string>> {
+    const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'token');
+    if (!environmentAlias.success) return environmentAlias;
     return getEnvironmentToken({
-      environmentAlias: requiredEnvironment(input.environmentAlias ?? input.env, 'token'),
+      environmentAlias: environmentAlias.data,
       accountName: input.accountName ?? input.account,
       api: input.api,
       preferredFlow: input.preferredFlow,
@@ -137,7 +143,10 @@ function normalizeRequestInput(input: PpRequestInput): RequestInput {
   };
 }
 
-function requiredEnvironment(value: string | undefined, operation: string): string {
-  if (!value) throw new Error(`PpClient.${operation} requires environmentAlias or env.`);
-  return value;
+function requiredEnvironment(value: string | undefined, operation: string): OperationResult<string> {
+  if (value) return { success: true, data: value, diagnostics: [] };
+  return fail(createDiagnostic('error', 'ENVIRONMENT_ALIAS_REQUIRED', `PpClient.${operation} requires environmentAlias or env.`, {
+    source: 'pp/client',
+    hint: 'Pass environmentAlias or env in the operation input.',
+  }));
 }

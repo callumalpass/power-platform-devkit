@@ -1,6 +1,6 @@
 {
   "name": "pp",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "CLI, setup manager, MCP server, and desktop app for working with Microsoft Power Platform.",
   "type": "module",
   "license": "MIT",
@@ -113,7 +113,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",
     "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
-    "test:package": "node test/package-smoke.mjs",
+    "test:package": "node test/package-smoke.mjs && node test/prepare-consumer-package-smoke.mjs && npm --cache .tmp-test/consumer-package/npm-cache pack --ignore-scripts --pack-destination .tmp-test/consumer-package/pack --json > .tmp-test/consumer-package/pack.json && node test/consumer-package-smoke.mjs",
     "test:e2e:desktop": "pnpm run build && node scripts/run-desktop-e2e.mjs",
     "typecheck": "tsc --noEmit"
   },

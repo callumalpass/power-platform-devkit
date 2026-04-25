@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ConfidentialClientApplication,
@@ -18,7 +18,7 @@ import {
   type Account,
   type ConfigStoreOptions,
 } from './config.js';
-import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
 export const CANVAS_AUTHORING_PUBLIC_CLIENT_ID = '4e291c71-d680-4d0e-9640-0a3358e31177';
@@ -86,8 +86,15 @@ export class AuthService {
     return saveAccount(account, this.options);
   }
 
-  removeAccount(name: string): Promise<OperationResult<boolean>> {
-    return removeAccount(name, this.options);
+  async removeAccount(name: string): Promise<OperationResult<boolean>> {
+    const account = await this.getAccount(name);
+    if (!account.success) return fail(...account.diagnostics);
+
+    const removed = await removeAccount(name, this.options);
+    if (!removed.success || !removed.data || !account.data) return removed;
+
+    const cacheCleanup = await removeAccountCredentialCache(account.data, this.options);
+    return ok(true, [...removed.diagnostics, ...cacheCleanup.diagnostics]);
   }
 
   async login(input: LoginAccountInput, options: PublicClientLoginOptions = {}): Promise<OperationResult<Record<string, unknown>>> {
@@ -535,6 +542,37 @@ function ensureAccessToken(result: AuthenticationResult | null, accountName: str
 
 function resolveTokenCacheKey(account: UserAccount): string {
   return account.tokenCacheKey ?? account.name ?? randomUUID();
+}
+
+async function removeAccountCredentialCache(account: Account, options: ConfigStoreOptions): Promise<OperationResult<void>> {
+  const cacheDir = getMsalCacheDir(options);
+  const diagnostics: Diagnostic[] = [];
+  for (const key of accountCredentialCacheKeys(account)) {
+    const path = join(cacheDir, `${key}.json`);
+    try {
+      await rm(path, { force: true });
+    } catch (error) {
+      diagnostics.push(createDiagnostic('warning', 'MSAL_CACHE_DELETE_FAILED', `Failed to delete MSAL cache ${path}.`, {
+        source: 'pp/auth',
+        detail: error instanceof Error ? error.message : String(error),
+        path,
+      }));
+    }
+  }
+  return ok(undefined, diagnostics);
+}
+
+function accountCredentialCacheKeys(account: Account): string[] {
+  const baseKeys = new Set<string>();
+  if (account.name) baseKeys.add(account.name);
+  if (account.tokenCacheKey) baseKeys.add(account.tokenCacheKey);
+
+  const keys = new Set<string>();
+  for (const key of baseKeys) {
+    keys.add(key);
+    keys.add(`${key}-canvas-authoring`);
+  }
+  return [...keys];
 }
 
 function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
