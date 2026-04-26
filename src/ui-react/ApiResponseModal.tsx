@@ -19,8 +19,12 @@ export function useApiPreview() {
   const [target, setTarget] = useState<ApiPreviewSeed | null>(null);
   return {
     target,
-    open(seed: ApiPreviewSeed) { setTarget(seed); },
-    close() { setTarget(null); },
+    open(seed: ApiPreviewSeed) {
+      setTarget(seed);
+    },
+    close() {
+      setTarget(null);
+    }
   };
 }
 
@@ -50,8 +54,8 @@ export function ApiResponseModal(props: {
         api: target.api,
         method: target.method,
         path: target.path,
-        headers: target.headers,
-      }),
+        headers: target.headers
+      })
     })
       .then((payload) => {
         if (cancelled) return;
@@ -63,7 +67,9 @@ export function ApiResponseModal(props: {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [environment, target.api, target.method, target.path, JSON.stringify(target.headers || {})]);
 
   useEffect(() => {
@@ -75,14 +81,23 @@ export function ApiResponseModal(props: {
   }, [onClose]);
 
   const rawJson = useMemo(() => {
-    try { return JSON.stringify(response, null, 2); }
-    catch { return '{}'; }
+    try {
+      return JSON.stringify(response, null, 2);
+    } catch {
+      return '{}';
+    }
   }, [response]);
 
   const detailRows = useMemo(() => summarizeResponse(response), [response]);
 
   return (
-    <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
+    <div
+      className="rt-modal-backdrop"
+      ref={backdropRef}
+      onClick={(e) => {
+        if (e.target === backdropRef.current) onClose();
+      }}
+    >
       <div className="rt-modal size-md api-preview-modal">
         <div className="rt-modal-header">
           <div>
@@ -105,12 +120,18 @@ export function ApiResponseModal(props: {
                 Open in Console
               </button>
             ) : null}
-            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
+            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+              Close
+            </button>
           </div>
         </div>
         <div className="api-preview-tabs">
-          <button type="button" className={`api-preview-tab ${mode === 'fields' ? 'active' : ''}`} onClick={() => setMode('fields')}>Fields</button>
-          <button type="button" className={`api-preview-tab ${mode === 'json' ? 'active' : ''}`} onClick={() => setMode('json')}>JSON</button>
+          <button type="button" className={`api-preview-tab ${mode === 'fields' ? 'active' : ''}`} onClick={() => setMode('fields')}>
+            Fields
+          </button>
+          <button type="button" className={`api-preview-tab ${mode === 'json' ? 'active' : ''}`} onClick={() => setMode('json')}>
+            JSON
+          </button>
         </div>
         <div className={`rt-modal-body ${mode === 'json' ? 'body-flush' : ''}`}>
           {loading ? (
@@ -138,7 +159,9 @@ export function ApiResponseModal(props: {
               <div className="rt-modal-loading">No summary fields available. Switch to JSON view.</div>
             )
           ) : (
-            <div className="api-preview-json"><JsonViewer value={rawJson} height="100%" /></div>
+            <div className="api-preview-json">
+              <JsonViewer value={rawJson} height="100%" />
+            </div>
           )}
         </div>
       </div>
@@ -156,17 +179,21 @@ function summarizeResponse(value: unknown): DetailRow[] {
   for (const [key, val] of Object.entries(record)) {
     if (key === 'properties' || key.startsWith('@')) continue;
     const row = toDetailRow(key, val);
-    if (row) { rows.push(row); seen.add(row.label); }
+    if (row) {
+      rows.push(row);
+      seen.add(row.label);
+    }
   }
-  const properties = (record.properties && typeof record.properties === 'object' && !Array.isArray(record.properties))
-    ? record.properties as Record<string, unknown>
-    : null;
+  const properties = record.properties && typeof record.properties === 'object' && !Array.isArray(record.properties) ? (record.properties as Record<string, unknown>) : null;
   if (properties) {
     for (const [key, val] of Object.entries(properties)) {
       if (key.startsWith('@')) continue;
       const label = seen.has(key) ? `properties.${key}` : key;
       const row = toDetailRow(label, val);
-      if (row) { rows.push(row); seen.add(row.label); }
+      if (row) {
+        rows.push(row);
+        seen.add(row.label);
+      }
     }
   }
   return rows;

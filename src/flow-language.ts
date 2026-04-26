@@ -181,7 +181,22 @@ interface FlowDocumentModel {
 }
 
 const FLOW_ROOT_PROPERTIES = ['$schema', 'contentVersion', 'parameters', 'triggers', 'actions', 'outputs', 'description', 'staticResults'];
-const ACTION_PROPERTIES = ['type', 'inputs', 'runAfter', 'actions', 'else', 'expression', 'cases', 'default', 'foreach', 'limit', 'metadata', 'operationOptions', 'description', 'runtimeConfiguration'];
+const ACTION_PROPERTIES = [
+  'type',
+  'inputs',
+  'runAfter',
+  'actions',
+  'else',
+  'expression',
+  'cases',
+  'default',
+  'foreach',
+  'limit',
+  'metadata',
+  'operationOptions',
+  'description',
+  'runtimeConfiguration'
+];
 const RUN_AFTER_STATUSES = ['Succeeded', 'Failed', 'Skipped', 'TimedOut'];
 const ACTION_TYPE_OPTIONS = [
   'ApiConnection',
@@ -202,7 +217,7 @@ const ACTION_TYPE_OPTIONS = [
   'Until',
   'Switch',
   'Workflow',
-  'ServiceProvider',
+  'ServiceProvider'
 ];
 
 export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
@@ -217,7 +232,7 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
       symbols: [],
       references: [],
       knowledge: { level: 'structural', sources: ['strict-json-parser'] },
-      summary: { wrapperKind: 'unknown', triggerCount: 0, actionCount: 0, variableCount: 0, parameterCount: 0 },
+      summary: { wrapperKind: 'unknown', triggerCount: 0, actionCount: 0, variableCount: 0, parameterCount: 0 }
     };
   }
 
@@ -241,8 +256,8 @@ export function analyzeFlow(source: string, cursor = 0): FlowAnalysisResult {
       triggerCount: model.triggers.length,
       actionCount: flattenActions(model.actions).length,
       variableCount: model.variables.length,
-      parameterCount: model.parameters.length,
-    },
+      parameterCount: model.parameters.length
+    }
   };
 }
 
@@ -261,7 +276,7 @@ export function explainFlowSymbol(source: string, symbolName: string): FlowExpla
     inboundReferences: analysis.references.filter((item) => item.name === symbolName),
     outboundReferences: analysis.references.filter((item) => item.sourceAction === symbolName),
     diagnostics: analysis.diagnostics.filter((item) => item.message.includes(symbolName) || item.path === symbolName),
-    summary: symbol ? { kind: symbol.kind, detail: symbol.detail, container: symbol.container } : undefined,
+    summary: symbol ? { kind: symbol.kind, detail: symbol.detail, container: symbol.container } : undefined
   };
 }
 
@@ -276,7 +291,7 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
       triggers: [],
       variables: [],
       parameters: [],
-      diagnostics,
+      diagnostics
     };
   }
 
@@ -302,7 +317,7 @@ function buildFlowModel(root: JsonObjectNode): FlowDocumentModel {
     triggers,
     variables,
     parameters,
-    diagnostics,
+    diagnostics
   };
 }
 
@@ -314,19 +329,21 @@ function collectTriggerNodes(node: JsonObjectNode, diagnostics: FlowRangeDiagnos
       diagnostics.push(rangeDiagnostic('error', 'FLOW_TRIGGER_DUPLICATE_NAME', `Duplicate trigger ${property.key}.`, property.keyNode.from, property.keyNode.to));
     }
     seen.add(property.key);
-    return [{
-      kind: 'trigger',
-      name: property.key,
-      type: readStringProperty(property.valueNode, 'type') ?? 'Unknown',
-      from: property.keyNode.from,
-      to: property.valueNode.to,
-      containerId: 'workflow:triggers',
-      containerKind: 'workflow',
-      siblingIndex: index,
-      runAfter: [],
-      node: property.valueNode,
-      children: [],
-    }];
+    return [
+      {
+        kind: 'trigger',
+        name: property.key,
+        type: readStringProperty(property.valueNode, 'type') ?? 'Unknown',
+        from: property.keyNode.from,
+        to: property.valueNode.to,
+        containerId: 'workflow:triggers',
+        containerKind: 'workflow',
+        siblingIndex: index,
+        runAfter: [],
+        node: property.valueNode,
+        children: []
+      }
+    ];
   });
 }
 
@@ -335,7 +352,7 @@ function collectActions(
   diagnostics: FlowRangeDiagnostic[],
   containerId: string,
   containerKind: FlowActionNode['containerKind'],
-  parentAction: string | undefined,
+  parentAction: string | undefined
 ): FlowActionNode[] {
   const seen = new Set<string>();
   const siblings: FlowActionNode[] = [];
@@ -359,7 +376,7 @@ function collectActions(
       siblingIndex: index,
       runAfter: readRunAfterTargets(actionNode),
       node: actionNode,
-      children: [],
+      children: []
     };
     next.children = collectNestedActions(next, diagnostics);
     siblings.push(next);
@@ -416,7 +433,7 @@ function collectParameters(node: JsonObjectNode): FlowParameterNode[] {
       name: property.key,
       type: readStringProperty(property.valueNode as JsonObjectNode, 'type'),
       from: property.keyNode.from,
-      to: property.valueNode.to,
+      to: property.valueNode.to
     }));
 }
 
@@ -438,7 +455,7 @@ function collectVariables(actions: FlowActionNode[]): FlowVariableNode[] {
             type: typeNode?.type === 'string' ? typeNode.value : undefined,
             from: item.from,
             to: item.to,
-            declaredBy: action.name,
+            declaredBy: action.name
           });
         }
       }
@@ -452,7 +469,7 @@ function buildSymbols(model: FlowDocumentModel): FlowSymbolSummary[] {
     ...model.parameters.map((item) => ({ kind: 'parameter' as const, name: item.name, detail: item.type, from: item.from, to: item.to })),
     ...model.variables.map((item) => ({ kind: 'variable' as const, name: item.name, detail: item.type, from: item.from, to: item.to, container: item.declaredBy })),
     ...model.triggers.map((item) => ({ kind: 'trigger' as const, name: item.name, detail: item.type, from: item.from, to: item.to })),
-    ...flattenActions(model.actions).map((item) => ({ kind: 'action' as const, name: item.name, detail: item.type, from: item.from, to: item.to, container: item.parentAction })),
+    ...flattenActions(model.actions).map((item) => ({ kind: 'action' as const, name: item.name, detail: item.type, from: item.from, to: item.to, container: item.parentAction }))
   ];
 }
 
@@ -465,7 +482,7 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       detail: `${model.parameters.length}`,
       from: model.parametersProperty?.from ?? model.parameters[0]!.from,
       to: model.parametersProperty?.to ?? model.parameters[model.parameters.length - 1]!.to,
-      children: model.parameters.map((item) => ({ kind: 'parameter', name: item.name, detail: item.type, from: item.from, to: item.to })),
+      children: model.parameters.map((item) => ({ kind: 'parameter', name: item.name, detail: item.type, from: item.from, to: item.to }))
     });
   }
   if (model.triggers.length) {
@@ -475,7 +492,7 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       detail: `${model.triggers.length}`,
       from: model.triggersProperty?.from ?? model.triggers[0]!.from,
       to: model.triggersProperty?.to ?? model.triggers[model.triggers.length - 1]!.to,
-      children: model.triggers.map((item) => ({ kind: 'trigger', name: item.name, detail: item.type, from: item.from, to: item.to })),
+      children: model.triggers.map((item) => ({ kind: 'trigger', name: item.name, detail: item.type, from: item.from, to: item.to }))
     });
   }
   if (model.actions.length) {
@@ -485,7 +502,7 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       detail: `${model.actions.length}`,
       from: model.actionsProperty?.from ?? model.actions[0]!.from,
       to: model.actionsProperty?.to ?? model.actions[model.actions.length - 1]!.to,
-      children: model.actions.map(actionOutline),
+      children: model.actions.map(actionOutline)
     });
   }
   if (model.variables.length) {
@@ -495,17 +512,19 @@ function buildOutline(model: FlowDocumentModel): FlowOutlineItem[] {
       detail: `${model.variables.length}`,
       from: model.variables[0]!.from,
       to: model.variables[model.variables.length - 1]!.to,
-      children: model.variables.map((item) => ({ kind: 'variable', name: item.name, detail: item.type, from: item.from, to: item.to })),
+      children: model.variables.map((item) => ({ kind: 'variable', name: item.name, detail: item.type, from: item.from, to: item.to }))
     });
   }
-  return [{
-    kind: 'workflow',
-    name: 'workflow',
-    detail: model.wrapperKind,
-    from: model.definitionNode?.from ?? 0,
-    to: model.definitionNode?.to ?? 0,
-    children,
-  }];
+  return [
+    {
+      kind: 'workflow',
+      name: 'workflow',
+      detail: model.wrapperKind,
+      from: model.definitionNode?.from ?? 0,
+      to: model.definitionNode?.to ?? 0,
+      children
+    }
+  ];
 }
 
 function actionOutline(action: FlowActionNode): FlowOutlineItem {
@@ -517,7 +536,7 @@ function actionOutline(action: FlowActionNode): FlowOutlineItem {
     type: action.type,
     from: action.from,
     to: action.to,
-    children: children.length ? children : undefined,
+    children: children.length ? children : undefined
   };
   if (action.runAfter.length) {
     item.runAfter = action.runAfter;
@@ -623,7 +642,7 @@ function outlineChildrenForAction(action: FlowActionNode): FlowOutlineItem[] {
     else groups.set(key, [child]);
   }
 
-  return [...groups.entries()].map(([key, children]) => {
+  return [...groups.values()].map((children) => {
     const first = children[0]!;
     const last = children[children.length - 1]!;
     return {
@@ -632,7 +651,7 @@ function outlineChildrenForAction(action: FlowActionNode): FlowOutlineItem[] {
       detail: `${children.length}`,
       from: first.from,
       to: last.to,
-      children: children.map(actionOutline),
+      children: children.map(actionOutline)
     };
   });
 }
@@ -655,16 +674,12 @@ function readConnectorSummary(inputsNode: JsonObjectNode): { connector?: string;
     ['host', 'connectionName'],
     ['host', 'apiId'],
     ['serviceProviderConfiguration', 'connectionName'],
-    ['serviceProviderConfiguration', 'serviceProviderId'],
+    ['serviceProviderConfiguration', 'serviceProviderId']
   ]);
   return {
     connector,
-    operationId: readStringFromFirstObjectPath(inputsNode, [
-      ['host', 'operationId'],
-      ['operationId'],
-      ['serviceProviderConfiguration', 'operationId'],
-    ]),
-    serviceProviderId: serviceProviderNode?.type === 'object' ? readStringProperty(serviceProviderNode, 'serviceProviderId') : undefined,
+    operationId: readStringFromFirstObjectPath(inputsNode, [['host', 'operationId'], ['operationId'], ['serviceProviderConfiguration', 'operationId']]),
+    serviceProviderId: serviceProviderNode?.type === 'object' ? readStringProperty(serviceProviderNode, 'serviceProviderId') : undefined
   };
 }
 
@@ -678,7 +693,7 @@ function buildCompletions(context: FlowCursorContext, model: FlowDocumentModel, 
       const siblingActions = collectSiblingActionNames(model, context.nearestAction);
       return [
         ...siblingActions.map((item) => ({ label: item, type: 'action' as const, apply: `"${item}": ["Succeeded"]` })),
-        ...RUN_AFTER_STATUSES.map((item) => ({ label: item, type: 'value' as const })),
+        ...RUN_AFTER_STATUSES.map((item) => ({ label: item, type: 'value' as const }))
       ];
     }
     return ACTION_PROPERTIES.map((item) => ({ label: item, type: 'property' as const, apply: `"${item}": ` }));
@@ -697,7 +712,7 @@ function expressionSources(model: FlowDocumentModel) {
     actions: flattenActions(model.actions),
     triggers: model.triggers,
     variables: model.variables,
-    parameters: model.parameters,
+    parameters: model.parameters
   };
 }
 
@@ -706,7 +721,7 @@ function emptyExpressionSources() {
     actions: [],
     triggers: [],
     variables: [],
-    parameters: [],
+    parameters: []
   };
 }
 
@@ -729,7 +744,7 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
         from: expression.from,
         to: expression.to,
         path: context.node.path,
-        nearestAction: findNearestActionName(actionRanges, cursor),
+        nearestAction: findNearestActionName(actionRanges, cursor)
       };
     }
     return {
@@ -739,7 +754,7 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
       to: context.node.to,
       path: context.node.path,
       propertyName: context.propertyName,
-      nearestAction: findNearestActionName(actionRanges, cursor),
+      nearestAction: findNearestActionName(actionRanges, cursor)
     };
   }
   if (context?.kind === 'property-key') {
@@ -750,7 +765,7 @@ function readCursorContext(root: JsonObjectNode, source: string, cursor: number,
       to: context.property.keyNode.to,
       path: context.path,
       nearestAction: findNearestActionName(actionRanges, cursor),
-      propertyName: context.property.key,
+      propertyName: context.property.key
     };
   }
   return readFallbackContext(source, cursor);
@@ -777,7 +792,7 @@ function readFallbackContext(source: string, cursor: number): FlowCursorContext 
       text: local.slice(exprStart + expressionOffset).replace(/\}?$/, ''),
       from: windowStart + exprStart + expressionOffset,
       to: windowEnd,
-      path: [],
+      path: []
     };
   }
   return { kind: 'unknown', text: '', from: cursor, to: cursor, path: [] };
@@ -785,7 +800,7 @@ function readFallbackContext(source: string, cursor: number): FlowCursorContext 
 
 function locateJsonContext(
   node: JsonNode,
-  cursor: number,
+  cursor: number
 ): { kind: 'property-key'; property: JsonObjectProperty; path: string[] } | { kind: 'string-value'; node: JsonStringNode; propertyName?: string } | undefined {
   if (cursor < node.from || cursor > node.to) return undefined;
   if (node.type === 'object') {
@@ -829,7 +844,7 @@ function extractExpressionsFromString(node: JsonStringNode): FlowExpressionOccur
       expression: raw.slice(start + 2, end),
       from: node.from + 1 + start + 2,
       to: node.from + 1 + end,
-      hostString: node,
+      hostString: node
     });
     index = end + 1;
   }
@@ -843,15 +858,15 @@ function findTemplateExpressionEnd(raw: string, start: number): number {
   while (cursor < raw.length && depth > 0) {
     const char = raw[cursor];
     if (inString) {
-      if (char === '\'' && raw[cursor + 1] === '\'') {
+      if (char === "'" && raw[cursor + 1] === "'") {
         cursor += 2;
         continue;
       }
-      if (char === '\'') inString = false;
+      if (char === "'") inString = false;
       cursor += 1;
       continue;
     }
-    if (char === '\'') {
+    if (char === "'") {
       inString = true;
       cursor += 1;
       continue;
@@ -979,28 +994,6 @@ function validateRunAfterTargets(actions: FlowActionNode[], diagnostics: FlowRan
 
 function flattenActions(actions: FlowActionNode[]): FlowActionNode[] {
   return actions.flatMap((action) => [action, ...flattenActions(action.children)]);
-}
-
-function walkJson(node: JsonNode, visit: (node: JsonNode) => void): void {
-  visit(node);
-  if (node.type === 'object') {
-    for (const property of node.properties) walkJson(property.valueNode, visit);
-  }
-  if (node.type === 'array') {
-    for (const item of node.items) walkJson(item, visit);
-  }
-}
-
-function walkObjectProperties(node: JsonNode, visit: (property: JsonObjectProperty) => void): void {
-  if (node.type === 'object') {
-    for (const property of node.properties) {
-      visit(property);
-      walkObjectProperties(property.valueNode, visit);
-    }
-  }
-  if (node.type === 'array') {
-    for (const item of node.items) walkObjectProperties(item, visit);
-  }
 }
 
 function shiftJsonNode(node: JsonNode, offset: number): void {

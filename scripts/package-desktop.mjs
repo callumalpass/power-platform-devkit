@@ -17,8 +17,8 @@ await run(process.execPath, [require.resolve('electron-builder/cli.js'), '--dir'
   env: {
     ...process.env,
     npm_config_user_agent: `npm/10.9.0 node/${process.versions.node}`,
-    npm_execpath: '',
-  },
+    npm_execpath: ''
+  }
 });
 
 async function createConfig() {
@@ -27,8 +27,8 @@ async function createConfig() {
     ...rootConfig,
     electronVersion: require('electron/package.json').version,
     directories: {
-      output: relativeFromDesktop(path.join(repoRoot, 'release', 'electron')),
-    },
+      output: relativeFromDesktop(path.join(repoRoot, 'release', 'electron'))
+    }
   };
   delete config.extraMetadata;
 
@@ -36,7 +36,7 @@ async function createConfig() {
     if (config[platform]?.icon) {
       config[platform] = {
         ...config[platform],
-        icon: relativeFromDesktop(path.join(repoRoot, config[platform].icon)),
+        icon: relativeFromDesktop(path.join(repoRoot, config[platform].icon))
       };
     }
   }
@@ -53,7 +53,7 @@ function run(command, args, options) {
     const child = spawn(command, args, {
       stdio: 'inherit',
       shell: false,
-      ...options,
+      ...options
     });
     child.once('error', reject);
     child.once('exit', (code) => {

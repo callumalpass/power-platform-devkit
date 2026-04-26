@@ -40,8 +40,8 @@ test('readDataverseCreateRecordInput parses valid create payloads', () => {
     primaryIdAttribute: 'accountid',
     body: {
       name: 'Contoso',
-      'primarycontactid@odata.bind': '/contacts(00000000-0000-0000-0000-000000000001)',
-    },
+      'primarycontactid@odata.bind': '/contacts(00000000-0000-0000-0000-000000000001)'
+    }
   });
   assert.equal(result.success, true);
   assert.equal(result.data?.environmentAlias, 'dev');
@@ -49,7 +49,7 @@ test('readDataverseCreateRecordInput parses valid create payloads', () => {
   assert.equal(result.data?.entitySetName, 'accounts');
   assert.deepEqual(result.data?.body, {
     name: 'Contoso',
-    'primarycontactid@odata.bind': '/contacts(00000000-0000-0000-0000-000000000001)',
+    'primarycontactid@odata.bind': '/contacts(00000000-0000-0000-0000-000000000001)'
   });
 });
 

@@ -54,24 +54,62 @@ export function FlowDetailHeader(props: {
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               {String(prop(currentFlow, 'properties.state')) === 'Started' ? (
                 <>
-                  {runtimeId ? <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('run')}>Run Now</button> : null}
-                  <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('stop')}>Turn Off</button>
+                  {runtimeId ? (
+                    <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('run')}>
+                      Run Now
+                    </button>
+                  ) : null}
+                  <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('stop')}>
+                    Turn Off
+                  </button>
                 </>
               ) : (
-                <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('start')}>Turn On</button>
+                <button className="btn btn-primary" type="button" style={{ fontSize: '0.75rem', padding: '4px 10px' }} onClick={() => onFlowAction('start')}>
+                  Turn On
+                </button>
               )}
-              <button className="btn btn-ghost" type="button" style={{ fontSize: '0.75rem' }} onClick={() => onOpenConsole(currentFlow.source === 'dv'
-                ? { api: 'dv', method: 'GET', path: `/workflows(${workflowId || displayId})` }
-                : { api: 'flow', method: 'GET', path: `/flows/${displayId}` })}>Open in Console</button>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                style={{ fontSize: '0.75rem' }}
+                onClick={() =>
+                  onOpenConsole(
+                    currentFlow.source === 'dv' ? { api: 'dv', method: 'GET', path: `/workflows(${workflowId || displayId})` } : { api: 'flow', method: 'GET', path: `/flows/${displayId}` }
+                  )
+                }
+              >
+                Open in Console
+              </button>
             </div>
           </div>
           <div className="metrics">
-            <div className="metric"><div className="metric-label">State</div><div className="metric-value"><span className={`health-dot ${String(prop(currentFlow, 'properties.state')) === 'Started' ? 'ok' : 'error'}`} style={{ marginRight: 4 }}></span>{String(prop(currentFlow, 'properties.state') || '-')}</div></div>
-            <div className="metric"><div className="metric-label">Created</div><div className="metric-value">{formatDate(prop(currentFlow, 'properties.createdTime'))}</div></div>
-            <div className="metric"><div className="metric-label">Modified</div><div className="metric-value">{formatDate(prop(currentFlow, 'properties.lastModifiedTime'))}</div></div>
-            <div className="metric"><div className="metric-label">Trigger</div><div className="metric-value">{prop(currentFlow, 'properties.definitionSummary.triggers.0.type') || '-'}</div></div>
-            <div className="metric"><div className="metric-label">Actions</div><div className="metric-value">{String((prop(currentFlow, 'properties.definitionSummary.actions') || []).length || 0)}</div></div>
-            <div className="metric"><div className="metric-label">Source</div><div className="metric-value">{currentFlow.source === 'dv' ? 'Dataverse fallback' : 'Flow API'}</div></div>
+            <div className="metric">
+              <div className="metric-label">State</div>
+              <div className="metric-value">
+                <span className={`health-dot ${String(prop(currentFlow, 'properties.state')) === 'Started' ? 'ok' : 'error'}`} style={{ marginRight: 4 }}></span>
+                {String(prop(currentFlow, 'properties.state') || '-')}
+              </div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">Created</div>
+              <div className="metric-value">{formatDate(prop(currentFlow, 'properties.createdTime'))}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">Modified</div>
+              <div className="metric-value">{formatDate(prop(currentFlow, 'properties.lastModifiedTime'))}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">Trigger</div>
+              <div className="metric-value">{prop(currentFlow, 'properties.definitionSummary.triggers.0.type') || '-'}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">Actions</div>
+              <div className="metric-value">{String((prop<unknown[]>(currentFlow, 'properties.definitionSummary.actions') || []).length || 0)}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">Source</div>
+              <div className="metric-value">{currentFlow.source === 'dv' ? 'Dataverse fallback' : 'Flow API'}</div>
+            </div>
           </div>
           {currentFlow.source === 'flow' ? (
             <div className="flow-callback-url">
@@ -79,7 +117,9 @@ export function FlowDetailHeader(props: {
                 <div className="flow-callback-url-label">Trigger URL</div>
                 <div className="flow-callback-url-warning">
                   {callbackUrl.status === 'loaded'
-                    ? callbackUrl.kind === 'signed' ? 'Anyone with this URL can trigger the flow.' : 'Requires an authenticated Flow API request.'
+                    ? callbackUrl.kind === 'signed'
+                      ? 'Anyone with this URL can trigger the flow.'
+                      : 'Requires an authenticated Flow API request.'
                     : 'Reveal the URL to check how it can be used.'}
                 </div>
                 {callbackUrl.status === 'error' ? <div className="flow-callback-url-error">{callbackUrl.error}</div> : null}
@@ -89,7 +129,9 @@ export function FlowDetailHeader(props: {
                   <>
                     <code className="flow-callback-url-secret">{maskCallbackUrl(callbackUrl.value)}</code>
                     <CopyButton value={callbackUrl.value} label="copy url" title="Copy full trigger URL" toast={toast} />
-                    <button className="btn btn-ghost btn-sm" type="button" onClick={onHideCallbackUrl}>Hide</button>
+                    <button className="btn btn-ghost btn-sm" type="button" onClick={onHideCallbackUrl}>
+                      Hide
+                    </button>
                   </>
                 ) : (
                   <button className="btn btn-ghost btn-sm" type="button" disabled={callbackUrl.status === 'loading'} onClick={onRevealCallbackUrl}>

@@ -41,7 +41,7 @@ export function OnboardingFlow(props: {
           <>
             <h2>Connect your first account</h2>
             <p className="desc">Add a Microsoft account to start working with Power Platform. You'll sign in through your browser.</p>
-            {(login.activeSession || login.loginTargets.length > 0) ? (
+            {login.activeSession || login.loginTargets.length > 0 ? (
               <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
             ) : (
               <AddAccountForm

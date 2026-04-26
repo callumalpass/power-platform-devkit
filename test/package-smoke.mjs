@@ -5,13 +5,7 @@ import { readFile } from 'node:fs/promises';
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const require = createRequire(import.meta.url);
 
-const expectedRootExports = [
-  'AuthService',
-  'PpClient',
-  'VERSION',
-  'executeApiRequest',
-  'listAccountSummaries',
-];
+const expectedRootExports = ['AuthService', 'PpClient', 'VERSION', 'executeApiRequest', 'listAccountSummaries'];
 
 const esm = await captureOutput(() => import('pp'));
 assert.equal(esm.stdout, '');
@@ -34,7 +28,7 @@ const subpaths = [
   ['pp/fetchxml-language', 'analyzeFetchXml'],
   ['pp/flow-language', 'analyzeFlow'],
   ['pp/request', 'buildRequest'],
-  ['pp/experimental/canvas-authoring', 'startCanvasAuthoringSession'],
+  ['pp/experimental/canvas-authoring', 'startCanvasAuthoringSession']
 ];
 
 for (const [specifier, symbol] of subpaths) {
@@ -46,12 +40,12 @@ for (const [specifier, symbol] of subpaths) {
 }
 
 assert.equal(pkg.bin.pp, './dist/cli.cjs');
-assert.equal(typeof require('pp').VERSION, 'string');
+assert.equal(require('pp').VERSION, pkg.version);
 
 function assertRootExports(mod) {
   assert.deepEqual(
     expectedRootExports.map((name) => [name, typeof mod[name]]),
-    expectedRootExports.map((name) => [name, name === 'VERSION' ? 'string' : 'function']),
+    expectedRootExports.map((name) => [name, name === 'VERSION' ? 'string' : 'function'])
   );
 }
 

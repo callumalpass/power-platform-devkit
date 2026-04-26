@@ -1,18 +1,12 @@
 import type { AccountKind, Environment } from '../config.js';
 
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type JsonRecord = Record<string, JsonValue | unknown>;
 
 export type ApiEnvelope<T> = {
   data: T;
-  diagnostics?: Array<{ level?: string; code?: string; message?: string }>;
+  diagnostics?: DiagnosticItem[];
   success?: boolean;
 };
 

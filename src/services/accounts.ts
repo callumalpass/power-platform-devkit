@@ -14,11 +14,7 @@ export async function inspectAccountSummary(name: string, configOptions: ConfigS
   return result.success ? ok(result.data ? summarizeAccount(result.data) : undefined, result.diagnostics) : fail(...result.diagnostics);
 }
 
-export async function loginAccount(
-  input: LoginAccountInput,
-  loginOptions: PublicClientLoginOptions = {},
-  configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<Record<string, unknown>>> {
+export async function loginAccount(input: LoginAccountInput, loginOptions: PublicClientLoginOptions = {}, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<Record<string, unknown>>> {
   const auth = new AuthService(configOptions);
   return auth.login(input, loginOptions);
 }

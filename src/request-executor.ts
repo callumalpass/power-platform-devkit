@@ -1,10 +1,4 @@
-import {
-  CANVAS_AUTHORING_PUBLIC_CLIENT_ID,
-  createTokenProvider,
-  DEFAULT_PUBLIC_CLIENT_ID,
-  type PublicClientLoginOptions,
-  type TokenProvider,
-} from './auth.js';
+import { CANVAS_AUTHORING_PUBLIC_CLIENT_ID, createTokenProvider, DEFAULT_PUBLIC_CLIENT_ID, type PublicClientLoginOptions, type TokenProvider } from './auth.js';
 import { ensureEnvironmentAccess, getAccount, getEnvironment, type Account, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
@@ -14,8 +8,8 @@ export const API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'powerautom
 export const REQUEST_ALIAS_API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring', 'sharepoint'] as const;
 export const ENVIRONMENT_TOKEN_API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring'] as const;
 
-export type ApiKind = typeof API_KINDS[number];
-export type EnvironmentTokenApi = typeof ENVIRONMENT_TOKEN_API_KINDS[number];
+export type ApiKind = (typeof API_KINDS)[number];
+export type EnvironmentTokenApi = (typeof ENVIRONMENT_TOKEN_API_KINDS)[number];
 
 export const FLOW_AUTH_RESOURCE = 'https://service.flow.microsoft.com';
 export const CANVAS_AUTHORING_AUTH_RESOURCE = 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default';
@@ -82,16 +76,16 @@ const JSON_HEADERS = { accept: 'application/json' };
 const DATAVERSE_HEADERS = {
   accept: 'application/json',
   'odata-version': '4.0',
-  'odata-maxversion': '4.0',
+  'odata-maxversion': '4.0'
 };
 
 const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
   dv: {
     api: 'dv',
     scope: 'environment',
-    detect: value => /\/api\/data\//i.test(value),
-    environmentResource: environment => normalizeOrigin(environment.url),
-    build: context => {
+    detect: (value) => /\/api\/data\//i.test(value),
+    environmentResource: (environment) => normalizeOrigin(environment.url),
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, context.url.origin, environment.data));
@@ -101,17 +95,17 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizeDataversePath(context.originalPath),
         authResource: normalizeOrigin(environment.data.url),
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
-    defaultHeaders: DATAVERSE_HEADERS,
+    defaultHeaders: DATAVERSE_HEADERS
   },
   flow: {
     api: 'flow',
     scope: 'environment',
-    detect: value => /api\.flow\.microsoft\.com/i.test(value) || /Microsoft\.ProcessSimple/i.test(value),
+    detect: (value) => /api\.flow\.microsoft\.com/i.test(value) || /Microsoft\.ProcessSimple/i.test(value),
     environmentResource: () => FLOW_AUTH_RESOURCE,
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, FLOW_AUTH_RESOURCE, environment.data));
@@ -121,18 +115,18 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizeFlowPath(context.originalPath, environment.data.makerEnvironmentId),
         authResource: FLOW_AUTH_RESOURCE,
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
     defaultHeaders: JSON_HEADERS,
-    defaultQuery: { 'api-version': '2016-11-01' },
+    defaultQuery: { 'api-version': '2016-11-01' }
   },
   powerautomate: {
     api: 'powerautomate',
     scope: 'environment',
-    detect: value => /environment\.api\.powerplatform\.com\/powerautomate/i.test(value) || /^\/?powerautomate(?:\/|$)/i.test(value),
+    detect: (value) => /environment\.api\.powerplatform\.com\/powerautomate/i.test(value) || /^\/?powerautomate(?:\/|$)/i.test(value),
     environmentResource: () => FLOW_AUTH_RESOURCE,
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, FLOW_AUTH_RESOURCE, environment.data));
@@ -142,18 +136,18 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizePowerAutomatePath(context.originalPath),
         authResource: FLOW_AUTH_RESOURCE,
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
     defaultHeaders: JSON_HEADERS,
-    defaultQuery: { 'api-version': '1' },
+    defaultQuery: { 'api-version': '1' }
   },
   graph: {
     api: 'graph',
     scope: 'account',
-    detect: value => /graph\.microsoft\.com/i.test(value) || /^\/?(v1\.0|beta)\//i.test(value),
+    detect: (value) => /graph\.microsoft\.com/i.test(value) || /^\/?(v1\.0|beta)\//i.test(value),
     environmentResource: () => 'https://graph.microsoft.com',
-    build: context => {
+    build: (context) => {
       if (context.url) return ok(urlPreparedRequest(context, 'https://graph.microsoft.com', context.environment));
       return ok({
         api: context.api,
@@ -161,17 +155,17 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizeGraphPath(context.originalPath),
         authResource: 'https://graph.microsoft.com',
         environment: context.environment,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
-    defaultHeaders: JSON_HEADERS,
+    defaultHeaders: JSON_HEADERS
   },
   bap: {
     api: 'bap',
     scope: 'environment',
-    detect: value => /api\.bap\.microsoft\.com/i.test(value) || /Microsoft\.BusinessAppPlatform/i.test(value),
+    detect: (value) => /api\.bap\.microsoft\.com/i.test(value) || /Microsoft\.BusinessAppPlatform/i.test(value),
     environmentResource: () => 'https://service.powerapps.com',
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, 'https://service.powerapps.com', environment.data));
@@ -181,18 +175,18 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizeBapPath(context.originalPath),
         authResource: 'https://service.powerapps.com',
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
     defaultHeaders: JSON_HEADERS,
-    defaultQuery: { 'api-version': '2020-10-01' },
+    defaultQuery: { 'api-version': '2020-10-01' }
   },
   powerapps: {
     api: 'powerapps',
     scope: 'environment',
-    detect: value => /api\.powerapps\.com/i.test(value) || /Microsoft\.PowerApps/i.test(value),
+    detect: (value) => /api\.powerapps\.com/i.test(value) || /Microsoft\.PowerApps/i.test(value),
     environmentResource: () => 'https://service.powerapps.com',
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, 'https://service.powerapps.com', environment.data));
@@ -202,18 +196,18 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizePowerAppsPath(context.originalPath, environment.data.makerEnvironmentId),
         authResource: 'https://service.powerapps.com',
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
     defaultHeaders: JSON_HEADERS,
-    defaultQuery: { 'api-version': '2016-11-01' },
+    defaultQuery: { 'api-version': '2016-11-01' }
   },
   'canvas-authoring': {
     api: 'canvas-authoring',
     scope: 'environment',
-    detect: value => /environment\.api\.powerplatform\.com/i.test(value) || /authoring\..*\.powerapps\.com/i.test(value),
+    detect: (value) => /environment\.api\.powerplatform\.com/i.test(value) || /authoring\..*\.powerapps\.com/i.test(value),
     environmentResource: () => CANVAS_AUTHORING_AUTH_RESOURCE,
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (context.url) return ok(urlPreparedRequest(context, CANVAS_AUTHORING_AUTH_RESOURCE, environment.data));
@@ -223,30 +217,32 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
         path: normalizeCanvasAuthoringPath(context.originalPath),
         authResource: CANVAS_AUTHORING_AUTH_RESOURCE,
         environment: environment.data,
-        accountName: context.accountName,
+        accountName: context.accountName
       });
     },
-    defaultHeaders: JSON_HEADERS,
+    defaultHeaders: JSON_HEADERS
   },
   sharepoint: {
     api: 'sharepoint',
     scope: 'account',
-    detect: value => /https:\/\/[^/]+\.sharepoint\.com(?:\/|$)/i.test(value) || /https:\/\/[^/]+-my\.sharepoint\.com(?:\/|$)/i.test(value),
-    build: context => {
+    detect: (value) => /https:\/\/[^/]+\.sharepoint\.com(?:\/|$)/i.test(value) || /https:\/\/[^/]+-my\.sharepoint\.com(?:\/|$)/i.test(value),
+    build: (context) => {
       if (!context.url) {
-        return fail(createDiagnostic('error', 'SHAREPOINT_REQUEST_URL_REQUIRED', 'SharePoint requests require an absolute SharePoint REST URL.', {
-          source: 'pp/request',
-          hint: 'Use a URL like https://contoso.sharepoint.com/sites/site/_api/web.',
-        }));
+        return fail(
+          createDiagnostic('error', 'SHAREPOINT_REQUEST_URL_REQUIRED', 'SharePoint requests require an absolute SharePoint REST URL.', {
+            source: 'pp/request',
+            hint: 'Use a URL like https://contoso.sharepoint.com/sites/site/_api/web.'
+          })
+        );
       }
       return ok(urlPreparedRequest(context, context.url.origin, context.environment));
     },
-    defaultHeaders: JSON_HEADERS,
+    defaultHeaders: JSON_HEADERS
   },
   custom: {
     api: 'custom',
     scope: 'environment',
-    build: context => {
+    build: (context) => {
       const environment = requireEnvironment(context.environment, context.api);
       if (!environment.success || !environment.data) return fail(...environment.diagnostics);
       if (!context.url) {
@@ -254,8 +250,8 @@ const API_DESCRIPTORS: Record<ApiKind, ApiDescriptor> = {
       }
       return ok(urlPreparedRequest(context, context.url.origin, environment.data));
     },
-    defaultHeaders: JSON_HEADERS,
-  },
+    defaultHeaders: JSON_HEADERS
+  }
 };
 
 const API_DETECTION_ORDER: ApiKind[] = ['graph', 'sharepoint', 'powerapps', 'powerautomate', 'canvas-authoring', 'bap', 'flow', 'dv'];
@@ -284,7 +280,7 @@ export async function executeRequest<T = unknown>(input: RequestInput): Promise<
     baseUrl: request.data.baseUrl,
     authResource: request.data.authResource,
     tokenProvider: runtime.data.tokenProvider,
-    defaultHeaders: defaultHeadersForApi(request.data.api),
+    defaultHeaders: defaultHeadersForApi(request.data.api)
   });
   const response = await client.request<unknown>({
     method,
@@ -294,18 +290,16 @@ export async function executeRequest<T = unknown>(input: RequestInput): Promise<
     body: input.body,
     rawBody: input.rawBody,
     responseType: input.responseType ?? 'json',
-    timeoutMs: input.timeoutMs,
+    timeoutMs: input.timeoutMs
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
-  const responseData = input.jq !== undefined
-    ? await applyJqTransform(response.data.data, input.jq)
-    : ok(response.data.data);
+  const responseData = input.jq !== undefined ? await applyJqTransform(response.data.data, input.jq) : ok(response.data.data);
   if (!responseData.success) return fail(...responseData.diagnostics);
   return ok({
     request: request.data,
     response: responseData.data as T,
     status: response.data.status,
-    headers: response.data.headers,
+    headers: response.data.headers
   });
 }
 
@@ -315,7 +309,7 @@ async function resolveRuntime(
   api: ApiKind,
   configOptions: ConfigStoreOptions,
   loginOptions?: PublicClientLoginOptions,
-  tokenProviderOverride?: TokenProvider,
+  tokenProviderOverride?: TokenProvider
 ): Promise<OperationResult<{ environment?: Environment; tokenProvider: TokenProvider; accountName: string }>> {
   const isAccountScoped = isAccountScopedApi(api);
   let environment: Environment | undefined;
@@ -329,35 +323,38 @@ async function resolveRuntime(
     }
     environment = environmentResult.data;
   } else if (!isAccountScoped) {
-    return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, {
-      source: 'pp/request',
-      hint: 'Graph and SharePoint may use --account without --env; environment-scoped Power Platform APIs require --env.',
-    }));
+    return fail(
+      createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, {
+        source: 'pp/request',
+        hint: 'Graph and SharePoint may use --account without --env; environment-scoped Power Platform APIs require --env.'
+      })
+    );
   }
 
   const resolvedAccountName = accountName ?? environment?.account;
   if (!resolvedAccountName) {
-    return fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', environmentAlias
-      ? `Environment ${environmentAlias} does not define an account and none was provided.`
-      : `API ${api} requires --account ACCOUNT when --env is not provided.`, {
-      source: 'pp/request',
-      hint: environmentAlias ? 'Pass --account ACCOUNT or update the environment to include an account.' : 'Pass --account ACCOUNT.',
-    }));
+    return fail(
+      createDiagnostic(
+        'error',
+        'ACCOUNT_REQUIRED',
+        environmentAlias ? `Environment ${environmentAlias} does not define an account and none was provided.` : `API ${api} requires --account ACCOUNT when --env is not provided.`,
+        {
+          source: 'pp/request',
+          hint: environmentAlias ? 'Pass --account ACCOUNT or update the environment to include an account.' : 'Pass --account ACCOUNT.'
+        }
+      )
+    );
   }
 
   const account = await getAccount(resolvedAccountName, configOptions);
   if (!account.success || !account.data) {
-    return account.success
-      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${resolvedAccountName} was not found.`, { source: 'pp/request' }))
-      : fail(...account.diagnostics);
+    return account.success ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${resolvedAccountName} was not found.`, { source: 'pp/request' })) : fail(...account.diagnostics);
   }
   if (tokenProviderOverride) {
     return ok({ environment, tokenProvider: tokenProviderOverride, accountName: resolvedAccountName });
   }
   const effectiveAccount = accountForApi(account.data, api);
-  const effectiveLoginOptions = effectiveAccount === account.data
-    ? loginOptions
-    : { ...loginOptions, preferredFlow: loginOptions?.preferredFlow ?? 'device-code', persistAccount: false };
+  const effectiveLoginOptions = effectiveAccount === account.data ? loginOptions : { ...loginOptions, preferredFlow: loginOptions?.preferredFlow ?? 'device-code', persistAccount: false };
   const tokenProvider = createTokenProvider(effectiveAccount, configOptions, effectiveLoginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
   return ok({ environment, tokenProvider: tokenProvider.data, accountName: resolvedAccountName });
@@ -370,7 +367,7 @@ export function accountForApi(account: Account, api: ApiKind): Account {
   return {
     ...account,
     clientId: CANVAS_AUTHORING_PUBLIC_CLIENT_ID,
-    tokenCacheKey: `${account.tokenCacheKey ?? account.name}-canvas-authoring`,
+    tokenCacheKey: `${account.tokenCacheKey ?? account.name}-canvas-authoring`
   };
 }
 
@@ -383,7 +380,7 @@ export function buildRequest(environment: Environment | undefined, accountName: 
     accountName,
     originalPath,
     isUrl,
-    url: isUrl ? new URL(originalPath) : undefined,
+    url: isUrl ? new URL(originalPath) : undefined
   });
 }
 
@@ -478,9 +475,7 @@ export function isEnvironmentTokenApi(value: string): value is EnvironmentTokenA
 }
 
 function requireEnvironment(environment: Environment | undefined, api: ApiKind): OperationResult<Environment> {
-  return environment
-    ? ok(environment)
-    : fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, { source: 'pp/request' }));
+  return environment ? ok(environment) : fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', `API ${api} requires --env ALIAS.`, { source: 'pp/request' }));
 }
 
 function isAbsoluteUrl(value: string): boolean {
@@ -495,6 +490,6 @@ function urlPreparedRequest(context: BuildContext, authResource: string, environ
     path: `${url.pathname}${url.search}`,
     authResource,
     environment,
-    accountName: context.accountName,
+    accountName: context.accountName
   };
 }

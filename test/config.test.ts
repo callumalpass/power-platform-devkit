@@ -3,16 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, win32 as win32Path } from 'node:path';
-import {
-  ensureEnvironmentAccess,
-  getDefaultConfigDir,
-  loadConfig,
-  removeAccount,
-  saveAccount,
-  saveEnvironment,
-  type Account,
-  type Environment,
-} from '../src/config.js';
+import { ensureEnvironmentAccess, getDefaultConfigDir, loadConfig, removeAccount, saveAccount, saveEnvironment, type Account, type Environment } from '../src/config.js';
 
 function tempConfigDir() {
   return mkdtemp(join(tmpdir(), 'pp-config-test-'));
@@ -21,7 +12,7 @@ function tempConfigDir() {
 const account: Account = {
   name: 'admin',
   kind: 'environment-token',
-  environmentVariable: 'PP_TEST_TOKEN',
+  environmentVariable: 'PP_TEST_TOKEN'
 };
 
 const environment: Environment = {
@@ -29,7 +20,7 @@ const environment: Environment = {
   account: 'admin',
   url: 'https://org.crm.dynamics.com',
   makerEnvironmentId: 'maker-env-id',
-  tenantId: 'tenant-id',
+  tenantId: 'tenant-id'
 };
 
 test('loadConfig returns an empty config when no config file exists', async () => {
@@ -91,16 +82,7 @@ test('ensureEnvironmentAccess blocks writes to read-only environments but allows
 });
 
 test('getDefaultConfigDir follows platform conventions', () => {
-  assert.equal(
-    getDefaultConfigDir('linux', { XDG_CONFIG_HOME: '/xdg' }, '/home/alex'),
-    '/xdg/pp',
-  );
-  assert.equal(
-    getDefaultConfigDir('linux', {}, '/home/alex'),
-    '/home/alex/.config/pp',
-  );
-  assert.equal(
-    getDefaultConfigDir('win32', { APPDATA: 'C:\\Users\\Alex\\AppData\\Roaming' }, 'C:\\Users\\Alex'),
-    win32Path.resolve('C:\\Users\\Alex\\AppData\\Roaming\\pp'),
-  );
+  assert.equal(getDefaultConfigDir('linux', { XDG_CONFIG_HOME: '/xdg' }, '/home/alex'), '/xdg/pp');
+  assert.equal(getDefaultConfigDir('linux', {}, '/home/alex'), '/home/alex/.config/pp');
+  assert.equal(getDefaultConfigDir('win32', { APPDATA: 'C:\\Users\\Alex\\AppData\\Roaming' }, 'C:\\Users\\Alex'), win32Path.resolve('C:\\Users\\Alex\\AppData\\Roaming\\pp'));
 });

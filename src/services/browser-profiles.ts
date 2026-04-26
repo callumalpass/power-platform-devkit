@@ -2,14 +2,7 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import {
-  getAccount,
-  getBrowserProfilesRoot,
-  loadConfig,
-  writeConfig,
-  type BrowserProfile,
-  type ConfigStoreOptions,
-} from '../config.js';
+import { getAccount, getBrowserProfilesRoot, loadConfig, writeConfig, type BrowserProfile, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
 
 const SOURCE = 'pp/services/browser-profiles';
@@ -60,15 +53,11 @@ export async function getBrowserProfileStatus(accountName: string, options: Conf
     configured: Boolean(profile),
     exists: profile ? await exists(profile.userDataDir) : false,
     open: openContexts.has(accountName),
-    profile,
+    profile
   });
 }
 
-export async function openBrowserProfile(
-  accountName: string,
-  input: { url?: string } = {},
-  options: ConfigStoreOptions = {},
-): Promise<OperationResult<BrowserProfileOpenResult>> {
+export async function openBrowserProfile(accountName: string, input: { url?: string } = {}, options: ConfigStoreOptions = {}): Promise<OperationResult<BrowserProfileOpenResult>> {
   const profile = await getOrCreateBrowserProfile(accountName, options);
   if (!profile.success || !profile.data) return fail(...profile.diagnostics);
 
@@ -76,9 +65,13 @@ export async function openBrowserProfile(
   const launched = launchSystemBrowser(profile.data.userDataDir, url);
   if (!launched.success) return fail(...launched.diagnostics);
 
-  const updated = await updateBrowserProfile(accountName, {
-    lastOpenedAt: new Date().toISOString(),
-  }, options);
+  const updated = await updateBrowserProfile(
+    accountName,
+    {
+      lastOpenedAt: new Date().toISOString()
+    },
+    options
+  );
   if (!updated.success || !updated.data) return fail(...updated.diagnostics);
 
   return ok({
@@ -88,14 +81,14 @@ export async function openBrowserProfile(
     open: openContexts.has(accountName),
     profile: updated.data,
     url,
-    alreadyOpen: false,
+    alreadyOpen: false
   });
 }
 
 async function openPlaywrightBrowserProfile(
   accountName: string,
   input: { url?: string; headless?: boolean } = {},
-  options: ConfigStoreOptions = {},
+  options: ConfigStoreOptions = {}
 ): Promise<OperationResult<BrowserProfileOpenResult>> {
   const profile = await getOrCreateBrowserProfile(accountName, options);
   if (!profile.success || !profile.data) return fail(...profile.diagnostics);
@@ -110,14 +103,16 @@ async function openPlaywrightBrowserProfile(
   if (!context) {
     try {
       context = await loadedPlaywright.data.chromium.launchPersistentContext(profile.data.userDataDir, {
-        headless,
+        headless
       });
     } catch (error) {
-      return fail(createDiagnostic('error', 'BROWSER_PROFILE_OPEN_FAILED', `Failed to open browser profile for account ${accountName}.`, {
-        source: SOURCE,
-        detail: error instanceof Error ? error.message : String(error),
-        hint: 'Close any browser already using this profile. If Chromium is missing, run: pnpm exec playwright install chromium.',
-      }));
+      return fail(
+        createDiagnostic('error', 'BROWSER_PROFILE_OPEN_FAILED', `Failed to open browser profile for account ${accountName}.`, {
+          source: SOURCE,
+          detail: error instanceof Error ? error.message : String(error),
+          hint: 'Close any browser already using this profile. If Chromium is missing, run: pnpm exec playwright install chromium.'
+        })
+      );
     }
   }
   openContexts.set(accountName, { context, profile: profile.data });
@@ -127,12 +122,16 @@ async function openPlaywrightBrowserProfile(
     });
   }
 
-  const page = context.pages()[0] ?? await context.newPage();
+  const page = context.pages()[0] ?? (await context.newPage());
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => undefined);
 
-  const updated = await updateBrowserProfile(accountName, {
-    lastOpenedAt: new Date().toISOString(),
-  }, options);
+  const updated = await updateBrowserProfile(
+    accountName,
+    {
+      lastOpenedAt: new Date().toISOString()
+    },
+    options
+  );
   if (!updated.success || !updated.data) return fail(...updated.diagnostics);
 
   return ok({
@@ -142,14 +141,14 @@ async function openPlaywrightBrowserProfile(
     open: true,
     profile: updated.data,
     url,
-    alreadyOpen: Boolean(existing),
+    alreadyOpen: Boolean(existing)
   });
 }
 
 export async function verifyBrowserProfile(
   accountName: string,
   input: { url?: string; headless?: boolean } = {},
-  options: ConfigStoreOptions = {},
+  options: ConfigStoreOptions = {}
 ): Promise<OperationResult<BrowserProfileVerificationResult>> {
   const opened = await openPlaywrightBrowserProfile(accountName, { url: input.url || DEFAULT_BROWSER_URL, headless: input.headless }, options);
   if (!opened.success || !opened.data) return fail(...opened.diagnostics);
@@ -158,17 +157,21 @@ export async function verifyBrowserProfile(
   const page = context?.pages()[0];
   const finalUrl = page?.url() ?? opened.data.url;
   const authenticated = !/login\.microsoftonline\.com|login\.live\.com|\/common\/oauth2|signin/i.test(finalUrl);
-  const updated = await updateBrowserProfile(accountName, {
-    lastVerifiedAt: new Date().toISOString(),
-    lastVerificationUrl: finalUrl,
-  }, options);
+  const updated = await updateBrowserProfile(
+    accountName,
+    {
+      lastVerifiedAt: new Date().toISOString(),
+      lastVerificationUrl: finalUrl
+    },
+    options
+  );
   if (!updated.success || !updated.data) return fail(...updated.diagnostics);
 
   return ok({
     ...opened.data,
     profile: updated.data,
     authenticated,
-    finalUrl,
+    finalUrl
   });
 }
 
@@ -197,7 +200,7 @@ export async function resetBrowserProfile(accountName: string, options: ConfigSt
     account: accountName,
     configured: false,
     exists: false,
-    open: false,
+    open: false
   });
 }
 
@@ -219,7 +222,7 @@ async function getOrCreateBrowserProfile(accountName: string, options: ConfigSto
     account: accountName,
     kind: 'playwright-chromium',
     userDataDir: join(getBrowserProfilesRoot(options), profileDirectoryName(accountName)),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString()
   };
   await mkdir(profile.userDataDir, { recursive: true });
   loaded.data.browserProfiles[accountName] = profile;
@@ -245,7 +248,7 @@ async function loadPlaywright(): Promise<OperationResult<{ chromium: { launchPer
   const errors: string[] = [];
   for (const specifier of ['playwright', '@playwright/test']) {
     try {
-      const module = await dynamicImport(specifier) as { chromium?: unknown };
+      const module = (await dynamicImport(specifier)) as { chromium?: unknown };
       if (!module.chromium || typeof module.chromium !== 'object') {
         errors.push(`${specifier}: Chromium launcher was not exported.`);
         continue;
@@ -255,15 +258,13 @@ async function loadPlaywright(): Promise<OperationResult<{ chromium: { launchPer
       errors.push(`${specifier}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return fail(createDiagnostic('error', 'PLAYWRIGHT_UNAVAILABLE', 'Playwright is not available to launch browser profiles.', {
-    source: SOURCE,
-    detail: errors.join('\n'),
-    hint: 'Install Playwright and its Chromium browser, for example: pnpm add -D @playwright/test && pnpm exec playwright install chromium.',
-  }));
-}
-
-function playwrightMissing(): OperationResult<never> {
-  return fail(createDiagnostic('error', 'PLAYWRIGHT_UNAVAILABLE', 'Playwright did not expose a Chromium launcher.', { source: SOURCE }));
+  return fail(
+    createDiagnostic('error', 'PLAYWRIGHT_UNAVAILABLE', 'Playwright is not available to launch browser profiles.', {
+      source: SOURCE,
+      detail: errors.join('\n'),
+      hint: 'Install Playwright and its Chromium browser, for example: pnpm add -D @playwright/test && pnpm exec playwright install chromium.'
+    })
+  );
 }
 
 function accountNotFound(accountName: string): OperationResult<never> {
@@ -271,7 +272,11 @@ function accountNotFound(accountName: string): OperationResult<never> {
 }
 
 function profileDirectoryName(accountName: string): string {
-  const readable = accountName.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64) || 'account';
+  const readable =
+    accountName
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64) || 'account';
   const hash = createHash('sha256').update(accountName).digest('hex').slice(0, 10);
   return `${readable}-${hash}`;
 }
@@ -281,16 +286,20 @@ function launchSystemBrowser(userDataDir: string, url: string): OperationResult<
   try {
     parsed = new URL(url);
   } catch {
-    return fail(createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL is not a valid URL.', {
-      source: SOURCE,
-      detail: `Rejected url: ${url}`,
-    }));
+    return fail(
+      createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL is not a valid URL.', {
+        source: SOURCE,
+        detail: `Rejected url: ${url}`
+      })
+    );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return fail(createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL must use http or https.', {
-      source: SOURCE,
-      detail: `Rejected scheme: ${parsed.protocol}`,
-    }));
+    return fail(
+      createDiagnostic('error', 'BROWSER_URL_INVALID', 'Browser profile URL must use http or https.', {
+        source: SOURCE,
+        detail: `Rejected scheme: ${parsed.protocol}`
+      })
+    );
   }
   const safeUrl = parsed.toString();
   const candidates = browserCommandCandidates();
@@ -303,7 +312,7 @@ function launchSystemBrowser(userDataDir: string, url: string): OperationResult<
     try {
       const child = spawn(candidate.command, [...candidate.args, ...browserProfileArgs(userDataDir), '--', safeUrl], {
         detached: true,
-        stdio: 'ignore',
+        stdio: 'ignore'
       });
       child.unref();
       return ok(undefined);
@@ -311,11 +320,13 @@ function launchSystemBrowser(userDataDir: string, url: string): OperationResult<
       errors.push(`${candidate.command}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return fail(createDiagnostic('error', 'BROWSER_LAUNCH_FAILED', 'Could not launch an installed browser for this profile.', {
-    source: SOURCE,
-    detail: errors.join('\n'),
-    hint: 'Install Chrome, Edge, Chromium, or set PP_BROWSER to a browser executable.',
-  }));
+  return fail(
+    createDiagnostic('error', 'BROWSER_LAUNCH_FAILED', 'Could not launch an installed browser for this profile.', {
+      source: SOURCE,
+      detail: errors.join('\n'),
+      hint: 'Install Chrome, Edge, Chromium, or set PP_BROWSER to a browser executable.'
+    })
+  );
 }
 
 function browserCommandCandidates(): Array<{ command: string; args: string[] }> {
@@ -326,16 +337,12 @@ function browserCommandCandidates(): Array<{ command: string; args: string[] }> 
     candidates.push(
       { command: 'open', args: ['-na', 'Google Chrome', '--args'] },
       { command: 'open', args: ['-na', 'Microsoft Edge', '--args'] },
-      { command: 'open', args: ['-na', 'Chromium', '--args'] },
+      { command: 'open', args: ['-na', 'Chromium', '--args'] }
     );
     return candidates;
   }
   if (process.platform === 'win32') {
-    candidates.push(
-      { command: 'msedge.exe', args: [] },
-      { command: 'chrome.exe', args: [] },
-      { command: 'chromium.exe', args: [] },
-    );
+    candidates.push({ command: 'msedge.exe', args: [] }, { command: 'chrome.exe', args: [] }, { command: 'chromium.exe', args: [] });
     return candidates;
   }
   candidates.push(
@@ -344,17 +351,13 @@ function browserCommandCandidates(): Array<{ command: string; args: string[] }> 
     { command: 'microsoft-edge', args: [] },
     { command: 'microsoft-edge-stable', args: [] },
     { command: 'chromium', args: [] },
-    { command: 'chromium-browser', args: [] },
+    { command: 'chromium-browser', args: [] }
   );
   return candidates;
 }
 
 function browserProfileArgs(userDataDir: string): string[] {
-  return [
-    `--user-data-dir=${userDataDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-  ];
+  return [`--user-data-dir=${userDataDir}`, '--no-first-run', '--no-default-browser-check'];
 }
 
 function commandAvailable(command: string): boolean {

@@ -7,55 +7,67 @@ import { Select } from '../Select.js';
 
 const APIS = [
   {
-    key: 'dv', label: 'Dataverse', scope: 'environment',
+    key: 'dv',
+    label: 'Dataverse',
+    scope: 'environment',
     defaultPath: '/WhoAmI',
     presets: [
       { label: 'WhoAmI', method: 'GET', path: '/WhoAmI', description: 'Current user identity' },
       { label: 'List Accounts', method: 'GET', path: '/accounts?$top=10&$select=name,accountid', description: 'Account records' },
       { label: 'Entity Metadata', method: 'GET', path: '/EntityDefinitions?$select=LogicalName,DisplayName,EntitySetName&LabelLanguages=1033', description: 'Entity definitions' },
-      { label: 'Global Option Sets', method: 'GET', path: '/GlobalOptionSetDefinitions?$top=10', description: 'Global option set metadata' },
-    ],
+      { label: 'Global Option Sets', method: 'GET', path: '/GlobalOptionSetDefinitions?$top=10', description: 'Global option set metadata' }
+    ]
   },
   {
-    key: 'flow', label: 'Power Automate', scope: 'environment',
+    key: 'flow',
+    label: 'Power Automate',
+    scope: 'environment',
     defaultPath: '/flows',
     presets: [
       { label: 'List Flows', method: 'GET', path: '/flows', description: 'All flows in environment' },
-      { label: 'List Flow Runs', method: 'GET', path: '/flows/{flowId}/runs', description: 'Runs for a specific flow' },
-    ],
+      { label: 'List Flow Runs', method: 'GET', path: '/flows/{flowId}/runs', description: 'Runs for a specific flow' }
+    ]
   },
   {
-    key: 'powerapps', label: 'Power Apps', scope: 'environment',
+    key: 'powerapps',
+    label: 'Power Apps',
+    scope: 'environment',
     defaultPath: '/apps',
-    presets: [{ label: 'List Apps', method: 'GET', path: '/apps', description: 'All apps in environment' }],
+    presets: [{ label: 'List Apps', method: 'GET', path: '/apps', description: 'All apps in environment' }]
   },
   {
-    key: 'bap', label: 'Platform (BAP)', scope: 'environment',
+    key: 'bap',
+    label: 'Platform (BAP)',
+    scope: 'environment',
     defaultPath: '/environments',
     presets: [
       { label: 'List Environments', method: 'GET', path: '/environments', description: 'All accessible environments' },
-      { label: 'Connectors', method: 'GET', path: '/connectors', description: 'Available connectors' },
-    ],
+      { label: 'Connectors', method: 'GET', path: '/connectors', description: 'Available connectors' }
+    ]
   },
   {
-    key: 'graph', label: 'Microsoft Graph', scope: 'account',
+    key: 'graph',
+    label: 'Microsoft Graph',
+    scope: 'account',
     defaultPath: '/me',
     presets: [
       { label: 'My Profile', method: 'GET', path: '/me', description: 'Current user profile' },
       { label: 'Organization', method: 'GET', path: '/organization', description: 'Tenant info' },
       { label: 'Users (top 10)', method: 'GET', path: '/users?$top=10', description: 'Directory users' },
-      { label: 'Groups (top 10)', method: 'GET', path: '/groups?$top=10', description: 'Directory groups' },
-    ],
+      { label: 'Groups (top 10)', method: 'GET', path: '/groups?$top=10', description: 'Directory groups' }
+    ]
   },
   {
-    key: 'sharepoint', label: 'SharePoint REST', scope: 'account',
+    key: 'sharepoint',
+    label: 'SharePoint REST',
+    scope: 'account',
     defaultPath: 'https://contoso.sharepoint.com/sites/site/_api/web',
     presets: [
       { label: 'Web', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web', description: 'Current site web' },
       { label: 'Current User', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web/currentuser', description: 'Current SharePoint user' },
-      { label: 'Lists', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web/lists', description: 'Site lists' },
-    ],
-  },
+      { label: 'Lists', method: 'GET', path: 'https://contoso.sharepoint.com/sites/site/_api/web/lists', description: 'Site lists' }
+    ]
+  }
 ] as const;
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -64,7 +76,7 @@ const METHOD_COLORS: Record<string, string> = {
   POST: 'var(--accent)',
   PUT: '#d97706',
   PATCH: '#d97706',
-  DELETE: 'var(--danger)',
+  DELETE: 'var(--danger)'
 };
 
 type ConsoleRequestTab = 'query' | 'headers' | 'body';
@@ -95,7 +107,10 @@ function readConsoleHistory(): ConsoleHistoryEntry[] {
   try {
     const parsed = JSON.parse(localStorage.getItem('pp-console-history') || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed.map(sanitizeHistoryEntry).filter((entry): entry is ConsoleHistoryEntry => Boolean(entry)).slice(0, 50);
+    return parsed
+      .map(sanitizeHistoryEntry)
+      .filter((entry): entry is ConsoleHistoryEntry => Boolean(entry))
+      .slice(0, 50);
   } catch {
     return [];
   }
@@ -114,7 +129,11 @@ function readLegacyConsoleSaved(): ConsoleSavedEntry[] {
 }
 
 function clearLegacyConsoleSaved() {
-  try { localStorage.removeItem('pp-console-saved'); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem('pp-console-saved');
+  } catch {
+    /* ignore */
+  }
 }
 
 function persistConsoleItems(key: string, items: Array<ConsoleHistoryEntry | ConsoleSavedEntry>, limit: number) {
@@ -132,7 +151,7 @@ function sanitizeHistoryEntry(value: any): ConsoleHistoryEntry | undefined {
   return {
     ...saved,
     status: Number.isFinite(Number(value.status)) ? Number(value.status) : 0,
-    elapsed: Number.isFinite(Number(value.elapsed)) ? Number(value.elapsed) : 0,
+    elapsed: Number.isFinite(Number(value.elapsed)) ? Number(value.elapsed) : 0
   };
 }
 
@@ -156,7 +175,7 @@ function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview): 
       body: `${preview.text}${notice}`,
       bytes: preview.shownBytes,
       truncated: preview.truncated,
-      originalBytes: preview.originalBytes,
+      originalBytes: preview.originalBytes
     };
   }
 
@@ -240,7 +259,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
     body: 'Send a request to see the response.',
     headers: '',
     size: '',
-    ok: false,
+    ok: false
   });
 
   const currentApi = APIS.find((item) => item.key === apiKey) || APIS[0];
@@ -280,13 +299,13 @@ export function ConsoleTab(props: ConsoleTabProps) {
     (async () => {
       try {
         const payload = await api<any>('/api/ui/saved-requests');
-        const serverEntries = Array.isArray(payload.data) ? payload.data.map(sanitizeSavedEntry).filter(Boolean) as ConsoleSavedEntry[] : [];
+        const serverEntries = Array.isArray(payload.data) ? (payload.data.map(sanitizeSavedEntry).filter(Boolean) as ConsoleSavedEntry[]) : [];
         const legacy = readLegacyConsoleSaved();
         if (serverEntries.length === 0 && legacy.length) {
           try {
             await api<any>('/api/ui/saved-requests', {
               method: 'PUT',
-              body: JSON.stringify({ entries: legacy }),
+              body: JSON.stringify({ entries: legacy })
             });
             if (!cancelled) setSaved(legacy);
           } catch {
@@ -304,7 +323,9 @@ export function ConsoleTab(props: ConsoleTabProps) {
         if (!cancelled) savedHydratedRef.current = true;
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -315,7 +336,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
       if (seq !== savedPersistSeqRef.current) return;
       void api<any>('/api/ui/saved-requests', {
         method: 'PUT',
-        body: JSON.stringify({ entries }),
+        body: JSON.stringify({ entries })
       }).catch((error) => {
         toast(error instanceof Error ? `Failed to save pinned requests: ${error.message}` : 'Failed to save pinned requests.', true);
       });
@@ -381,9 +402,9 @@ export function ConsoleTab(props: ConsoleTabProps) {
           query: Object.keys(query).length ? query : undefined,
           headers: Object.keys(headers).length ? headers : undefined,
           body: parsedBody,
-          maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES,
+          maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES
         }),
-        signal: controller.signal,
+        signal: controller.signal
       });
       if (controller.signal.aborted) return;
       const elapsed = Math.round(performance.now() - started);
@@ -394,13 +415,15 @@ export function ConsoleTab(props: ConsoleTabProps) {
         status: payload.data?.status || 200,
         elapsed: `${elapsed}ms`,
         body: bodyResult.body,
-        headers: payload.data?.headers ? Object.entries(payload.data.headers).map(([key, value]) => `${key}: ${value}`).join('\n') : '',
-        size: bodyResult.truncated
-          ? `${formatBytes(bodyResult.bytes)} shown`
-          : formatBytes(bodyResult.bytes),
+        headers: payload.data?.headers
+          ? Object.entries(payload.data.headers)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join('\n')
+          : '',
+        size: bodyResult.truncated ? `${formatBytes(bodyResult.bytes)} shown` : formatBytes(bodyResult.bytes),
         ok: (payload.data?.status || 200) >= 200 && (payload.data?.status || 200) < 300,
         truncated: bodyResult.truncated,
-        originalSize: bodyResult.truncated ? formatBytes(bodyResult.originalBytes) : undefined,
+        originalSize: bodyResult.truncated ? formatBytes(bodyResult.originalBytes) : undefined
       });
       setHistory((current) => [{ api: apiKey, method, path, status: payload.data?.status || 200, elapsed }, ...current].slice(0, 50));
       if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
@@ -418,7 +441,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
         body: JSON.stringify({ error: message }, null, 2),
         headers: '',
         size: formatBytes(new Blob([message]).size),
-        ok: false,
+        ok: false
       });
       setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
       toast(message, true);
@@ -460,7 +483,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
 
   function commitRename(index: number) {
     const trimmed = renameDraft.trim();
-    setSaved((current) => current.map((item, i) => i === index ? { ...item, name: trimmed || undefined } : item));
+    setSaved((current) => current.map((item, i) => (i === index ? { ...item, name: trimmed || undefined } : item)));
     setRenameIndex(null);
     setRenameDraft('');
   }
@@ -493,7 +516,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
               options={currentApi.presets.map((preset) => ({
                 value: preset.label,
                 label: preset.label,
-                description: preset.description,
+                description: preset.description
               }))}
             />
           </div>
@@ -501,17 +524,23 @@ export function ConsoleTab(props: ConsoleTabProps) {
             {currentApi.scope === 'account' ? (
               <>
                 <span className="console-scope-badge account">account-scoped</span>
-                <span className="console-scope-description">Uses the environment’s account for auth; requests go directly to {currentApi.label}. The environment selector isn’t used as a routing prefix.</span>
+                <span className="console-scope-description">
+                  Uses the environment’s account for auth; requests go directly to {currentApi.label}. The environment selector isn’t used as a routing prefix.
+                </span>
               </>
             ) : (
               <>
                 <span className="console-scope-badge env">environment-scoped</span>
-                <span className="console-scope-description">Requests go through <strong>{environment || 'the selected environment'}</strong>.</span>
+                <span className="console-scope-description">
+                  Requests go through <strong>{environment || 'the selected environment'}</strong>.
+                </span>
               </>
             )}
           </div>
           <div className="console-bar">
-            <label htmlFor="console-api" className="sr-only">API</label>
+            <label htmlFor="console-api" className="sr-only">
+              API
+            </label>
             <Select
               id="console-api"
               aria-label="API"
@@ -523,7 +552,9 @@ export function ConsoleTab(props: ConsoleTabProps) {
               }}
               options={APIS.map((item) => ({ value: item.key, label: item.label }))}
             />
-            <label htmlFor="console-method" className="sr-only">HTTP method</label>
+            <label htmlFor="console-method" className="sr-only">
+              HTTP method
+            </label>
             <Select
               id="console-method"
               aria-label="HTTP method"
@@ -532,13 +563,32 @@ export function ConsoleTab(props: ConsoleTabProps) {
               triggerStyle={{ color: METHOD_COLORS[method] || 'var(--ink)' }}
               options={METHODS.map((item) => ({ value: item, label: item }))}
             />
-            <label htmlFor="console-path" className="sr-only">Request path</label>
-            <input type="text" id="console-path" aria-label="Request path" placeholder="/WhoAmI" value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendRequest(); } }} />
+            <label htmlFor="console-path" className="sr-only">
+              Request path
+            </label>
+            <input
+              type="text"
+              id="console-path"
+              aria-label="Request path"
+              placeholder="/WhoAmI"
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void sendRequest();
+                }
+              }}
+            />
             <CopyButton value={`${method} ${path}`} label="Copy" title="Copy request line" toast={toast} />
             {sending ? (
-              <button className="btn btn-danger" id="console-send" type="button" onClick={cancelInFlight}>Cancel</button>
+              <button className="btn btn-danger" id="console-send" type="button" onClick={cancelInFlight}>
+                Cancel
+              </button>
             ) : (
-              <button className="btn btn-primary" id="console-send" type="button" onClick={() => void sendRequest()}>Send</button>
+              <button className="btn btn-primary" id="console-send" type="button" onClick={() => void sendRequest()}>
+                Send
+              </button>
             )}
           </div>
           <div className="console-bar-hint">
@@ -547,11 +597,23 @@ export function ConsoleTab(props: ConsoleTabProps) {
           <div className="console-request-tabs">
             <button type="button" className={`console-request-tab ${effectiveRequestTab === 'query' ? 'active' : ''} ${queryDupes.length ? 'has-warning' : ''}`} onClick={() => setRequestTab('query')}>
               Query{queryRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{queryRows.filter((row) => row.key.trim()).length}</span> : null}
-              {queryDupes.length ? <span className="console-request-tab-warn" aria-label="Duplicate keys">!</span> : null}
+              {queryDupes.length ? (
+                <span className="console-request-tab-warn" aria-label="Duplicate keys">
+                  !
+                </span>
+              ) : null}
             </button>
-            <button type="button" className={`console-request-tab ${effectiveRequestTab === 'headers' ? 'active' : ''} ${headerDupes.length ? 'has-warning' : ''}`} onClick={() => setRequestTab('headers')}>
+            <button
+              type="button"
+              className={`console-request-tab ${effectiveRequestTab === 'headers' ? 'active' : ''} ${headerDupes.length ? 'has-warning' : ''}`}
+              onClick={() => setRequestTab('headers')}
+            >
               Headers{headerRows.filter((row) => row.key.trim()).length ? <span className="console-request-tab-count">{headerRows.filter((row) => row.key.trim()).length}</span> : null}
-              {headerDupes.length ? <span className="console-request-tab-warn" aria-label="Duplicate keys">!</span> : null}
+              {headerDupes.length ? (
+                <span className="console-request-tab-warn" aria-label="Duplicate keys">
+                  !
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -561,52 +623,86 @@ export function ConsoleTab(props: ConsoleTabProps) {
               title={supportsBody ? '' : `${method} requests do not include a body.`}
             >
               Body{body.trim() && supportsBody ? <span className="console-request-tab-dot" aria-hidden="true" /> : null}
-              {bodyParseError ? <span className="console-request-tab-warn" aria-label="Invalid JSON">!</span> : null}
+              {bodyParseError ? (
+                <span className="console-request-tab-warn" aria-label="Invalid JSON">
+                  !
+                </span>
+              ) : null}
             </button>
           </div>
           <div className="console-request-panel">
             {effectiveRequestTab === 'query' ? (
               <div className="kv-list">
                 {queryDupes.length ? (
-                  <div className="console-field-warning">Duplicate parameter {queryDupes.length === 1 ? 'key' : 'keys'}: <code>{queryDupes.join(', ')}</code>. Only the last value per key is sent.</div>
+                  <div className="console-field-warning">
+                    Duplicate parameter {queryDupes.length === 1 ? 'key' : 'keys'}: <code>{queryDupes.join(', ')}</code>. Only the last value per key is sent.
+                  </div>
                 ) : null}
                 {queryRows.map((row, index) => {
                   const trimmed = row.key.trim();
                   const isDupe = trimmed && queryDupes.includes(trimmed);
                   return (
                     <div key={index} className={`kv-row ${isDupe ? 'kv-row-dupe' : ''}`}>
-                      <input aria-label={`Query key ${index + 1}`} placeholder="key" value={row.key} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-                      <input aria-label={`Query value ${index + 1}`} placeholder="value" value={row.value} onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setQueryRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                      <input
+                        aria-label={`Query key ${index + 1}`}
+                        placeholder="key"
+                        value={row.key}
+                        onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, key: event.target.value } : item)))}
+                      />
+                      <input
+                        aria-label={`Query value ${index + 1}`}
+                        placeholder="value"
+                        value={row.value}
+                        onChange={(event) => setQueryRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, value: event.target.value } : item)))}
+                      />
+                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setQueryRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                        ×
+                      </button>
                     </div>
                   );
                 })}
-                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setQueryRows((current) => [...current, { key: '', value: '' }])}>+ Add parameter</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setQueryRows((current) => [...current, { key: '', value: '' }])}>
+                  + Add parameter
+                </button>
               </div>
             ) : effectiveRequestTab === 'headers' ? (
               <div className="kv-list">
                 {headerDupes.length ? (
-                  <div className="console-field-warning">Duplicate header {headerDupes.length === 1 ? 'name' : 'names'}: <code>{headerDupes.join(', ')}</code>. Only the last value per name is sent.</div>
+                  <div className="console-field-warning">
+                    Duplicate header {headerDupes.length === 1 ? 'name' : 'names'}: <code>{headerDupes.join(', ')}</code>. Only the last value per name is sent.
+                  </div>
                 ) : null}
                 {headerRows.map((row, index) => {
                   const trimmed = row.key.trim();
                   const isDupe = trimmed && headerDupes.includes(trimmed);
                   return (
                     <div key={index} className={`kv-row ${isDupe ? 'kv-row-dupe' : ''}`}>
-                      <input aria-label={`Header name ${index + 1}`} placeholder="key" value={row.key} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-                      <input aria-label={`Header value ${index + 1}`} placeholder="value" value={row.value} onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setHeaderRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                      <input
+                        aria-label={`Header name ${index + 1}`}
+                        placeholder="key"
+                        value={row.key}
+                        onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, key: event.target.value } : item)))}
+                      />
+                      <input
+                        aria-label={`Header value ${index + 1}`}
+                        placeholder="value"
+                        value={row.value}
+                        onChange={(event) => setHeaderRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, value: event.target.value } : item)))}
+                      />
+                      <button type="button" aria-label="Remove row" className="condition-remove" onClick={() => setHeaderRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                        ×
+                      </button>
                     </div>
                   );
                 })}
-                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setHeaderRows((current) => [...current, { key: '', value: '' }])}>+ Add header</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setHeaderRows((current) => [...current, { key: '', value: '' }])}>
+                  + Add header
+                </button>
               </div>
             ) : (
               <div className="console-body-editor">
                 <textarea aria-label="Request body (JSON)" rows={8} placeholder='{ "key": "value" }' value={body} onChange={(event) => setBody(event.target.value)} />
-                {bodyParseError ? (
-                  <div className="console-field-error">Invalid JSON: {bodyParseError}</div>
-                ) : null}
+                {bodyParseError ? <div className="console-field-error">Invalid JSON: {bodyParseError}</div> : null}
               </div>
             )}
           </div>
@@ -614,7 +710,9 @@ export function ConsoleTab(props: ConsoleTabProps) {
 
         <div className="panel console-response-panel">
           <div className="console-response-header">
-            <h2>Response <span className={`console-status-badge ${response.ok ? 'success' : response.status === 'ERR' ? 'error' : ''}`}>{response.status || '—'}</span></h2>
+            <h2>
+              Response <span className={`console-status-badge ${response.ok ? 'success' : response.status === 'ERR' ? 'error' : ''}`}>{response.status || '—'}</span>
+            </h2>
             <div className="console-response-meta">
               {response.elapsed ? <span className="response-size">{response.elapsed}</span> : null}
               {response.size ? <span className="response-size">{response.size}</span> : null}
@@ -638,13 +736,11 @@ export function ConsoleTab(props: ConsoleTabProps) {
           ) : null}
           {response.truncated ? (
             <div className="console-response-warning">
-              <span className="console-response-warning-text">Response preview truncated. Showing {response.size}{response.originalSize ? ` of ${response.originalSize}` : ''}.</span>
-              <button
-                type="button"
-                className="btn btn-sm btn-secondary"
-                disabled={loadingFull || sending}
-                onClick={() => void sendRequest({ fullResponse: true })}
-              >
+              <span className="console-response-warning-text">
+                Response preview truncated. Showing {response.size}
+                {response.originalSize ? ` of ${response.originalSize}` : ''}.
+              </span>
+              <button type="button" className="btn btn-sm btn-secondary" disabled={loadingFull || sending} onClick={() => void sendRequest({ fullResponse: true })}>
                 {loadingFull ? 'Loading…' : 'Load full response'}
               </button>
             </div>
@@ -663,7 +759,9 @@ export function ConsoleTab(props: ConsoleTabProps) {
                   <span className="console-response-filter-count">
                     {filteredResponseBody.matches} match{filteredResponseBody.matches === 1 ? '' : 'es'}
                   </span>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResponseFilter('')}>Clear</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResponseFilter('')}>
+                    Clear
+                  </button>
                 </>
               ) : null}
             </div>
@@ -690,48 +788,58 @@ export function ConsoleTab(props: ConsoleTabProps) {
           </div>
           <div className="console-rail-list">
             {railTab === 'history' ? (
-              history.length ? history.slice(0, 20).map((entry, index) => {
-                const pinned = saved.some((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
-                return (
-                  <div key={index} className="history-item">
-                    <button
-                      type="button"
-                      className="history-item-trigger"
-                      onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}
-                      title={`Load ${entry.method} ${entry.path}`}
-                    >
-                      <div className="history-item-main">
-                        <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
-                        <span className="history-path">{entry.path}</span>
-                      </div>
-                      <div className="history-item-meta">
-                        <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
-                        <span className="history-time">{entry.elapsed}ms</span>
-                      </div>
-                    </button>
-                    <div className="history-item-actions">
+              history.length ? (
+                history.slice(0, 20).map((entry, index) => {
+                  const pinned = saved.some((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
+                  return (
+                    <div key={index} className="history-item">
                       <button
                         type="button"
-                        className={`pin-btn ${pinned ? 'pinned' : ''}`}
-                        title={pinned ? 'Unpin' : 'Pin to saved'}
-                        aria-label={pinned ? 'Unpin request' : 'Pin request'}
-                        onClick={() => togglePinHistory(entry)}
+                        className="history-item-trigger"
+                        onClick={() => {
+                          setApiKey(entry.api);
+                          setMethod(entry.method);
+                          setPath(entry.path);
+                        }}
+                        title={`Load ${entry.method} ${entry.path}`}
                       >
-                        <Icon name={pinned ? 'star-filled' : 'star'} size={14} />
+                        <div className="history-item-main">
+                          <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
+                          <span className="history-path">{entry.path}</span>
+                        </div>
+                        <div className="history-item-meta">
+                          <span className={`console-status-badge small ${entry.status >= 200 && entry.status < 300 ? 'success' : entry.status >= 400 ? 'error' : ''}`}>{entry.status || 'ERR'}</span>
+                          <span className="history-time">{entry.elapsed}ms</span>
+                        </div>
                       </button>
-                      <button
-                        type="button"
-                        className="pin-btn"
-                        title="Remove from history"
-                        aria-label="Remove from history"
-                        onClick={() => setHistory((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                      >×</button>
+                      <div className="history-item-actions">
+                        <button
+                          type="button"
+                          className={`pin-btn ${pinned ? 'pinned' : ''}`}
+                          title={pinned ? 'Unpin' : 'Pin to saved'}
+                          aria-label={pinned ? 'Unpin request' : 'Pin request'}
+                          onClick={() => togglePinHistory(entry)}
+                        >
+                          <Icon name={pinned ? 'star-filled' : 'star'} size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="pin-btn"
+                          title="Remove from history"
+                          aria-label="Remove from history"
+                          onClick={() => setHistory((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              }) : <EmptyState icon={<Icon name="reply" size={18} />} title="No requests yet" description="Send a request to see history." compact />
-            ) : (
-              saved.length ? saved.map((entry, index) => {
+                  );
+                })
+              ) : (
+                <EmptyState icon={<Icon name="reply" size={18} />} title="No requests yet" description="Send a request to see history." compact />
+              )
+            ) : saved.length ? (
+              saved.map((entry, index) => {
                 const isRenaming = renameIndex === index;
                 return (
                   <div key={index} className="saved-item">
@@ -746,8 +854,14 @@ export function ConsoleTab(props: ConsoleTabProps) {
                           placeholder={entry.path}
                           onChange={(event) => setRenameDraft(event.target.value)}
                           onKeyDown={(event) => {
-                            if (event.key === 'Enter') { event.preventDefault(); commitRename(index); }
-                            else if (event.key === 'Escape') { event.preventDefault(); setRenameIndex(null); setRenameDraft(''); }
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitRename(index);
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setRenameIndex(null);
+                              setRenameDraft('');
+                            }
                           }}
                           onBlur={() => commitRename(index)}
                         />
@@ -756,7 +870,11 @@ export function ConsoleTab(props: ConsoleTabProps) {
                       <button
                         type="button"
                         className="history-item-trigger saved-item-main"
-                        onClick={() => { setApiKey(entry.api); setMethod(entry.method); setPath(entry.path); }}
+                        onClick={() => {
+                          setApiKey(entry.api);
+                          setMethod(entry.method);
+                          setPath(entry.path);
+                        }}
                         title={`Load ${entry.method} ${entry.path}`}
                       >
                         <span className={`history-method ${entry.method.toLowerCase()}`}>{entry.method}</span>
@@ -770,7 +888,10 @@ export function ConsoleTab(props: ConsoleTabProps) {
                         className="pin-btn"
                         title={entry.name ? 'Rename' : 'Name this request'}
                         aria-label="Rename saved request"
-                        onClick={() => { setRenameIndex(index); setRenameDraft(entry.name || ''); }}
+                        onClick={() => {
+                          setRenameIndex(index);
+                          setRenameDraft(entry.name || '');
+                        }}
                       >
                         <Icon name="pencil" size={13} />
                       </button>
@@ -780,11 +901,15 @@ export function ConsoleTab(props: ConsoleTabProps) {
                         title="Unpin"
                         aria-label="Unpin saved request"
                         onClick={() => setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                      >✖</button>
+                      >
+                        ✖
+                      </button>
                     </div>
                   </div>
                 );
-              }) : <EmptyState icon={<Icon name="star" size={18} />} title="No saved requests" description="Pin requests from history to keep them here." compact />
+              })
+            ) : (
+              <EmptyState icon={<Icon name="star" size={18} />} title="No saved requests" description="Pin requests from history to keep them here." compact />
             )}
           </div>
         </div>

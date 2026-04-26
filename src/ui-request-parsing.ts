@@ -46,7 +46,7 @@ export function readLoginInput(value: unknown): OperationResult<LoginAccountInpu
     fallbackToDeviceCode: Boolean(value.fallbackToDeviceCode),
     clientSecretEnv: optionalString(value.clientSecretEnv),
     environmentVariable: optionalString(value.environmentVariable),
-    token: optionalString(value.token),
+    token: optionalString(value.token)
   });
 }
 
@@ -65,7 +65,7 @@ export function readAccountUpdateInput(name: string, value: unknown): OperationR
     accountUsername: optionalString(value.accountUsername),
     homeAccountId: optionalString(value.homeAccountId),
     localAccountId: optionalString(value.localAccountId),
-    tokenCacheKey: optionalString(value.tokenCacheKey),
+    tokenCacheKey: optionalString(value.tokenCacheKey)
   } as Account;
   if (kind === 'client-secret') (account as Extract<Account, { kind: 'client-secret' }>).clientSecretEnv = optionalString(value.clientSecretEnv) ?? '';
   if (kind === 'environment-token') (account as Extract<Account, { kind: 'environment-token' }>).environmentVariable = optionalString(value.environmentVariable) ?? '';
@@ -90,10 +90,7 @@ export function readEnvironmentInput(value: unknown): OperationResult<UiEnvironm
   return ok({ alias, url, account, displayName: optionalString(value.displayName), accessMode });
 }
 
-export function readApiRequestInput(
-  value: unknown,
-  defaultAllowInteractive: boolean,
-): OperationResult<UiApiRequestInput> {
+export function readApiRequestInput(value: unknown, defaultAllowInteractive: boolean): OperationResult<UiApiRequestInput> {
   if (!isRecord(value)) {
     return fail(createDiagnostic('error', 'INVALID_REQUEST_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
   }
@@ -115,11 +112,11 @@ export function readApiRequestInput(
     api,
     method: reqMethod,
     path,
-    query: isRecord(value.query) ? value.query as Record<string, string> : undefined,
-    headers: isRecord(value.headers) ? value.headers as Record<string, string> : undefined,
+    query: isRecord(value.query) ? (value.query as Record<string, string>) : undefined,
+    headers: isRecord(value.headers) ? (value.headers as Record<string, string>) : undefined,
     body: value.body,
     allowInteractive: value.allowInteractive === undefined ? defaultAllowInteractive : Boolean(value.allowInteractive),
-    readIntent: reqMethod === 'GET' || reqMethod === 'HEAD',
+    readIntent: reqMethod === 'GET' || reqMethod === 'HEAD'
   });
 }
 
@@ -147,7 +144,7 @@ export function readDataverseQuerySpec(value: unknown): OperationResult<Datavers
     top: readNumber(value.top),
     includeCount: value.includeCount === true,
     search: optionalString(value.search),
-    rawPath,
+    rawPath
   });
 }
 
@@ -173,7 +170,7 @@ export function readDataverseCreateRecordInput(value: unknown): OperationResult<
     entitySetName,
     logicalName: optionalString(value.logicalName),
     primaryIdAttribute: optionalString(value.primaryIdAttribute),
-    body,
+    body
   });
 }
 
@@ -201,11 +198,11 @@ export function readFetchXmlSpec(value: unknown): OperationResult<FetchXmlSpec> 
     conditions: readArrayOfRecords(value.conditions).map((condition) => ({
       attribute: optionalString(condition.attribute) ?? '',
       operator: optionalString(condition.operator) ?? '',
-      value: optionalString(condition.value),
+      value: optionalString(condition.value)
     })),
     orders: readArrayOfRecords(value.orders).map((order) => ({
       attribute: optionalString(order.attribute) ?? '',
-      descending: order.descending === true,
+      descending: order.descending === true
     })),
     filterType: readFilterType(value.filterType),
     linkEntities: readArrayOfRecords(value.linkEntities).map((link) => ({
@@ -218,9 +215,9 @@ export function readFetchXmlSpec(value: unknown): OperationResult<FetchXmlSpec> 
       conditions: readArrayOfRecords(link.conditions).map((condition) => ({
         attribute: optionalString(condition.attribute) ?? '',
         operator: optionalString(condition.operator) ?? '',
-        value: optionalString(condition.value),
-      })),
-    })),
+        value: optionalString(condition.value)
+      }))
+    }))
   });
 }
 
@@ -236,7 +233,7 @@ export function readFetchXmlLanguageRequest(value: unknown): OperationResult<Fet
     environmentAlias: optionalString(value.environmentAlias ?? value.environment),
     source: typeof value.source === 'string' ? value.source : '',
     cursor,
-    rootEntityName: optionalString(value.rootEntityName ?? value.entity),
+    rootEntityName: optionalString(value.rootEntityName ?? value.entity)
   });
 }
 
@@ -250,14 +247,12 @@ export function readFlowLanguageRequest(value: unknown): OperationResult<FlowLan
   }
   return ok({
     source: typeof value.source === 'string' ? value.source : '',
-    cursor,
+    cursor
   });
 }
 
 export function readAccountKind(value: unknown): LoginAccountInput['kind'] | undefined {
-  return value === 'user' || value === 'device-code' || value === 'client-secret' || value === 'environment-token' || value === 'static-token'
-    ? value
-    : undefined;
+  return value === 'user' || value === 'device-code' || value === 'client-secret' || value === 'environment-token' || value === 'static-token' ? value : undefined;
 }
 
 export function readPrompt(value: string | undefined): LoginAccountInput['prompt'] | undefined {
@@ -297,7 +292,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readCsv(value: unknown): string[] | undefined {
   const text = optionalString(value);
   if (!text) return undefined;
-  const items = text.split(',').map((item) => item.trim()).filter(Boolean);
+  const items = text
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
   return items.length ? items : undefined;
 }
 

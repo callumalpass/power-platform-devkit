@@ -135,20 +135,21 @@ interface ResolvedCanvasAuthoringSession {
   account: string;
 }
 
-export async function startCanvasAuthoringSession(
-  input: StartCanvasAuthoringSessionInput,
-  configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<StartCanvasAuthoringSessionResult>> {
+export async function startCanvasAuthoringSession(input: StartCanvasAuthoringSessionInput, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<StartCanvasAuthoringSessionResult>> {
   const loginOptions = { allowInteractive: input.allowInteractive, onDeviceCode: input.onDeviceCode, terminalPrompts: !input.onDeviceCode };
-  const clusterResult = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'canvas-authoring',
-    path: '/gateway/cluster',
-    method: 'GET',
-    responseType: 'json',
-    readIntent: true,
-  }, configOptions, loginOptions);
+  const clusterResult = await executeApiRequest(
+    {
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'canvas-authoring',
+      path: '/gateway/cluster',
+      method: 'GET',
+      responseType: 'json',
+      readIntent: true
+    },
+    configOptions,
+    loginOptions
+  );
   if (!clusterResult.success || !clusterResult.data) return fail(...clusterResult.diagnostics);
 
   const cluster = asClusterInfo(clusterResult.data.response);
@@ -162,72 +163,80 @@ export async function startCanvasAuthoringSession(
   let startPath = buildCanvasAuthoringSessionStartUrl(resolvedAuthoringBaseUrl, environmentId, input.cadence);
   const sessionId = randomUUID();
   const startRequestId = randomUUID();
-  let startResult = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'canvas-authoring',
-    path: startPath,
-    method: 'POST',
-    headers: {
-      'x-ms-client-session-id': sessionId,
-      'x-ms-client-request-id': startRequestId,
-      'x-ms-environment-name': environmentId,
-      'x-ms-environment-update-cadence': input.cadence ?? 'Frequent',
-      'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${appId}`,
+  let startResult = await executeApiRequest(
+    {
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'canvas-authoring',
+      path: startPath,
+      method: 'POST',
+      headers: {
+        'x-ms-client-session-id': sessionId,
+        'x-ms-client-request-id': startRequestId,
+        'x-ms-environment-name': environmentId,
+        'x-ms-environment-update-cadence': input.cadence ?? 'Frequent',
+        'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${appId}`
+      },
+      responseType: 'json',
+      readIntent: true
     },
-    responseType: 'json',
-    readIntent: true,
-  }, configOptions, loginOptions);
+    configOptions,
+    loginOptions
+  );
   if (!startResult.success) {
     const redirectedStartPath = readCanvasAuthoringRedirectionUrl(startResult.diagnostics);
     if (redirectedStartPath) {
       startPath = redirectedStartPath;
       resolvedAuthoringBaseUrl = new URL(redirectedStartPath).origin;
-      startResult = await executeApiRequest({
-        environmentAlias: input.environmentAlias,
-        accountName: input.accountName,
-        api: 'canvas-authoring',
-        path: startPath,
-        method: 'POST',
-        headers: {
-          'x-ms-client-session-id': sessionId,
-          'x-ms-client-request-id': startRequestId,
-          'x-ms-environment-name': environmentId,
-          'x-ms-environment-update-cadence': input.cadence ?? 'Frequent',
-          'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${appId}`,
+      startResult = await executeApiRequest(
+        {
+          environmentAlias: input.environmentAlias,
+          accountName: input.accountName,
+          api: 'canvas-authoring',
+          path: startPath,
+          method: 'POST',
+          headers: {
+            'x-ms-client-session-id': sessionId,
+            'x-ms-client-request-id': startRequestId,
+            'x-ms-environment-name': environmentId,
+            'x-ms-environment-update-cadence': input.cadence ?? 'Frequent',
+            'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${appId}`
+          },
+          responseType: 'json',
+          readIntent: true
         },
-        responseType: 'json',
-        readIntent: true,
-      }, configOptions, loginOptions);
+        configOptions,
+        loginOptions
+      );
     }
   }
   if (!startResult.success || !startResult.data) return fail(...startResult.diagnostics);
 
   const sessionState = readStringProperty(startResult.data.response, 'sessionState');
-  const webAuthoringVersion = readStringProperty(readObjectProperty(startResult.data.response, 'clientConfig'), 'webAuthoringVersion')
-    ?? readStringProperty(startResult.data.response, 'authoringHostVersion');
+  const webAuthoringVersion =
+    readStringProperty(readObjectProperty(startResult.data.response, 'clientConfig'), 'webAuthoringVersion') ?? readStringProperty(startResult.data.response, 'authoringHostVersion');
 
-  return ok({
-    appId,
-    environmentId,
-    tenantId,
-    account: startResult.data.request.accountName,
-    sessionId,
-    startRequestId,
-    cluster,
-    authoringBaseUrl: resolvedAuthoringBaseUrl,
-    webAuthoringVersion,
-    sessionState,
-    startPath: new URL(startPath).pathname,
-    startStatus: startResult.data.status,
-    session: input.raw ? startResult.data.response : redactCanvasAuthoringSession(startResult.data.response),
-  }, [...clusterResult.diagnostics, ...startResult.diagnostics]);
+  return ok(
+    {
+      appId,
+      environmentId,
+      tenantId,
+      account: startResult.data.request.accountName,
+      sessionId,
+      startRequestId,
+      cluster,
+      authoringBaseUrl: resolvedAuthoringBaseUrl,
+      webAuthoringVersion,
+      sessionState,
+      startPath: new URL(startPath).pathname,
+      startStatus: startResult.data.status,
+      session: input.raw ? startResult.data.response : redactCanvasAuthoringSession(startResult.data.response)
+    },
+    [...clusterResult.diagnostics, ...startResult.diagnostics]
+  );
 }
 
-export async function invokeCanvasAuthoring(
-  input: InvokeCanvasAuthoringInput,
-  configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<InvokeCanvasAuthoringResult>> {
+export async function invokeCanvasAuthoring(input: InvokeCanvasAuthoringInput, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<InvokeCanvasAuthoringResult>> {
   const session = await resolveCanvasAuthoringSession(input, configOptions);
   if (!session.success || !session.data) return fail(...session.diagnostics);
   const requestId = randomUUID();
@@ -236,61 +245,68 @@ export async function invokeCanvasAuthoring(
   const envelope = buildInvokeEnvelope(input, session.data, requestId, sequence, confirmation);
 
   const url = buildInvokeUrl(session.data);
-  const result = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'canvas-authoring',
-    path: url,
-    method: 'POST',
-    headers: {
-      'x-ms-client-session-id': session.data.sessionId,
-      'x-ms-session-state': session.data.sessionState,
-      'x-ms-client-request-id': requestId,
-      'x-ms-reliablewiremeta': envelope.reliableWireMetaHeader,
-      'x-ms-correlation-request-id': session.data.sessionId,
-      'x-ms-domain-name': session.data.authoringBaseUrl,
-      'x-ms-environment-name': session.data.environmentId,
-      'x-ms-client-tenant-id': session.data.tenantId ?? '',
-      'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.data.appId}`,
+  const result = await executeApiRequest(
+    {
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'canvas-authoring',
+      path: url,
+      method: 'POST',
+      headers: {
+        'x-ms-client-session-id': session.data.sessionId,
+        'x-ms-session-state': session.data.sessionState,
+        'x-ms-client-request-id': requestId,
+        'x-ms-reliablewiremeta': envelope.reliableWireMetaHeader,
+        'x-ms-correlation-request-id': session.data.sessionId,
+        'x-ms-domain-name': session.data.authoringBaseUrl,
+        'x-ms-environment-name': session.data.environmentId,
+        'x-ms-client-tenant-id': session.data.tenantId ?? '',
+        'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.data.appId}`
+      },
+      body: envelope.body,
+      responseType: 'json'
     },
-    body: envelope.body,
-    responseType: 'json',
-  }, configOptions, { allowInteractive: input.allowInteractive });
+    configOptions,
+    { allowInteractive: input.allowInteractive }
+  );
   if (!result.success || !result.data) return fail(...result.diagnostics);
 
-  return ok({
-    appId: session.data.appId,
-    environmentId: session.data.environmentId,
-    tenantId: session.data.tenantId,
-    account: session.data.account,
-    sessionId: session.data.sessionId,
-    requestId,
-    url,
-    invoke: {
-      className: envelope.className,
-      oid: input.oid,
-      methodName: envelope.methodName,
-      payloadKey: envelope.payloadKey,
+  return ok(
+    {
+      appId: session.data.appId,
+      environmentId: session.data.environmentId,
+      tenantId: session.data.tenantId,
+      account: session.data.account,
+      sessionId: session.data.sessionId,
+      requestId,
+      url,
+      invoke: {
+        className: envelope.className,
+        oid: input.oid,
+        methodName: envelope.methodName,
+        payloadKey: envelope.payloadKey
+      },
+      status: result.data.status,
+      response: result.data.response,
+      headers: result.data.headers
     },
-    status: result.data.status,
-    response: result.data.response,
-    headers: result.data.headers,
-  }, [...session.diagnostics, ...result.diagnostics]);
+    [...session.diagnostics, ...result.diagnostics]
+  );
 }
 
-export async function rpcCanvasAuthoring(
-  input: InvokeCanvasAuthoringInput & { timeoutMs?: number },
-  configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<RpcCanvasAuthoringResult>> {
+export async function rpcCanvasAuthoring(input: InvokeCanvasAuthoringInput & { timeoutMs?: number }, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<RpcCanvasAuthoringResult>> {
   const session = await resolveCanvasAuthoringSession(input, configOptions);
   if (!session.success || !session.data) return fail(...session.diagnostics);
 
-  const token = await getEnvironmentToken({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'canvas-authoring',
-    allowInteractive: input.allowInteractive,
-  }, configOptions);
+  const token = await getEnvironmentToken(
+    {
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'canvas-authoring',
+      allowInteractive: input.allowInteractive
+    },
+    configOptions
+  );
   if (!token.success || !token.data) return fail(...token.diagnostics);
 
   const requestId = randomUUID();
@@ -303,49 +319,52 @@ export async function rpcCanvasAuthoring(
   if (!signalR.success || !signalR.data) return fail(...signalR.diagnostics);
 
   const rpcResponse = signalR.data.rpcResponse;
-  return ok({
-    appId: session.data.appId,
-    environmentId: session.data.environmentId,
-    tenantId: session.data.tenantId,
-    account: session.data.account,
-    sessionId: session.data.sessionId,
-    requestId,
-    url: buildInvokeUrl(session.data),
-    invoke: {
-      className: envelope.className,
-      oid: input.oid,
-      methodName: envelope.methodName,
-      payloadKey: envelope.payloadKey,
+  return ok(
+    {
+      appId: session.data.appId,
+      environmentId: session.data.environmentId,
+      tenantId: session.data.tenantId,
+      account: session.data.account,
+      sessionId: session.data.sessionId,
+      requestId,
+      url: buildInvokeUrl(session.data),
+      invoke: {
+        className: envelope.className,
+        oid: input.oid,
+        methodName: envelope.methodName,
+        payloadKey: envelope.payloadKey
+      },
+      status: readNumberProperty(rpcResponse, 'status') ?? 0,
+      response: undefined,
+      headers: {},
+      signalR: {
+        negotiateUrl: signalR.data.negotiateUrl,
+        websocketUrl: redactAccessToken(signalR.data.websocketUrl),
+        timeoutMs
+      },
+      rpcResponse,
+      decodedResult: decodeRpcResult(rpcResponse)
     },
-    status: readNumberProperty(rpcResponse, 'status') ?? 0,
-    response: undefined,
-    headers: {},
-    signalR: {
-      negotiateUrl: signalR.data.negotiateUrl,
-      websocketUrl: redactAccessToken(signalR.data.websocketUrl),
-      timeoutMs,
-    },
-    rpcResponse,
-    decodedResult: decodeRpcResult(rpcResponse),
-  }, [...session.diagnostics, ...token.diagnostics, ...signalR.diagnostics]);
+    [...session.diagnostics, ...token.diagnostics, ...signalR.diagnostics]
+  );
 }
 
-export async function requestCanvasAuthoringSession(
-  input: RequestCanvasAuthoringSessionInput,
-  configOptions: ConfigStoreOptions = {},
-): Promise<OperationResult<RequestCanvasAuthoringSessionResult>> {
+export async function requestCanvasAuthoringSession(input: RequestCanvasAuthoringSessionInput, configOptions: ConfigStoreOptions = {}): Promise<OperationResult<RequestCanvasAuthoringSessionResult>> {
   const session = await resolveCanvasAuthoringSession(input, configOptions);
   if (!session.success || !session.data) return fail(...session.diagnostics);
 
   let heldSignalR: HeldSignalRConnection | undefined;
   const extraDiagnostics = [...session.diagnostics];
   if (input.keepSignalRAlive) {
-    const token = await getEnvironmentToken({
-      environmentAlias: input.environmentAlias,
-      accountName: input.accountName ?? session.data.account,
-      api: 'canvas-authoring',
-      allowInteractive: input.allowInteractive,
-    }, configOptions);
+    const token = await getEnvironmentToken(
+      {
+        environmentAlias: input.environmentAlias,
+        accountName: input.accountName ?? session.data.account,
+        api: 'canvas-authoring',
+        allowInteractive: input.allowInteractive
+      },
+      configOptions
+    );
     if (!token.success || !token.data) return fail(...session.diagnostics, ...token.diagnostics);
     extraDiagnostics.push(...token.diagnostics);
     const connection = await openSignalRConnection(session.data, token.data, input.signalRTimeoutMs ?? 30_000);
@@ -361,42 +380,49 @@ export async function requestCanvasAuthoringSession(
   const method = (input.method ?? 'GET').toUpperCase();
   const url = buildVersionedAuthoringUrl(session.data, input.path);
   try {
-    const result = await executeApiRequest({
-      environmentAlias: input.environmentAlias,
-      accountName: input.accountName ?? session.data.account,
-      api: 'canvas-authoring',
-      path: url,
-      method,
-      headers: {
-        'x-ms-client-session-id': session.data.sessionId,
-        'x-ms-session-state': session.data.sessionState,
-        'x-ms-client-request-id': requestId,
-        'x-ms-correlation-request-id': session.data.sessionId,
-        'x-ms-domain-name': session.data.authoringBaseUrl,
-        'x-ms-environment-name': session.data.environmentId,
-        'x-ms-client-tenant-id': session.data.tenantId ?? '',
-        'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.data.appId}`,
+    const result = await executeApiRequest(
+      {
+        environmentAlias: input.environmentAlias,
+        accountName: input.accountName ?? session.data.account,
+        api: 'canvas-authoring',
+        path: url,
+        method,
+        headers: {
+          'x-ms-client-session-id': session.data.sessionId,
+          'x-ms-session-state': session.data.sessionState,
+          'x-ms-client-request-id': requestId,
+          'x-ms-correlation-request-id': session.data.sessionId,
+          'x-ms-domain-name': session.data.authoringBaseUrl,
+          'x-ms-environment-name': session.data.environmentId,
+          'x-ms-client-tenant-id': session.data.tenantId ?? '',
+          'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.data.appId}`
+        },
+        body: input.body,
+        rawBody: input.rawBody,
+        responseType: input.responseType ?? 'json',
+        readIntent: input.readIntent ?? method === 'GET'
       },
-      body: input.body,
-      rawBody: input.rawBody,
-      responseType: input.responseType ?? 'json',
-      readIntent: input.readIntent ?? method === 'GET',
-    }, configOptions, { allowInteractive: input.allowInteractive });
+      configOptions,
+      { allowInteractive: input.allowInteractive }
+    );
     if (!result.success || !result.data) return fail(...extraDiagnostics, ...result.diagnostics);
 
-    return ok({
-      appId: session.data.appId,
-      environmentId: session.data.environmentId,
-      tenantId: session.data.tenantId,
-      account: session.data.account,
-      sessionId: session.data.sessionId,
-      requestId,
-      url,
-      method,
-      status: result.data.status,
-      response: result.data.response,
-      headers: result.data.headers,
-    }, [...extraDiagnostics, ...result.diagnostics]);
+    return ok(
+      {
+        appId: session.data.appId,
+        environmentId: session.data.environmentId,
+        tenantId: session.data.tenantId,
+        account: session.data.account,
+        sessionId: session.data.sessionId,
+        requestId,
+        url,
+        method,
+        status: result.data.status,
+        response: result.data.response,
+        headers: result.data.headers
+      },
+      [...extraDiagnostics, ...result.diagnostics]
+    );
   } finally {
     heldSignalR?.close();
   }
@@ -408,17 +434,16 @@ export function normalizeCanvasAppId(value: string): string {
   return match?.[1] ?? decoded;
 }
 
-export function buildCanvasAuthoringBaseUrl(
-  cluster: CanvasAuthoringClusterInfo,
-  clusterCategoryOverride?: string,
-): OperationResult<string> {
+export function buildCanvasAuthoringBaseUrl(cluster: CanvasAuthoringClusterInfo, clusterCategoryOverride?: string): OperationResult<string> {
   const geoName = typeof cluster.geoName === 'string' ? cluster.geoName.toLowerCase() : undefined;
   const clusterNumber = cluster.clusterNumber === undefined ? undefined : String(cluster.clusterNumber);
   if (!geoName || !clusterNumber) {
-    return fail(createDiagnostic('error', 'CANVAS_AUTHORING_CLUSTER_INCOMPLETE', 'Canvas authoring cluster discovery did not return geoName and clusterNumber.', {
-      source: 'pp/canvas-authoring',
-      detail: JSON.stringify(cluster),
-    }));
+    return fail(
+      createDiagnostic('error', 'CANVAS_AUTHORING_CLUSTER_INCOMPLETE', 'Canvas authoring cluster discovery did not return geoName and clusterNumber.', {
+        source: 'pp/canvas-authoring',
+        detail: JSON.stringify(cluster)
+      })
+    );
   }
   const clusterCategory = normalizeClusterCategory(clusterCategoryOverride ?? cluster.clusterCategory ?? cluster.environment);
   const authoringGeoName = authoringGeoNameFromClusterName(cluster.clusterName, clusterNumber) ?? geoName;
@@ -433,13 +458,13 @@ export function buildCanvasAuthoringSessionStartUrl(baseUrl: string, environment
 }
 
 function asClusterInfo(value: unknown): CanvasAuthoringClusterInfo {
-  return value && typeof value === 'object' ? value as CanvasAuthoringClusterInfo : {};
+  return value && typeof value === 'object' ? (value as CanvasAuthoringClusterInfo) : {};
 }
 
 function readObjectProperty(value: unknown, key: string): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const entry = (value as Record<string, unknown>)[key];
-  return entry && typeof entry === 'object' ? entry as Record<string, unknown> : undefined;
+  return entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : undefined;
 }
 
 function readStringProperty(value: unknown, key: string): string | undefined {
@@ -467,7 +492,7 @@ async function resolveCanvasAuthoringSession(
     clusterCategory?: string;
     allowInteractive?: boolean;
   },
-  configOptions: ConfigStoreOptions,
+  configOptions: ConfigStoreOptions
 ): Promise<OperationResult<ResolvedCanvasAuthoringSession>> {
   const appId = normalizeCanvasAppId(input.appId);
   let sessionId = input.sessionId;
@@ -479,10 +504,8 @@ async function resolveCanvasAuthoringSession(
   let account: string | undefined;
 
   if (!sessionId && !sessionState && !authoringBaseUrl && !webAuthoringVersion) {
-    const existing = (await loadCanvasSessionsRaw(configOptions)).find((session) =>
-      session.appId === appId
-      && session.environmentAlias === input.environmentAlias
-      && (!input.accountName || session.account === input.accountName)
+    const existing = (await loadCanvasSessionsRaw(configOptions)).find(
+      (session) => session.appId === appId && session.environmentAlias === input.environmentAlias && (!input.accountName || session.account === input.accountName)
     );
     if (existing) {
       sessionId = existing.sessionId;
@@ -495,15 +518,18 @@ async function resolveCanvasAuthoringSession(
   }
 
   if (!sessionId || !sessionState || !authoringBaseUrl || !webAuthoringVersion) {
-    const sessionResult = await startCanvasAuthoringSession({
-      environmentAlias: input.environmentAlias,
-      accountName: input.accountName,
-      appId,
-      cadence: input.cadence,
-      clusterCategory: input.clusterCategory,
-      raw: true,
-      allowInteractive: input.allowInteractive,
-    }, configOptions);
+    const sessionResult = await startCanvasAuthoringSession(
+      {
+        environmentAlias: input.environmentAlias,
+        accountName: input.accountName,
+        appId,
+        cadence: input.cadence,
+        clusterCategory: input.clusterCategory,
+        raw: true,
+        allowInteractive: input.allowInteractive
+      },
+      configOptions
+    );
     if (!sessionResult.success || !sessionResult.data) return fail(...sessionResult.diagnostics);
     sessionId = sessionResult.data.sessionId;
     authoringBaseUrl = sessionResult.data.authoringBaseUrl;
@@ -511,48 +537,53 @@ async function resolveCanvasAuthoringSession(
     tenantId = sessionResult.data.tenantId;
     account = sessionResult.data.account;
     sessionState = sessionResult.data.sessionState ?? readStringProperty(sessionResult.data.session, 'sessionState');
-    webAuthoringVersion = sessionResult.data.webAuthoringVersion ?? readStringProperty(readObjectProperty(sessionResult.data.session, 'clientConfig'), 'webAuthoringVersion')
-      ?? readStringProperty(sessionResult.data.session, 'authoringHostVersion');
+    webAuthoringVersion =
+      sessionResult.data.webAuthoringVersion ??
+      readStringProperty(readObjectProperty(sessionResult.data.session, 'clientConfig'), 'webAuthoringVersion') ??
+      readStringProperty(sessionResult.data.session, 'authoringHostVersion');
     if (!sessionState || !webAuthoringVersion) {
-      return fail(createDiagnostic('error', 'CANVAS_AUTHORING_SESSION_INCOMPLETE', 'Canvas authoring session did not return sessionState and webAuthoringVersion.', {
-        source: 'pp/canvas-authoring',
-      }));
+      return fail(
+        createDiagnostic('error', 'CANVAS_AUTHORING_SESSION_INCOMPLETE', 'Canvas authoring session did not return sessionState and webAuthoringVersion.', {
+          source: 'pp/canvas-authoring'
+        })
+      );
     }
   }
 
-  const environmentResult = await executeApiRequest({
-    environmentAlias: input.environmentAlias,
-    accountName: input.accountName,
-    api: 'canvas-authoring',
-    path: '/gateway/cluster',
-    method: 'GET',
-    responseType: 'json',
-    readIntent: true,
-  }, configOptions, { allowInteractive: input.allowInteractive });
+  const environmentResult = await executeApiRequest(
+    {
+      environmentAlias: input.environmentAlias,
+      accountName: input.accountName,
+      api: 'canvas-authoring',
+      path: '/gateway/cluster',
+      method: 'GET',
+      responseType: 'json',
+      readIntent: true
+    },
+    configOptions,
+    { allowInteractive: input.allowInteractive }
+  );
   if (!environmentResult.success || !environmentResult.data) return fail(...environmentResult.diagnostics);
   environmentId ??= environmentResult.data.request.environment!.makerEnvironmentId;
   tenantId ??= environmentResult.data.request.environment!.tenantId;
   account ??= environmentResult.data.request.accountName;
 
-  return ok({
-    appId,
-    sessionId,
-    sessionState,
-    authoringBaseUrl,
-    webAuthoringVersion,
-    environmentId,
-    tenantId,
-    account,
-  }, environmentResult.diagnostics);
+  return ok(
+    {
+      appId,
+      sessionId,
+      sessionState,
+      authoringBaseUrl,
+      webAuthoringVersion,
+      environmentId,
+      tenantId,
+      account
+    },
+    environmentResult.diagnostics
+  );
 }
 
-function buildInvokeEnvelope(
-  input: InvokeCanvasAuthoringInput,
-  session: ResolvedCanvasAuthoringSession,
-  requestId: string,
-  sequence: number,
-  confirmation: number,
-) {
+function buildInvokeEnvelope(input: InvokeCanvasAuthoringInput, session: ResolvedCanvasAuthoringSession, requestId: string, sequence: number, confirmation: number) {
   const reliableWireMetaPayload = JSON.stringify({ sequence, confirmation });
   const className = input.className.toLowerCase();
   const methodName = input.methodName.toLowerCase();
@@ -575,19 +606,19 @@ function buildInvokeEnvelope(
         'x-ms-session-state': session.sessionState,
         'x-ms-environment-name': session.environmentId,
         'x-ms-client-tenant-id': session.tenantId,
-        'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.appId}`,
+        'x-ms-app-name': `/providers/Microsoft.PowerApps/apps/${session.appId}`
       },
       executionParameters: {
         customLoggingDimensions: {
           correlationResponseId: randomUUID(),
           classNames: className,
-          methodNames: methodName,
-        },
+          methodNames: methodName
+        }
       },
       payload: JSON.stringify({
-        [payloadKey]: input.payload ?? {},
-      }),
-    },
+        [payloadKey]: input.payload ?? {}
+      })
+    }
   };
 }
 
@@ -609,18 +640,21 @@ async function invokeViaSignalR(
   accessToken: string,
   body: unknown,
   requestId: string,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<OperationResult<{ negotiateUrl: string; websocketUrl: string; rpcResponse: unknown }>> {
   const connection = await openSignalRConnection(session, accessToken, timeoutMs);
   if (!connection.success || !connection.data) return fail(...connection.diagnostics);
   const rpcResponse = await sendSignalRInvoke(connection.data.socket, requestId, body, timeoutMs);
   connection.data.close();
   if (!rpcResponse.success || !rpcResponse.data) return fail(...rpcResponse.diagnostics);
-  return ok({
-    negotiateUrl: connection.data.negotiateUrl,
-    websocketUrl: connection.data.websocketUrl,
-    rpcResponse: rpcResponse.data,
-  }, connection.diagnostics);
+  return ok(
+    {
+      negotiateUrl: connection.data.negotiateUrl,
+      websocketUrl: connection.data.websocketUrl,
+      rpcResponse: rpcResponse.data
+    },
+    connection.diagnostics
+  );
 }
 
 interface HeldSignalRConnection {
@@ -630,11 +664,7 @@ interface HeldSignalRConnection {
   close: () => void;
 }
 
-async function openSignalRConnection(
-  session: ResolvedCanvasAuthoringSession,
-  accessToken: string,
-  timeoutMs: number,
-): Promise<OperationResult<HeldSignalRConnection>> {
+async function openSignalRConnection(session: ResolvedCanvasAuthoringSession, accessToken: string, timeoutMs: number): Promise<OperationResult<HeldSignalRConnection>> {
   const hubPath = `/${session.webAuthoringVersion.replace(/^\/+/, '')}/api/signalr/diagnosticshub`;
   const negotiateUrl = new URL(`${hubPath}/negotiate`, session.authoringBaseUrl);
   negotiateUrl.searchParams.set('negotiateVersion', '1');
@@ -644,17 +674,19 @@ async function openSignalRConnection(
       authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
       'x-ms-client-session-id': session.sessionId,
-      'x-ms-session-state': session.sessionState,
+      'x-ms-session-state': session.sessionState
     },
-    body: '{}',
+    body: '{}'
   });
   if (!negotiateResponse.ok) {
-    return fail(createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_NEGOTIATE_FAILED', `SignalR negotiate returned ${negotiateResponse.status}.`, {
-      source: 'pp/canvas-authoring',
-      detail: await negotiateResponse.text(),
-    }));
+    return fail(
+      createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_NEGOTIATE_FAILED', `SignalR negotiate returned ${negotiateResponse.status}.`, {
+        source: 'pp/canvas-authoring',
+        detail: await negotiateResponse.text()
+      })
+    );
   }
-  const negotiate = await negotiateResponse.json() as { url?: string; accessToken?: string; connectionToken?: string; connectionId?: string };
+  const negotiate = (await negotiateResponse.json()) as { url?: string; accessToken?: string; connectionToken?: string; connectionId?: string };
   const websocketUrl = buildSignalRWebsocketUrl(session, negotiate, accessToken);
   const connection = await connectSignalRWebsocket(websocketUrl, timeoutMs);
   if (!connection.success || !connection.data) return fail(...connection.diagnostics);
@@ -669,18 +701,16 @@ async function openSignalRConnection(
       } catch {
         // Ignore close failures while releasing a best-effort SignalR connection.
       }
-    },
+    }
   });
 }
 
 function buildSignalRWebsocketUrl(
   session: ResolvedCanvasAuthoringSession,
   negotiate: { url?: string; accessToken?: string; connectionToken?: string; connectionId?: string },
-  accessToken: string,
+  accessToken: string
 ): string {
-  const url = negotiate.url
-    ? new URL(negotiate.url)
-    : new URL(`/${session.webAuthoringVersion.replace(/^\/+/, '')}/api/signalr/diagnosticshub`, session.authoringBaseUrl);
+  const url = negotiate.url ? new URL(negotiate.url) : new URL(`/${session.webAuthoringVersion.replace(/^\/+/, '')}/api/signalr/diagnosticshub`, session.authoringBaseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('x-ms-client-session-id', session.sessionId);
   url.searchParams.set('x-ms-session-state', session.sessionState);
@@ -690,17 +720,18 @@ function buildSignalRWebsocketUrl(
   return url.toString();
 }
 
-function connectSignalRWebsocket(
-  websocketUrl: string,
-  timeoutMs: number,
-): Promise<OperationResult<WebSocket>> {
+function connectSignalRWebsocket(websocketUrl: string, timeoutMs: number): Promise<OperationResult<WebSocket>> {
   return new Promise((resolve) => {
     const socket = new WebSocket(websocketUrl);
     const timeout = setTimeout(() => {
       cleanup();
-      resolve(fail(createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_TIMEOUT', `Timed out waiting ${timeoutMs}ms for SignalR connection.`, {
-        source: 'pp/canvas-authoring',
-      })));
+      resolve(
+        fail(
+          createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_TIMEOUT', `Timed out waiting ${timeoutMs}ms for SignalR connection.`, {
+            source: 'pp/canvas-authoring'
+          })
+        )
+      );
     }, timeoutMs);
     let settled = false;
 
@@ -722,9 +753,13 @@ function connectSignalRWebsocket(
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(fail(createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_ERROR', 'SignalR WebSocket failed.', {
-        source: 'pp/canvas-authoring',
-      })));
+      resolve(
+        fail(
+          createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_ERROR', 'SignalR WebSocket failed.', {
+            source: 'pp/canvas-authoring'
+          })
+        )
+      );
     };
 
     socket.addEventListener('open', handleOpen);
@@ -732,18 +767,17 @@ function connectSignalRWebsocket(
   });
 }
 
-function sendSignalRInvoke(
-  socket: WebSocket,
-  requestId: string,
-  body: unknown,
-  timeoutMs: number,
-): Promise<OperationResult<unknown>> {
+function sendSignalRInvoke(socket: WebSocket, requestId: string, body: unknown, timeoutMs: number): Promise<OperationResult<unknown>> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       cleanup();
-      resolve(fail(createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_TIMEOUT', `Timed out waiting ${timeoutMs}ms for SignalR RPC response ${requestId}.`, {
-        source: 'pp/canvas-authoring',
-      })));
+      resolve(
+        fail(
+          createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_TIMEOUT', `Timed out waiting ${timeoutMs}ms for SignalR RPC response ${requestId}.`, {
+            source: 'pp/canvas-authoring'
+          })
+        )
+      );
     }, timeoutMs);
 
     const cleanup = () => {
@@ -754,9 +788,13 @@ function sendSignalRInvoke(
 
     const handleError = () => {
       cleanup();
-      resolve(fail(createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_ERROR', 'SignalR WebSocket failed.', {
-        source: 'pp/canvas-authoring',
-      })));
+      resolve(
+        fail(
+          createDiagnostic('error', 'CANVAS_AUTHORING_SIGNALR_ERROR', 'SignalR WebSocket failed.', {
+            source: 'pp/canvas-authoring'
+          })
+        )
+      );
     };
 
     const handleMessage = (event: MessageEvent) => {
@@ -779,20 +817,22 @@ function sendSignalRInvoke(
   });
 }
 
-async function sendSignalRKeepAlive(
-  session: ResolvedCanvasAuthoringSession,
-  socket: WebSocket,
-  timeoutMs: number,
-): Promise<OperationResult<unknown>> {
+async function sendSignalRKeepAlive(session: ResolvedCanvasAuthoringSession, socket: WebSocket, timeoutMs: number): Promise<OperationResult<unknown>> {
   const requestId = randomUUID();
-  const envelope = buildInvokeEnvelope({
-    environmentAlias: '',
-    appId: session.appId,
-    className: 'documentservicev2',
-    oid: '1',
-    methodName: 'keepalive',
-    payload: {},
-  }, session, requestId, 1, 0);
+  const envelope = buildInvokeEnvelope(
+    {
+      environmentAlias: '',
+      appId: session.appId,
+      className: 'documentservicev2',
+      oid: '1',
+      methodName: 'keepalive',
+      payload: {}
+    },
+    session,
+    requestId,
+    1,
+    0
+  );
   return sendSignalRInvoke(socket, requestId, envelope.body, timeoutMs);
 }
 
@@ -863,14 +903,10 @@ export interface PersistedCanvasSession {
   createdAt: string;
 }
 
-export async function saveCanvasSession(
-  result: StartCanvasAuthoringSessionResult,
-  environmentAlias: string,
-  configOptions: ConfigStoreOptions = {},
-): Promise<void> {
+export async function saveCanvasSession(result: StartCanvasAuthoringSessionResult, environmentAlias: string, configOptions: ConfigStoreOptions = {}): Promise<void> {
   const sessionState = result.sessionState ?? readStringProperty(result.session, 'sessionState');
-  const webAuthoringVersion = result.webAuthoringVersion ?? readStringProperty(readObjectProperty(result.session, 'clientConfig'), 'webAuthoringVersion')
-    ?? readStringProperty(result.session, 'authoringHostVersion');
+  const webAuthoringVersion =
+    result.webAuthoringVersion ?? readStringProperty(readObjectProperty(result.session, 'clientConfig'), 'webAuthoringVersion') ?? readStringProperty(result.session, 'authoringHostVersion');
   if (!sessionState || !webAuthoringVersion) return;
 
   const entry: PersistedCanvasSession = {
@@ -884,7 +920,7 @@ export async function saveCanvasSession(
     webAuthoringVersion,
     sessionState,
     cluster: result.cluster,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString()
   };
 
   const existing = await loadCanvasSessionsRaw(configOptions);
@@ -898,26 +934,27 @@ export async function loadCanvasSessions(configOptions: ConfigStoreOptions = {})
   return loadCanvasSessionsRaw(configOptions);
 }
 
-export async function probeCanvasSession(
-  session: PersistedCanvasSession,
-  configOptions: ConfigStoreOptions = {},
-): Promise<boolean> {
+export async function probeCanvasSession(session: PersistedCanvasSession, configOptions: ConfigStoreOptions = {}): Promise<boolean> {
   try {
     const url = `${session.authoringBaseUrl}/${session.webAuthoringVersion}/api/yaml/controls`;
-    const result = await executeApiRequest({
-      environmentAlias: session.environmentAlias,
-      accountName: session.account,
-      api: 'canvas-authoring',
-      path: url,
-      method: 'GET',
-      headers: {
-        'x-ms-client-session-id': session.sessionId,
-        'x-ms-session-state': session.sessionState,
-        'x-ms-client-request-id': randomUUID(),
+    const result = await executeApiRequest(
+      {
+        environmentAlias: session.environmentAlias,
+        accountName: session.account,
+        api: 'canvas-authoring',
+        path: url,
+        method: 'GET',
+        headers: {
+          'x-ms-client-session-id': session.sessionId,
+          'x-ms-session-state': session.sessionState,
+          'x-ms-client-request-id': randomUUID()
+        },
+        responseType: 'json',
+        readIntent: true
       },
-      responseType: 'json',
-      readIntent: true,
-    }, configOptions, { allowInteractive: false });
+      configOptions,
+      { allowInteractive: false }
+    );
     return result.success && result.data?.status === 200;
   } catch {
     return false;
@@ -927,10 +964,12 @@ export async function probeCanvasSession(
 export async function probeAndCleanCanvasSessions(configOptions: ConfigStoreOptions = {}): Promise<(PersistedCanvasSession & { alive: boolean })[]> {
   const sessions = await loadCanvasSessionsRaw(configOptions);
   if (!sessions.length) return [];
-  const results = await Promise.all(sessions.map(async (session) => ({
-    ...session,
-    alive: await probeCanvasSession(session, configOptions),
-  })));
+  const results = await Promise.all(
+    sessions.map(async (session) => ({
+      ...session,
+      alive: await probeCanvasSession(session, configOptions)
+    }))
+  );
   const alive = results.filter((s) => s.alive);
   if (alive.length !== sessions.length) {
     await writeCanvasSessions(alive, configOptions);
@@ -938,25 +977,26 @@ export async function probeAndCleanCanvasSessions(configOptions: ConfigStoreOpti
   return results;
 }
 
-export async function disposeCanvasSession(
-  session: PersistedCanvasSession,
-  configOptions: ConfigStoreOptions = {},
-): Promise<void> {
+export async function disposeCanvasSession(session: PersistedCanvasSession, configOptions: ConfigStoreOptions = {}): Promise<void> {
   try {
     const url = `${session.authoringBaseUrl}/${session.webAuthoringVersion}/api/authoringsession/dispose`;
-    await executeApiRequest({
-      environmentAlias: session.environmentAlias,
-      accountName: session.account,
-      api: 'canvas-authoring',
-      path: url,
-      method: 'POST',
-      headers: {
-        'x-ms-client-session-id': session.sessionId,
-        'x-ms-session-state': session.sessionState,
-        'x-ms-client-request-id': randomUUID(),
+    await executeApiRequest(
+      {
+        environmentAlias: session.environmentAlias,
+        accountName: session.account,
+        api: 'canvas-authoring',
+        path: url,
+        method: 'POST',
+        headers: {
+          'x-ms-client-session-id': session.sessionId,
+          'x-ms-session-state': session.sessionState,
+          'x-ms-client-request-id': randomUUID()
+        },
+        responseType: 'json'
       },
-      responseType: 'json',
-    }, configOptions, { allowInteractive: false });
+      configOptions,
+      { allowInteractive: false }
+    );
   } catch {
     // Best effort — the session may already be expired.
   }
@@ -965,7 +1005,10 @@ export async function disposeCanvasSession(
 
 export async function removeCanvasSession(sessionId: string, configOptions: ConfigStoreOptions = {}): Promise<void> {
   const sessions = await loadCanvasSessionsRaw(configOptions);
-  await writeCanvasSessions(sessions.filter((s) => s.sessionId !== sessionId), configOptions);
+  await writeCanvasSessions(
+    sessions.filter((s) => s.sessionId !== sessionId),
+    configOptions
+  );
 }
 
 async function loadCanvasSessionsRaw(configOptions: ConfigStoreOptions): Promise<PersistedCanvasSession[]> {

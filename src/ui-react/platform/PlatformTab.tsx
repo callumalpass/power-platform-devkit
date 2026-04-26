@@ -8,7 +8,14 @@ import type { PowerPlatformInventoryItem } from '../ui-types.js';
 
 export type PlatformState = { loadedEnvironment: string; items: PowerPlatformInventoryItem[]; current: PowerPlatformInventoryItem | null; filter: string };
 
-export function PlatformTab(props: { state: PlatformState; setState: Dispatch<SetStateAction<PlatformState>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {
+export function PlatformTab(props: {
+  state: PlatformState;
+  setState: Dispatch<SetStateAction<PlatformState>>;
+  environment: string;
+  reload: () => Promise<void>;
+  openConsole: (path: string) => void;
+  toast: (message: string, isError?: boolean) => void;
+}) {
   const { state, setState, reload, openConsole, toast } = props;
   const current = state.current;
 
@@ -29,7 +36,11 @@ export function PlatformTab(props: { state: PlatformState; setState: Dispatch<Se
         isSelected={(item: PowerPlatformInventoryItem) => state.current?.name === item.name}
         itemKey={(item: PowerPlatformInventoryItem) => item.name}
         onSelect={(item: PowerPlatformInventoryItem) => setState((current) => ({ ...current, current: item }))}
-        onRefresh={() => void reload().then(() => toast('Environments refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}
+        onRefresh={() =>
+          void reload()
+            .then(() => toast('Environments refreshed'))
+            .catch((error) => toast(error instanceof Error ? error.message : String(error), true))
+        }
         emptyHint="Select an environment to discover platform environments."
         renderItem={(item: PowerPlatformInventoryItem) => (
           <>
@@ -52,9 +63,13 @@ export function PlatformTab(props: { state: PlatformState; setState: Dispatch<Se
               <div className="toolbar-row">
                 <div>
                   <h2 id="plat-env-title">{prop(current, 'properties.displayName') || current.name}</h2>
-                  <p className="desc no-mb" id="plat-env-subtitle">{current.name}</p>
+                  <p className="desc no-mb" id="plat-env-subtitle">
+                    {current.name}
+                  </p>
                 </div>
-                <button className="btn btn-ghost" id="plat-env-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/environments/${current.name}`)}>Open in Console</button>
+                <button className="btn btn-ghost" id="plat-env-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/environments/${current.name}`)}>
+                  Open in Console
+                </button>
               </div>
               <div id="plat-env-metrics" className="metrics">
                 {[
@@ -63,7 +78,7 @@ export function PlatformTab(props: { state: PlatformState; setState: Dispatch<Se
                   ['State', prop(current, 'properties.states.management.id') || '-'],
                   ['Default', prop(current, 'properties.isDefault') ? 'Yes' : 'No'],
                   ['Created', formatDate(prop(current, 'properties.createdTime'))],
-                  ['Type', prop(current, 'properties.environmentType') || current.type || '-'],
+                  ['Type', prop(current, 'properties.environmentType') || current.type || '-']
                 ].map(([label, value]) => (
                   <div key={String(label)} className="metric">
                     <div className="metric-label">{label}</div>

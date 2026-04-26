@@ -19,5 +19,5 @@ export {
   type FetchXmlConditionSpec,
   type FetchXmlLinkEntitySpec,
   type FetchXmlOrderSpec,
-  type FetchXmlSpec,
+  type FetchXmlSpec
 } from './services/dataverse.js';

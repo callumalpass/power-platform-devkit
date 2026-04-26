@@ -1,45 +1,36 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import {
-  formatFlowDocument,
-  type FlowValidationItem,
-  type FlowValidationResult,
-} from '../automate-data.js';
+import { formatFlowDocument, type FlowValidationItem, type FlowValidationResult } from '../automate-data.js';
 import { analyzeFlow } from '../../flow-language.js';
 import type { DiagnosticItem, FlowAnalysis, FlowAnalysisOutlineItem, ToastFn } from '../ui-types.js';
 import { applyMonacoAppTheme, attachMonacoVim, type MonacoVimAttachment } from '../monaco-support.js';
 import type { FlowEditorHandle } from './types.js';
 import { findFlowExpressionCompletionContext } from '../../flow-expression-completions.js';
 import { INPUT_LABELS, escapeMarkdown, shorten } from './outline-utils.js';
-import {
-  EMPTY_FLOW_EDITOR_SCHEMA_INDEX,
-  flowEditorExpressionSchemaCompletionItems,
-  flowEditorSchemaCompletionItems,
-  type FlowEditorSchemaIndex,
-} from './flow-editor-schema-index.js';
+import { EMPTY_FLOW_EDITOR_SCHEMA_INDEX, flowEditorExpressionSchemaCompletionItems, flowEditorSchemaCompletionItems, type FlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 import { FLOW_SNIPPETS } from './flow-code-snippets.js';
 import { JSON_LIKE_TOKEN_RULES } from './flow-monaco-tokens.js';
-import {
-  flowEditorConnectionCompletionItems,
-  type FlowEditorConnectionCompletionItem,
-} from './flow-editor-connection-completions.js';
+import { flowEditorConnectionCompletionItems, type FlowEditorConnectionCompletionItem } from './flow-editor-connection-completions.js';
 import type { FlowConnectionModel } from './flow-connections.js';
 
 const FLOW_JSON_LANGUAGE_ID = 'pp-flow-json';
 let flowJsonLanguageRegistered = false;
 
-export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
-  value: string;
-  onChange: (value: string) => void;
-  diagnostics: DiagnosticItem[];
-  validation: FlowValidationResult | null;
-  analysis: FlowAnalysis | null;
-  schemaIndex?: FlowEditorSchemaIndex;
-  connectionModel?: FlowConnectionModel;
-  vimEnabled: boolean;
-  onVimMode: (mode: string) => void;
-  toast: ToastFn;
-}>((props, ref) => {
+export const FlowCodeEditor = forwardRef<
+  FlowEditorHandle,
+  {
+    value: string;
+    onChange: (value: string) => void;
+    diagnostics: DiagnosticItem[];
+    validation: FlowValidationResult | null;
+    analysis: FlowAnalysis | null;
+    schemaIndex?: FlowEditorSchemaIndex;
+    connectionModel?: FlowConnectionModel;
+    vimEnabled: boolean;
+    onVimMode: (mode: string) => void;
+    toast: ToastFn;
+  }
+>((props, ref) => {
   const { value, onChange, diagnostics, validation, analysis, schemaIndex, connectionModel, vimEnabled, onVimMode, toast } = props;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const vimStatusRef = useRef<HTMLSpanElement | null>(null);
@@ -56,13 +47,27 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
   const schemaIndexRef = useRef<FlowEditorSchemaIndex>(schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX);
   const connectionModelRef = useRef<FlowConnectionModel | null>(connectionModel || null);
 
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
-  useEffect(() => { diagnosticsRef.current = diagnostics; }, [diagnostics]);
-  useEffect(() => { validationRef.current = validation; }, [validation]);
-  useEffect(() => { analysisRef.current = analysis; }, [analysis]);
-  useEffect(() => { schemaIndexRef.current = schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX; }, [schemaIndex]);
-  useEffect(() => { connectionModelRef.current = connectionModel || null; }, [connectionModel]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    onVimModeRef.current = onVimMode;
+  }, [onVimMode]);
+  useEffect(() => {
+    diagnosticsRef.current = diagnostics;
+  }, [diagnostics]);
+  useEffect(() => {
+    validationRef.current = validation;
+  }, [validation]);
+  useEffect(() => {
+    analysisRef.current = analysis;
+  }, [analysis]);
+  useEffect(() => {
+    schemaIndexRef.current = schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX;
+  }, [schemaIndex]);
+  useEffect(() => {
+    connectionModelRef.current = connectionModel || null;
+  }, [connectionModel]);
   useEffect(() => {
     vimEnabledRef.current = vimEnabled;
     vimAttachmentRef.current?.setEnabled(vimEnabled);
@@ -79,44 +84,48 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
     updateFlowEditorMarkers(modelRef.current, diagnostics, validation);
   }, [diagnostics, validation, value]);
 
-  useImperativeHandle(ref, () => ({
-    format: () => {
-      const editor = editorRef.current;
-      const model = modelRef.current;
-      if (!editor || !model) return null;
-      const formatted = formatFlowDocument(model.getValue());
-      editor.pushUndoStop();
-      editor.executeEdits('format-json', [{ range: model.getFullModelRange(), text: formatted }]);
-      editor.pushUndoStop();
-      return formatted;
-    },
-    revealRange: (from, to) => {
-      const editor = editorRef.current;
-      const model = modelRef.current;
-      if (!editor || !model) return;
-      const startOffset = Math.max(0, from ?? 0);
-      const endOffset = Math.max(startOffset + 1, Math.min(to ?? startOffset + 1, model.getValueLength()));
-      const start = model.getPositionAt(startOffset);
-      const end = model.getPositionAt(endOffset);
-      const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
-      editor.setSelection(range);
-      editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
-      editor.focus();
-    },
-    revealText: (needle) => {
-      const editor = editorRef.current;
-      const model = modelRef.current;
-      if (!editor || !model || !needle) return;
-      const index = model.getValue().indexOf(needle);
-      if (index < 0) return;
-      const start = model.getPositionAt(index);
-      const end = model.getPositionAt(index + needle.length);
-      const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
-      editor.setSelection(range);
-      editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
-      editor.focus();
-    },
-  }), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      format: () => {
+        const editor = editorRef.current;
+        const model = modelRef.current;
+        if (!editor || !model) return null;
+        const formatted = formatFlowDocument(model.getValue());
+        editor.pushUndoStop();
+        editor.executeEdits('format-json', [{ range: model.getFullModelRange(), text: formatted }]);
+        editor.pushUndoStop();
+        return formatted;
+      },
+      revealRange: (from, to) => {
+        const editor = editorRef.current;
+        const model = modelRef.current;
+        if (!editor || !model) return;
+        const startOffset = Math.max(0, from ?? 0);
+        const endOffset = Math.max(startOffset + 1, Math.min(to ?? startOffset + 1, model.getValueLength()));
+        const start = model.getPositionAt(startOffset);
+        const end = model.getPositionAt(endOffset);
+        const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+        editor.setSelection(range);
+        editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
+        editor.focus();
+      },
+      revealText: (needle) => {
+        const editor = editorRef.current;
+        const model = modelRef.current;
+        if (!editor || !model || !needle) return;
+        const index = model.getValue().indexOf(needle);
+        if (index < 0) return;
+        const start = model.getPositionAt(index);
+        const end = model.getPositionAt(index + needle.length);
+        const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+        editor.setSelection(range);
+        editor.revealPositionNearTop(start, monaco.editor.ScrollType.Smooth);
+        editor.focus();
+      }
+    }),
+    []
+  );
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -142,7 +151,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       quickSuggestions: { strings: true, comments: false, other: true },
       quickSuggestionsDelay: 80,
       suggestOnTriggerCharacters: true,
-      theme: 'pp-app',
+      theme: 'pp-app'
     });
     const completionProvider = monaco.languages.registerCompletionItemProvider(FLOW_JSON_LANGUAGE_ID, {
       triggerCharacters: ['"', "'", '@', ':', '(', ',', '[', '?'],
@@ -159,14 +168,14 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
               ...flowConnectionCompletions(completionModel, position, currentAnalysis, connectionModelRef.current),
               ...flowExpressionSchemaCompletions(completionModel, position, schemaIndexRef.current),
               ...flowAnalysisCompletions(completionModel, position, currentAnalysis),
-              ...flowSnippetCompletions(completionModel, position),
-            ],
+              ...flowSnippetCompletions(completionModel, position)
+            ]
           };
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
           return { suggestions: flowSnippetCompletions(completionModel, position) };
         }
-      },
+      }
     });
     const hoverProvider = monaco.languages.registerHoverProvider('json', {
       provideHover: (hoverModel, position) => {
@@ -175,13 +184,13 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
         const hover = flowHoverAtOffset(analysisRef.current, offset);
         if (!hover) return null;
         return { contents: [{ value: hover }] };
-      },
+      }
     });
     modelRef.current = model;
     editorRef.current = editor;
     vimAttachmentRef.current = attachMonacoVim(editor, vimStatusRef.current, {
       enabled: vimEnabledRef.current,
-      onModeChange: (mode) => onVimModeRef.current(mode),
+      onModeChange: (mode) => onVimModeRef.current(mode)
     });
 
     const themeObserver = new MutationObserver(() => applyMonacoAppTheme());
@@ -192,7 +201,7 @@ export const FlowCodeEditor = forwardRef<FlowEditorHandle, {
       valueRef.current = next;
       onChangeRef.current(next);
       const text = event.changes.map((change) => change.text).join('');
-      if (!/[A-Za-z_@'(),?\[]/.test(text)) return;
+      if (!/[A-Za-z_@'(),?[]/.test(text)) return;
       const position = editor.getPosition();
       if (!position) return;
       const offset = model.getOffsetAt(position);
@@ -236,23 +245,26 @@ function ensureFlowJsonLanguage() {
   flowJsonLanguageRegistered = true;
   monaco.languages.register({ id: FLOW_JSON_LANGUAGE_ID });
   monaco.languages.setLanguageConfiguration(FLOW_JSON_LANGUAGE_ID, {
-    brackets: [['{', '}'], ['[', ']']],
+    brackets: [
+      ['{', '}'],
+      ['[', ']']
+    ],
     autoClosingPairs: [
       { open: '{', close: '}' },
       { open: '[', close: ']' },
-      { open: '"', close: '"' },
+      { open: '"', close: '"' }
     ],
     surroundingPairs: [
       { open: '{', close: '}' },
       { open: '[', close: ']' },
-      { open: '"', close: '"' },
-    ],
+      { open: '"', close: '"' }
+    ]
   });
   monaco.languages.setMonarchTokensProvider(FLOW_JSON_LANGUAGE_ID, {
     defaultToken: '',
     tokenizer: {
-      root: JSON_LIKE_TOKEN_RULES,
-    },
+      root: JSON_LIKE_TOKEN_RULES
+    }
   });
 }
 
@@ -262,10 +274,11 @@ function updateFlowEditorMarkers(model: monaco.editor.ITextModel | null, diagnos
   for (const item of diagnostics || []) {
     markers.push(markerFromOffsets(model, item.from ?? 0, item.to ?? item.from ?? 0, item.message, severityFromLevel(item.level), item.code));
   }
-  if (validation) for (const item of validation.items) {
-    const offsets = validationOffsets(model, item);
-    markers.push(markerFromOffsets(model, offsets.from, offsets.to, item.message, severityFromLevel(item.level), item.code || validation.kind));
-  }
+  if (validation)
+    for (const item of validation.items) {
+      const offsets = validationOffsets(model, item);
+      markers.push(markerFromOffsets(model, offsets.from, offsets.to, item.message, severityFromLevel(item.level), item.code || validation.kind));
+    }
   monaco.editor.setModelMarkers(model, 'pp-flow', markers);
 }
 
@@ -279,7 +292,7 @@ function markerFromOffsets(model: monaco.editor.ITextModel, from: number, to: nu
     startLineNumber: start.lineNumber,
     startColumn: start.column,
     endLineNumber: end.lineNumber,
-    endColumn: Math.max(end.column, start.column + 1),
+    endColumn: Math.max(end.column, start.column + 1)
   };
 }
 
@@ -309,16 +322,11 @@ function flowAnalysisCompletions(model: monaco.editor.ITextModel, position: mona
     documentation: item.info,
     insertText: item.apply || item.label,
     insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-    range,
+    range
   }));
 }
 
-function flowSchemaCompletions(
-  model: monaco.editor.ITextModel,
-  position: monaco.Position,
-  analysis: FlowAnalysis,
-  schemaIndex: FlowEditorSchemaIndex,
-): monaco.languages.CompletionItem[] {
+function flowSchemaCompletions(model: monaco.editor.ITextModel, position: monaco.Position, analysis: FlowAnalysis, schemaIndex: FlowEditorSchemaIndex): monaco.languages.CompletionItem[] {
   const cursor = model.getOffsetAt(position);
   const range = wordCompletionRange(model, position);
   return flowEditorSchemaCompletionItems(cursor, analysis, schemaIndex).map((item) => ({
@@ -328,15 +336,11 @@ function flowSchemaCompletions(
     documentation: item.documentation,
     insertText: item.insertText,
     sortText: item.sortText,
-    range,
+    range
   }));
 }
 
-function flowExpressionSchemaCompletions(
-  model: monaco.editor.ITextModel,
-  position: monaco.Position,
-  schemaIndex: FlowEditorSchemaIndex,
-): monaco.languages.CompletionItem[] {
+function flowExpressionSchemaCompletions(model: monaco.editor.ITextModel, position: monaco.Position, schemaIndex: FlowEditorSchemaIndex): monaco.languages.CompletionItem[] {
   const cursor = model.getOffsetAt(position);
   const range = flowCompletionRange(model, position);
   return flowEditorExpressionSchemaCompletionItems(model.getValue(), cursor, schemaIndex).map((item) => ({
@@ -346,16 +350,11 @@ function flowExpressionSchemaCompletions(
     documentation: item.documentation,
     insertText: item.insertText,
     sortText: item.sortText,
-    range,
+    range
   }));
 }
 
-function flowConnectionCompletions(
-  model: monaco.editor.ITextModel,
-  position: monaco.Position,
-  analysis: FlowAnalysis,
-  connectionModel: FlowConnectionModel | null,
-): monaco.languages.CompletionItem[] {
+function flowConnectionCompletions(model: monaco.editor.ITextModel, position: monaco.Position, analysis: FlowAnalysis, connectionModel: FlowConnectionModel | null): monaco.languages.CompletionItem[] {
   const range = wordCompletionRange(model, position);
   return flowEditorConnectionCompletionItems(analysis, connectionModel).map((item: FlowEditorConnectionCompletionItem) => ({
     label: item.label,
@@ -364,7 +363,7 @@ function flowConnectionCompletions(
     documentation: item.documentation,
     insertText: item.insertText,
     sortText: item.sortText,
-    range,
+    range
   }));
 }
 
@@ -377,7 +376,7 @@ function flowSnippetCompletions(model: monaco.editor.ITextModel, position: monac
     documentation: snippet.documentation,
     insertText: snippet.insertText,
     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-    range,
+    range
   }));
 }
 
@@ -391,7 +390,7 @@ function flowCompletionRange(model: monaco.editor.ITextModel, position: monaco.P
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
         startColumn: start.column,
-        endColumn: position.column,
+        endColumn: position.column
       };
     }
   }
@@ -404,7 +403,7 @@ function wordCompletionRange(model: monaco.editor.ITextModel, position: monaco.P
     startLineNumber: position.lineNumber,
     endLineNumber: position.lineNumber,
     startColumn: word.startColumn,
-    endColumn: word.endColumn,
+    endColumn: word.endColumn
   };
 }
 
@@ -426,7 +425,7 @@ function flowHoverAtOffset(analysis: FlowAnalysis | null, offset: number): strin
     item.type ? `Type: \`${escapeMarkdown(item.type)}\`` : item.detail ? `Detail: \`${escapeMarkdown(item.detail)}\`` : '',
     item.connector ? `Connector: \`${escapeMarkdown(item.connector)}\`` : '',
     item.dependency ? `Dependency: \`${escapeMarkdown(item.dependency)}\`` : '',
-    item.runAfter?.length ? `Runs after: ${item.runAfter.map((value) => `\`${escapeMarkdown(value)}\``).join(', ')}` : '',
+    item.runAfter?.length ? `Runs after: ${item.runAfter.map((value) => `\`${escapeMarkdown(value)}\``).join(', ')}` : ''
   ].filter(Boolean);
   if (item.inputs) {
     for (const [key, value] of Object.entries(item.inputs).slice(0, 6)) {

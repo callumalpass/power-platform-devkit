@@ -17,7 +17,7 @@ const UPDATE_HELP = [
   'Options:',
   '  --check    Check only and print update instructions when available',
   '',
-  'pp does not install updates automatically. Follow the printed npm or release download instructions.',
+  'pp does not install updates automatically. Follow the printed npm or release download instructions.'
 ].join('\n');
 
 export interface UpdateCheckResult {
@@ -60,7 +60,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const response = await fetch(GITHUB_RELEASES_URL, {
       signal: controller.signal,
-      headers: { 'user-agent': `pp/${VERSION}` },
+      headers: { 'user-agent': `pp/${VERSION}` }
     });
     clearTimeout(timeout);
     if (!response.ok) return null;
@@ -72,7 +72,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
       latest,
       updateAvailable: compareVersions(latest, VERSION) > 0,
       releaseUrl: data.html_url ?? '',
-      checkedAt: new Date().toISOString(),
+      checkedAt: new Date().toISOString()
     };
   } catch {
     return null;

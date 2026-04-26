@@ -22,9 +22,7 @@ export function FlowOutlinePanel(props: {
       <div className="panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h2>Outline</h2>
-          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-            {props.analysis?.outline?.length ? `${props.analysis.outline.length} top-level items` : 'No outline yet'}
-          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{props.analysis?.outline?.length ? `${props.analysis.outline.length} top-level items` : 'No outline yet'}</div>
         </div>
         {props.active ? (
           <FlowOutlineCanvas

@@ -1,10 +1,5 @@
 import { api } from './utils.js';
-import type {
-  ApiEnvelope,
-  DataverseEntityDetail,
-  DataverseRecordPage,
-  DiagnosticItem,
-} from './ui-types.js';
+import type { ApiEnvelope, DataverseEntityDetail, DataverseRecordPage, DiagnosticItem } from './ui-types.js';
 
 export type FetchXmlCompletionItem = {
   label: string;
@@ -50,32 +45,27 @@ export async function getEntityDetail(environment: string, logicalName: string):
   return payload.data;
 }
 
-export async function analyzeFetchXml(input: {
-  environmentAlias: string;
-  source: string;
-  rootEntityName?: string;
-  cursor?: number;
-}): Promise<FetchXmlAnalysis> {
+export async function analyzeFetchXml(input: { environmentAlias: string; source: string; rootEntityName?: string; cursor?: number }): Promise<FetchXmlAnalysis> {
   const payload = await api<ApiEnvelope<Partial<FetchXmlAnalysis>>>('/api/dv/fetchxml/intellisense', {
     method: 'POST',
     body: JSON.stringify({
       environmentAlias: input.environmentAlias,
       source: input.source,
       cursor: input.cursor ?? input.source.length,
-      rootEntityName: input.rootEntityName,
-    }),
+      rootEntityName: input.rootEntityName
+    })
   });
   return {
     diagnostics: payload.data?.diagnostics || [],
     completions: payload.data?.completions || [],
-    context: payload.data?.context,
+    context: payload.data?.context
   };
 }
 
 export async function previewFetchXml(payload: FetchXmlPayload): Promise<string> {
   const result = await api<ApiEnvelope<{ fetchXml?: string }>>('/api/dv/fetchxml/preview', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(payload)
   });
   return result.data?.fetchXml || '';
 }
@@ -83,7 +73,7 @@ export async function previewFetchXml(payload: FetchXmlPayload): Promise<string>
 export async function executeFetchXml(payload: FetchXmlPayload): Promise<DataverseRecordPage> {
   const result = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/fetchxml/execute', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(payload)
   });
   return result.data;
 }

@@ -9,5 +9,5 @@ export {
   removeActionFromFlowDocument,
   removeTriggerFromFlowDocument,
   reorderActionInFlowDocument,
-  replaceOutlineItemInFlowDocument,
+  replaceOutlineItemInFlowDocument
 } from './flow-action-document.js';

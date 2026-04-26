@@ -29,8 +29,8 @@ const result = await pp.request({
   env: 'dev',
   api: 'dv',
   path: '/accounts',
-  query: { '$select': 'name,accountid', '$top': '5' },
-  readIntent: true,
+  query: { $select: 'name,accountid', $top: '5' },
+  readIntent: true
 });
 
 if (!result.success) {
@@ -49,7 +49,7 @@ await executeApiRequest({
   accountName: 'work',
   api: 'graph',
   path: '/me',
-  readIntent: true,
+  readIntent: true
 });
 ```
 
@@ -60,8 +60,8 @@ const result = await pp.request<{ value: Array<{ name?: string }> }>({
   env: 'dev',
   api: 'dv',
   path: '/accounts',
-  query: { '$select': 'name' },
-  readIntent: true,
+  query: { $select: 'name' },
+  readIntent: true
 });
 ```
 
@@ -70,11 +70,7 @@ The lower-level functions remain available for applications that prefer explicit
 ```ts
 import { executeApiRequest } from 'pp/api';
 
-await executeApiRequest(
-  { environmentAlias: 'dev', api: 'dv', path: '/WhoAmI', readIntent: true },
-  { configDir: './.pp-config' },
-  { allowInteractive: false },
-);
+await executeApiRequest({ environmentAlias: 'dev', api: 'dv', path: '/WhoAmI', readIntent: true }, { configDir: './.pp-config' }, { allowInteractive: false });
 ```
 
 ## Auth
@@ -88,9 +84,9 @@ await loginAccount(
   { name: 'work', kind: 'device-code' },
   {
     preferredFlow: 'device-code',
-    onDeviceCode: ({ message }) => console.error(message),
+    onDeviceCode: ({ message }) => console.error(message)
   },
-  { configDir: './.pp-config' },
+  { configDir: './.pp-config' }
 );
 ```
 

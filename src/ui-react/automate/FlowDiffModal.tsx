@@ -1,12 +1,6 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { useEffect, useRef, useState } from 'react';
-import {
-  applyMonacoAppTheme,
-  attachMonacoVim,
-  MonacoVimToggle,
-  type MonacoVimAttachment,
-  useMonacoVimPreference,
-} from '../monaco-support.js';
+import { applyMonacoAppTheme, attachMonacoVim, MonacoVimToggle, type MonacoVimAttachment, useMonacoVimPreference } from '../monaco-support.js';
 
 export function FlowDiffModal(props: { original: string; modified: string; onClose: () => void }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -36,18 +30,18 @@ export function FlowDiffModal(props: { original: string; modified: string; onClo
       minimap: { enabled: false },
       lineNumbersMinChars: 3,
       scrollBeyondLastLine: false,
-      theme: 'pp-app',
+      theme: 'pp-app'
     });
     editor.setModel({ original: originalModel, modified: modifiedModel });
     vimAttachmentsRef.current = [
       attachMonacoVim(editor.getOriginalEditor(), originalVimStatusRef.current, {
         enabled: vimEnabledRef.current,
-        onModeChange: setVimMode,
+        onModeChange: setVimMode
       }),
       attachMonacoVim(editor.getModifiedEditor(), modifiedVimStatusRef.current, {
         enabled: vimEnabledRef.current,
-        onModeChange: setVimMode,
-      }),
+        onModeChange: setVimMode
+      })
     ];
     return () => {
       for (const attachment of vimAttachmentsRef.current) attachment.dispose();
@@ -64,13 +58,17 @@ export function FlowDiffModal(props: { original: string; modified: string; onClo
         <div className="rt-modal-header">
           <div>
             <h2>Unsaved Changes</h2>
-            <p className="desc" style={{ marginBottom: 0 }}>Review the loaded definition beside the current editor content.</p>
+            <p className="desc" style={{ marginBottom: 0 }}>
+              Review the loaded definition beside the current editor content.
+            </p>
           </div>
           <div className="rt-modal-actions">
             <MonacoVimToggle enabled={vimEnabled} mode={vimMode} onToggle={setVimEnabled} />
             <span ref={originalVimStatusRef} className="monaco-vim-status-node" />
             <span ref={modifiedVimStatusRef} className="monaco-vim-status-node" />
-            <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+            <button className="btn btn-ghost" type="button" onClick={props.onClose}>
+              Close
+            </button>
           </div>
         </div>
         <div ref={mountRef} className="flow-diff-editor" />

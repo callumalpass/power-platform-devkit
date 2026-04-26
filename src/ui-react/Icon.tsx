@@ -1,21 +1,6 @@
 import type { ReactNode } from 'react';
 
-type IconName =
-  | 'bell'
-  | 'sun'
-  | 'moon'
-  | 'power'
-  | 'search'
-  | 'plus'
-  | 'more'
-  | 'star'
-  | 'star-filled'
-  | 'refresh'
-  | 'reply'
-  | 'circle-dashed'
-  | 'grid'
-  | 'pencil'
-  | 'circle';
+type IconName = 'bell' | 'sun' | 'moon' | 'power' | 'search' | 'plus' | 'more' | 'star' | 'star-filled' | 'refresh' | 'reply' | 'circle-dashed' | 'grid' | 'pencil' | 'circle';
 
 type Props = {
   name: IconName;
@@ -89,7 +74,7 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m14 6 4 4" />
     </>
   ),
-  circle: <circle cx="12" cy="12" r="8" />,
+  circle: <circle cx="12" cy="12" r="8" />
 };
 
 export function Icon({ name, size = 16, strokeWidth = 1.6, className }: Props) {

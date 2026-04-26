@@ -27,17 +27,35 @@ export function FlowInventorySidebar(props: {
         <input type="text" className="entity-filter" placeholder="Filter flows…" value={filter} onChange={(event) => onFilterChange(event.target.value)} />
         <div className="entity-count">{flows.length ? `${flows.length} flows${flowSource === 'dv' ? ' via Dataverse fallback' : ''}` : ''}</div>
         <div className="entity-list">
-          {filteredFlows.length ? filteredFlows.map((flow) => {
-            const state = String(prop(flow, 'properties.state') || '');
-            const cls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending';
-            return (
-              <div key={flowIdentifier(flow)} className={`entity-item ${flowIdentifier(currentFlow) === flowIdentifier(flow) ? 'active' : ''}`} data-flow={flowIdentifier(flow)} onClick={() => onSelect(flow)}>
-                <div className="entity-item-name"><span className={`health-dot ${cls}`} style={{ marginRight: 6 }}></span>{prop(flow, 'properties.displayName') || flow.name || 'Unnamed'}</div>
-                <div className="entity-item-logical">{prop(flow, 'properties.definitionSummary.triggers.0.type') || '-'} · {formatDateShort(prop(flow, 'properties.lastModifiedTime'))}</div>
-                {state ? <div className="entity-item-badges"><span className="entity-item-flag">{state.toLowerCase()}</span></div> : null}
-              </div>
-            );
-          }) : <div className="entity-loading">{loading ? 'Loading flows…' : 'Select an environment to load flows.'}</div>}
+          {filteredFlows.length ? (
+            filteredFlows.map((flow) => {
+              const state = String(prop(flow, 'properties.state') || '');
+              const cls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending';
+              return (
+                <div
+                  key={flowIdentifier(flow)}
+                  className={`entity-item ${flowIdentifier(currentFlow) === flowIdentifier(flow) ? 'active' : ''}`}
+                  data-flow={flowIdentifier(flow)}
+                  onClick={() => onSelect(flow)}
+                >
+                  <div className="entity-item-name">
+                    <span className={`health-dot ${cls}`} style={{ marginRight: 6 }}></span>
+                    {prop(flow, 'properties.displayName') || flow.name || 'Unnamed'}
+                  </div>
+                  <div className="entity-item-logical">
+                    {prop(flow, 'properties.definitionSummary.triggers.0.type') || '-'} · {formatDateShort(prop(flow, 'properties.lastModifiedTime'))}
+                  </div>
+                  {state ? (
+                    <div className="entity-item-badges">
+                      <span className="entity-item-flag">{state.toLowerCase()}</span>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          ) : (
+            <div className="entity-loading">{loading ? 'Loading flows…' : 'Select an environment to load flows.'}</div>
+          )}
         </div>
       </div>
     </div>

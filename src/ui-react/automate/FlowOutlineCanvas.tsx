@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FlowAnalysisOutlineItem } from '../ui-types.js';
 import type { FlowProblem } from './types.js';
-import { INPUT_LABELS, KIND_DOT, canHoldChildActions, isActionLikeOutlineItem, isBranchOutlineItem, isSingleBodyContainer, outlineKey, outlineTitle } from './outline-utils.js';
+import { KIND_DOT, canHoldChildActions, isActionLikeOutlineItem, isBranchOutlineItem, isSingleBodyContainer, outlineKey, outlineTitle } from './outline-utils.js';
 import { OverflowMenu, type OverflowItem } from '../setup/OverflowMenu.js';
 
 type OutlineProblemSummary = { error: number; warning: number; info: number };
@@ -30,12 +30,7 @@ export function FlowOutlineCanvas(props: {
   return (
     <>
       <div className="flow-outline-filter">
-        <input
-          type="search"
-          placeholder={props.filterPlaceholder || 'Filter...'}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <input type="search" placeholder={props.filterPlaceholder || 'Filter...'} value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
       <div className="flow-outline-scroll">
         {filteredItems.length ? (
@@ -156,23 +151,19 @@ function OutlineNode(props: {
   const canAddInside = canHoldChildActions(item) && Boolean(onAddInside);
   const kindLower = String(item.kind || '').toLowerCase();
   const isMultiBranchContainer = kindLower === 'condition' || kindLower === 'switch';
-  const branchChildren = isMultiBranchContainer && onAddInside
-    ? (item.children || []).filter(isBranchOutlineItem)
-    : [];
+  const branchChildren = isMultiBranchContainer && onAddInside ? (item.children || []).filter(isBranchOutlineItem) : [];
   const menuItems: OverflowItem[] = [];
   if (canAddAfter) {
     menuItems.push({
       label: isActionsContainer ? 'Add action' : 'Add action after',
-      onClick: () => onAddAfter?.(item),
+      onClick: () => onAddAfter?.(item)
     });
   }
   if (isTriggersContainer && onAddTrigger) {
     menuItems.push({ label: 'Add trigger', onClick: () => onAddTrigger() });
   }
   if (canAddInside) {
-    const label = isSingleBodyContainer(item)
-      ? `Add action inside ${item.name || 'container'}`
-      : 'Add action inside this branch';
+    const label = isSingleBodyContainer(item) ? `Add action inside ${item.name || 'container'}` : 'Add action inside this branch';
     menuItems.push({ label, onClick: () => onAddInside?.(item) });
   }
   // Condition/Switch: offer one item per branch so users don't have to expand first.
@@ -180,7 +171,7 @@ function OutlineNode(props: {
     const branchName = branch.name || 'branch';
     menuItems.push({
       label: `Add action to ${branchName}`,
-      onClick: () => onAddInside?.(branch),
+      onClick: () => onAddInside?.(branch)
     });
   }
   if (editable) {
@@ -191,18 +182,12 @@ function OutlineNode(props: {
   }
   // Remove is allowed on action-like rows with a name, except triggers (deleting a trigger would
   // break the flow) and synthetic wrappers like the top-level "actions" container.
-  const removable = Boolean(
-    onRemove
-    && item.name
-    && isActionLikeOutlineItem(item)
-    && !isTrigger
-    && !isActionsContainer,
-  );
+  const removable = Boolean(onRemove && item.name && isActionLikeOutlineItem(item) && !isTrigger && !isActionsContainer);
   if (removable) {
     menuItems.push({
       label: 'Remove action',
       destructive: true,
-      onClick: () => onRemove?.(item),
+      onClick: () => onRemove?.(item)
     });
   }
   const draggable = isAction && !isTrigger && !isActionsContainer && Boolean(onReorder) && Boolean(item.name);
@@ -216,8 +201,10 @@ function OutlineNode(props: {
     selectable && 'selectable',
     notSelectable && 'not-selectable',
     notRun && 'not-run',
-    hasChildren && 'has-children',
-  ].filter(Boolean).join(' ');
+    hasChildren && 'has-children'
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <>
@@ -258,14 +245,16 @@ function OutlineNode(props: {
         style={{ paddingLeft: indent }}
         title={notRun ? 'This action did not run in this historical run.' : undefined}
       >
-        <span className="flow-outline-toggle">
-          {hasChildren ? (open ? '\u25BE' : '\u25B8') : ''}
-        </span>
+        <span className="flow-outline-toggle">{hasChildren ? (open ? '\u25BE' : '\u25B8') : ''}</span>
         <span className="flow-outline-dot" style={{ background: dotColor }} />
         {editable ? (
           <a
             href="#"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEditAction?.(item); }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditAction?.(item);
+            }}
             className="flow-outline-title editable"
           >
             {title}
@@ -283,18 +272,29 @@ function OutlineNode(props: {
           />
         ) : null}
         {menuItems.length ? (
-          <span
-            className="flow-outline-menu"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+          <span className="flow-outline-menu" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
             <OverflowMenu items={menuItems} label="Outline menu" />
           </span>
         ) : null}
       </div>
       {dragOver === 'after' && <div className="flow-outline-drop-line" />}
       {open && hasChildren && (
-        <OutlineNodeList items={item.children!} depth={depth + 1} problems={problems} activeKey={activeKey} activePath={activePath} onSelect={onSelect} canSelect={canSelect} onEditAction={onEditAction} onAddAfter={onAddAfter} onAddInside={onAddInside} onAddTrigger={onAddTrigger} onHighlightJson={onHighlightJson} onRemove={onRemove} onReorder={onReorder} />
+        <OutlineNodeList
+          items={item.children!}
+          depth={depth + 1}
+          problems={problems}
+          activeKey={activeKey}
+          activePath={activePath}
+          onSelect={onSelect}
+          canSelect={canSelect}
+          onEditAction={onEditAction}
+          onAddAfter={onAddAfter}
+          onAddInside={onAddInside}
+          onAddTrigger={onAddTrigger}
+          onHighlightJson={onHighlightJson}
+          onRemove={onRemove}
+          onReorder={onReorder}
+        />
       )}
     </>
   );
@@ -302,7 +302,9 @@ function OutlineNode(props: {
 
 function runStatusBadge(item: FlowAnalysisOutlineItem): { label: string; className: string } | null {
   const raw = typeof item.inputs?.status === 'string' ? item.inputs.status : item.detail;
-  const normalized = String(raw || '').trim().toLowerCase();
+  const normalized = String(raw || '')
+    .trim()
+    .toLowerCase();
   if (!normalized) return null;
   if (normalized === 'succeeded') return { label: 'SUCCEEDED', className: 'succeeded' };
   if (normalized === 'failed') return { label: 'FAILED', className: 'failed' };
@@ -322,10 +324,6 @@ function filterOutlineItems(items: FlowAnalysisOutlineItem[], query: string): Fl
   });
 }
 
-function countOutlineItems(items: FlowAnalysisOutlineItem[]): number {
-  return items.reduce((count, item) => count + 1 + countOutlineItems(item.children || []), 0);
-}
-
 function outlineSearchText(item: FlowAnalysisOutlineItem) {
   return [
     item.kind,
@@ -335,8 +333,11 @@ function outlineSearchText(item: FlowAnalysisOutlineItem) {
     item.connector,
     item.dependency,
     ...(item.runAfter || []),
-    ...Object.entries(item.inputs || {}).flatMap(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]),
-  ].filter(Boolean).join(' ').toLowerCase();
+    ...Object.entries(item.inputs || {}).flatMap(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
 }
 
 function summarizeOutlineProblems(item: FlowAnalysisOutlineItem, problems: FlowProblem[]): OutlineProblemSummary {
@@ -369,48 +370,7 @@ function outlineProblemTitle(summary: OutlineProblemSummary) {
   const parts = [
     summary.error ? `${summary.error} error${summary.error === 1 ? '' : 's'}` : '',
     summary.warning ? `${summary.warning} warning${summary.warning === 1 ? '' : 's'}` : '',
-    summary.info ? `${summary.info} info` : '',
+    summary.info ? `${summary.info} info` : ''
   ].filter(Boolean);
   return parts.join(', ');
-}
-
-function OutlineDetail(props: { item: FlowAnalysisOutlineItem; indent: number }) {
-  const { item, indent } = props;
-  const rows: [string, string][] = [];
-  if (item.type) rows.push(['Type', item.type]);
-  if (item.detail && item.detail !== item.type) rows.push(['Detail', item.detail]);
-  if (item.connector) rows.push(['Connector', item.connector]);
-  if (item.dependency) rows.push(['Dependency', item.dependency]);
-  if (item.runAfter?.length) rows.push(['Run after', item.runAfter.join(', ')]);
-  if (item.inputs) {
-    for (const [key, value] of Object.entries(item.inputs)) {
-      if (value === undefined || value === null) continue;
-      const display = typeof value === 'string' ? value
-        : typeof value === 'number' ? String(value)
-        : JSON.stringify(value, null, 2);
-      rows.push([INPUT_LABELS[key] || key, display]);
-    }
-  }
-  if (!rows.length) return null;
-  return (
-    <div style={{
-      paddingLeft: indent, paddingRight: 12, paddingTop: 4, paddingBottom: 6,
-      fontSize: '11px', lineHeight: '18px',
-      borderBottom: '1px solid var(--border)',
-      background: 'color-mix(in srgb, var(--ink) 2%, transparent)',
-    }}>
-      {rows.map(([label, value]) => {
-        const isBlock = value.includes('\n');
-        return (
-          <div key={label} style={{ display: isBlock ? 'block' : 'flex', gap: 8, marginBottom: isBlock ? 4 : 0 }}>
-            <span style={{ color: 'var(--muted)', flexShrink: 0, minWidth: 80 }}>{label}</span>
-            {isBlock
-              ? <pre style={{ color: 'var(--ink)', margin: '2px 0 0', fontSize: '10px', lineHeight: '15px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{value}</pre>
-              : <span style={{ color: 'var(--ink)', wordBreak: 'break-all' }}>{value}</span>
-            }
-          </div>
-        );
-      })}
-    </div>
-  );
 }

@@ -11,6 +11,7 @@ const e2eWindowMode = process.env.PP_DESKTOP_E2E_WINDOW_MODE;
 const keepWindowHiddenForE2E = e2eWindowMode === 'hidden';
 const useBackgroundWindowForE2E = e2eWindowMode === 'background';
 const iconPath = path.join(__dirname, process.platform === 'win32' ? 'pp-icon.ico' : 'pp-icon-256x256.png');
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 if (isDesktopDev || isDesktopE2E) {
   app.setPath('userData', path.join(app.getPath('userData'), isDesktopE2E ? 'e2e' : 'dev'));
@@ -48,7 +49,7 @@ if (process.platform === 'win32') {
 
 const apiContext = createDesktopApiContext({
   allowInteractiveAuth: true,
-  quit: () => app.quit(),
+  quit: () => app.quit()
 });
 
 ipcMain.handle('pp:api', async (_event, request: DesktopApiRequest) => {
@@ -74,8 +75,8 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
-      preload: path.join(__dirname, 'preload.cjs'),
-    },
+      preload: path.join(__dirname, 'preload.cjs')
+    }
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -88,12 +89,22 @@ async function createWindow(): Promise<void> {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void openExternalUrl(url);
     return { action: 'deny' };
   });
 
   await mainWindow.loadFile(path.join(__dirname, 'index.html'));
   watchDevRendererReload(mainWindow);
+}
+
+async function openExternalUrl(rawUrl: string): Promise<void> {
+  try {
+    const url = new URL(rawUrl);
+    if (!EXTERNAL_PROTOCOLS.has(url.protocol)) return;
+    await shell.openExternal(url.toString());
+  } catch {
+    // Ignore malformed or unsupported renderer-provided URLs.
+  }
 }
 
 function watchDevRendererReload(window: BrowserWindow): void {

@@ -13,12 +13,7 @@ test('AuthService.removeAccount deletes MSAL caches for account cache keys', asy
   await mkdir(msalDir, { recursive: true });
   await saveAccount({ name: 'work', kind: 'user', tokenCacheKey: 'work-cache' }, { configDir });
 
-  const removedCachePaths = [
-    join(msalDir, 'work.json'),
-    join(msalDir, 'work-canvas-authoring.json'),
-    join(msalDir, 'work-cache.json'),
-    join(msalDir, 'work-cache-canvas-authoring.json'),
-  ];
+  const removedCachePaths = [join(msalDir, 'work.json'), join(msalDir, 'work-canvas-authoring.json'), join(msalDir, 'work-cache.json'), join(msalDir, 'work-cache-canvas-authoring.json')];
   const retainedCachePath = join(msalDir, 'other.json');
   for (const path of [...removedCachePaths, retainedCachePath]) {
     await writeFile(path, '{}\n', 'utf8');

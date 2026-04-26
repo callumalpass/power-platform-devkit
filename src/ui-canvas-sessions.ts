@@ -9,7 +9,7 @@ import {
   saveCanvasSession,
   startCanvasAuthoringSession,
   type PersistedCanvasSession,
-  type StartCanvasAuthoringSessionResult,
+  type StartCanvasAuthoringSessionResult
 } from './services/canvas-authoring.js';
 
 export type CanvasSessionStatus = 'starting' | 'waiting_for_auth' | 'active' | 'failed' | 'unknown';
@@ -53,7 +53,7 @@ export class CanvasSessionStore {
 
   constructor(
     private readonly startSession: StartCanvasSession = startCanvasAuthoringSession,
-    private readonly persistSession: SaveCanvasSession = saveCanvasSession,
+    private readonly persistSession: SaveCanvasSession = saveCanvasSession
   ) {}
 
   async loadPersistedSessions(configOptions: ConfigStoreOptions = {}): Promise<void> {
@@ -78,8 +78,8 @@ export class CanvasSessionStore {
           authoringBaseUrl: entry.authoringBaseUrl,
           startPath: '',
           startStatus: 200,
-          session: { sessionState: entry.sessionState, clientConfig: { webAuthoringVersion: entry.webAuthoringVersion } },
-        },
+          session: { sessionState: entry.sessionState, clientConfig: { webAuthoringVersion: entry.webAuthoringVersion } }
+        }
       };
       this.sessions.set(session.id, session);
     }
@@ -120,7 +120,7 @@ export class CanvasSessionStore {
       accountName: input.accountName,
       status: 'starting',
       createdAt: now,
-      updatedAt: now,
+      updatedAt: now
     };
     this.sessions.set(session.id, session);
     void this.runSession(session.id, input);
@@ -152,7 +152,7 @@ export class CanvasSessionStore {
     response.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
+      connection: 'keep-alive'
     });
     const write = (session: CanvasSession) => {
       response.write(`event: session\n`);
@@ -167,21 +167,24 @@ export class CanvasSessionStore {
 
   private async runSession(id: string, input: CanvasSessionCreateInput): Promise<void> {
     try {
-      const result = await this.startSession({
-        environmentAlias: input.environmentAlias,
-        accountName: input.accountName,
-        appId: input.appId,
-        cadence: input.cadence,
-        clusterCategory: input.clusterCategory,
-        raw: true,
-        allowInteractive: input.allowInteractive,
-        onDeviceCode: (info) => {
-          this.updateSession(id, (draft) => {
-            draft.status = 'waiting_for_auth';
-            draft.deviceCode = info;
-          });
+      const result = await this.startSession(
+        {
+          environmentAlias: input.environmentAlias,
+          accountName: input.accountName,
+          appId: input.appId,
+          cadence: input.cadence,
+          clusterCategory: input.clusterCategory,
+          raw: true,
+          allowInteractive: input.allowInteractive,
+          onDeviceCode: (info) => {
+            this.updateSession(id, (draft) => {
+              draft.status = 'waiting_for_auth';
+              draft.deviceCode = info;
+            });
+          }
         },
-      }, input.configOptions);
+        input.configOptions
+      );
 
       this.updateSession(id, (draft) => {
         if (result.success && result.data) {
@@ -228,7 +231,7 @@ function toPersistedSession(session: CanvasSession): PersistedCanvasSession | un
     webAuthoringVersion,
     sessionState,
     cluster: session.result.cluster,
-    createdAt: session.createdAt,
+    createdAt: session.createdAt
   };
 }
 

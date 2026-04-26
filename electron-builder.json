@@ -5,9 +5,7 @@
     "app": "dist/desktop",
     "output": "release/electron"
   },
-  "files": [
-    "**/*"
-  ],
+  "files": ["**/*"],
   "extraMetadata": {
     "main": "main.cjs",
     "dependencies": {},

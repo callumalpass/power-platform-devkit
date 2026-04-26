@@ -9,18 +9,20 @@ function requestResult(response: unknown) {
 }
 
 async function consoleProbeCalls(page: Parameters<typeof getDesktopApiCalls>[0]) {
-  return (await getDesktopApiCalls(page))
-    .map((request) => request.body as Record<string, unknown> | undefined)
-    .filter((body) => body?.path === '/playwright-probe');
+  return (await getDesktopApiCalls(page)).map((request) => request.body as Record<string, unknown> | undefined).filter((body) => body?.path === '/playwright-probe');
 }
 
 test('hash deep links land on the requested primary tab', async ({ page, audit }) => {
   await openApp(page);
-  await page.evaluate(() => { window.location.hash = 'console'; });
+  await page.evaluate(() => {
+    window.location.hash = 'console';
+  });
   await expect(page.getByRole('button', { name: 'Console' })).toHaveClass(/active/);
   await expect(page.locator('#panel-console')).toBeVisible();
 
-  await page.evaluate(() => { window.location.hash = 'platform'; });
+  await page.evaluate(() => {
+    window.location.hash = 'platform';
+  });
   await expect(page.getByRole('button', { name: 'Platform' })).toHaveClass(/active/);
   await expect(page.locator('#panel-platform')).toBeVisible();
 
@@ -28,9 +30,7 @@ test('hash deep links land on the requested primary tab', async ({ page, audit }
 });
 
 test('console sends structured request payloads and drops body fields for GET', async ({ page, audit }) => {
-  await installDesktopApiMocks(page, [
-    { method: 'POST', path: '/api/request/execute', bodyPath: '/playwright-probe', body: requestResult({ ok: true }) },
-  ]);
+  await installDesktopApiMocks(page, [{ method: 'POST', path: '/api/request/execute', bodyPath: '/playwright-probe', body: requestResult({ ok: true }) }]);
 
   await openApp(page);
   await visitTab(page, 'Console');
@@ -57,7 +57,7 @@ test('console sends structured request payloads and drops body fields for GET', 
     path: '/playwright-probe',
     query: { include: 'yes' },
     headers: { 'x-pp-probe': '1' },
-    body: { probe: true },
+    body: { probe: true }
   });
 
   await chooseSelect(page, '#console-method', 'GET');
@@ -70,7 +70,7 @@ test('console sends structured request payloads and drops body fields for GET', 
     method: 'GET',
     path: '/playwright-probe',
     query: { include: 'yes' },
-    headers: { 'x-pp-probe': '1' },
+    headers: { 'x-pp-probe': '1' }
   });
   expect(updatedConsoleRequests[1]).not.toHaveProperty('body');
 
@@ -86,9 +86,9 @@ test('dataverse query result can toggle table and JSON without corrupting payloa
         path: '/api/data/v9.2/accounts?$select=accountid,name&$top=1',
         entitySetName: 'accounts',
         logicalName: 'account',
-        records: [{ accountid: '00000000-0000-0000-0000-000000000001', name: 'Playwright Probe' }],
-      }),
-    },
+        records: [{ accountid: '00000000-0000-0000-0000-000000000001', name: 'Playwright Probe' }]
+      })
+    }
   ]);
 
   await openApp(page);
@@ -109,7 +109,7 @@ test('dataverse query result can toggle table and JSON without corrupting payloa
   expect(executeRequest?.body).toMatchObject({
     environmentAlias: expect.any(String),
     entitySetName: 'accounts',
-    selectCsv: 'accountid,name',
+    selectCsv: 'accountid,name'
   });
   await audit.assertClean();
 });
@@ -130,10 +130,14 @@ test('relationship graph validation stays client-side until an entity is selecte
 test('changing environment clears Dataverse query builder state', async ({ page, audit }) => {
   await openApp(page);
   const environmentSelect = page.locator('#global-environment');
-  const options = await environmentSelect.locator('option').evaluateAll((items) => items.map((item) => ({
-    value: (item as HTMLOptionElement).value,
-    selected: (item as HTMLOptionElement).selected,
-  })).filter((item) => item.value));
+  const options = await environmentSelect.locator('option').evaluateAll((items) =>
+    items
+      .map((item) => ({
+        value: (item as HTMLOptionElement).value,
+        selected: (item as HTMLOptionElement).selected
+      }))
+      .filter((item) => item.value)
+  );
   if (options.length < 2) {
     test.skip(true, 'local config has fewer than two environments');
   }
@@ -159,7 +163,7 @@ test('changing environment clears Dataverse query builder state', async ({ page,
 test('console history can pin requests and survives reload', async ({ page, audit }) => {
   await installDesktopApiMocks(page, [
     { method: 'POST', path: '/api/request/execute', bodyPath: '/history-probe', body: requestResult({ path: '/history-probe' }) },
-    { method: 'PUT', path: '/api/ui/saved-requests', body: apiEnvelope({ entries: [] }) },
+    { method: 'PUT', path: '/api/ui/saved-requests', body: apiEnvelope({ entries: [] }) }
   ]);
 
   await openApp(page);
@@ -201,15 +205,15 @@ test('Apps and Platform detail actions seed the API console', async ({ page, aud
       path: '/api/request/execute',
       bodyApi: 'powerapps',
       bodyPath: '/apps',
-      body: requestResult({ value: [{ name: 'app-probe', properties: { displayName: 'App Probe', appType: 'CanvasApp' } }] }),
+      body: requestResult({ value: [{ name: 'app-probe', properties: { displayName: 'App Probe', appType: 'CanvasApp' } }] })
     },
     {
       method: 'POST',
       path: '/api/request/execute',
       bodyApi: 'bap',
       bodyPath: '/environments',
-      body: requestResult({ value: [{ name: 'env-probe', location: 'australia', properties: { displayName: 'Environment Probe', states: { management: { id: 'Ready' } } } }] }),
-    },
+      body: requestResult({ value: [{ name: 'env-probe', location: 'australia', properties: { displayName: 'Environment Probe', states: { management: { id: 'Ready' } } } }] })
+    }
   ]);
 
   await openApp(page);
@@ -245,10 +249,10 @@ test('result tables sort without changing the underlying JSON payload', async ({
         logicalName: 'account',
         records: [
           { accountid: '00000000-0000-0000-0000-000000000002', name: 'Zulu Probe' },
-          { accountid: '00000000-0000-0000-0000-000000000001', name: 'Alpha Probe' },
-        ],
-      }),
-    },
+          { accountid: '00000000-0000-0000-0000-000000000001', name: 'Alpha Probe' }
+        ]
+      })
+    }
   ]);
 
   await openApp(page);
@@ -275,69 +279,78 @@ test('result tables sort without changing the underlying JSON payload', async ({
 test('Automate flow, run, and action clicks load the expected detail paths', async ({ page, audit }) => {
   const responseForPath: Record<string, unknown> = {
     '/flows': {
-        value: [{
+      value: [
+        {
           name: 'flow-probe',
           properties: {
             displayName: 'Flow Probe',
             state: 'Started',
             createdTime: '2026-01-01T00:00:00Z',
             lastModifiedTime: '2026-01-02T00:00:00Z',
-            definitionSummary: { triggers: [{ type: 'Request' }], actions: [{ name: 'Compose' }] },
-          },
-        }],
-      },
-      '/flows/flow-probe': {
-        name: 'flow-probe',
-        properties: {
-          displayName: 'Flow Probe',
-          state: 'Started',
-          definition: {
-            triggers: { manual: { type: 'Request' } },
-            actions: { Compose: { type: 'Compose', inputs: 'hello' } },
-          },
-        },
-      },
-      '/flows/flow-probe/runs?$top=20': {
-        value: [{
+            definitionSummary: { triggers: [{ type: 'Request' }], actions: [{ name: 'Compose' }] }
+          }
+        }
+      ]
+    },
+    '/flows/flow-probe': {
+      name: 'flow-probe',
+      properties: {
+        displayName: 'Flow Probe',
+        state: 'Started',
+        definition: {
+          triggers: { manual: { type: 'Request' } },
+          actions: { Compose: { type: 'Compose', inputs: 'hello' } }
+        }
+      }
+    },
+    '/flows/flow-probe/runs?$top=20': {
+      value: [
+        {
           name: 'run-probe',
           properties: {
             status: 'Succeeded',
             startTime: '2026-01-03T00:00:00Z',
             endTime: '2026-01-03T00:00:02Z',
-            trigger: { name: 'manual', status: 'Succeeded' },
-          },
-        }],
-      },
-      '/flows/flow-probe/runs/run-probe/actions': {
-        value: [{
+            trigger: { name: 'manual', status: 'Succeeded' }
+          }
+        }
+      ]
+    },
+    '/flows/flow-probe/runs/run-probe/actions': {
+      value: [
+        {
           name: 'Compose',
           properties: {
             status: 'Succeeded',
             type: 'Compose',
             startTime: '2026-01-03T00:00:01Z',
-            endTime: '2026-01-03T00:00:02Z',
-          },
-        }],
-      },
-      '/flows/flow-probe/runs/run-probe/actions/Compose': {
-        name: 'Compose',
-        properties: {
-          status: 'Succeeded',
-          type: 'Compose',
-          inputs: { message: 'hello' },
-          outputs: { message: 'hello' },
-          startTime: '2026-01-03T00:00:01Z',
-          endTime: '2026-01-03T00:00:02Z',
-        },
-      },
+            endTime: '2026-01-03T00:00:02Z'
+          }
+        }
+      ]
+    },
+    '/flows/flow-probe/runs/run-probe/actions/Compose': {
+      name: 'Compose',
+      properties: {
+        status: 'Succeeded',
+        type: 'Compose',
+        inputs: { message: 'hello' },
+        outputs: { message: 'hello' },
+        startTime: '2026-01-03T00:00:01Z',
+        endTime: '2026-01-03T00:00:02Z'
+      }
+    }
   };
-  await installDesktopApiMocks(page, Object.entries(responseForPath).map(([bodyPath, response]) => ({
-    method: 'POST',
-    path: '/api/request/execute',
-    bodyApi: 'flow',
-    bodyPath,
-    body: requestResult(response),
-  })));
+  await installDesktopApiMocks(
+    page,
+    Object.entries(responseForPath).map(([bodyPath, response]) => ({
+      method: 'POST',
+      path: '/api/request/execute',
+      bodyApi: 'flow',
+      bodyPath,
+      body: requestResult(response)
+    }))
+  );
 
   await openApp(page);
   await visitTab(page, 'Automate');
@@ -362,13 +375,9 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
     .map((request) => request.body as { api?: string; path?: string } | undefined)
     .filter((body) => body?.api === 'flow')
     .map((body) => body?.path);
-  expect(flowPaths).toEqual(expect.arrayContaining([
-    '/flows',
-    '/flows/flow-probe',
-    '/flows/flow-probe/runs?$top=20',
-    '/flows/flow-probe/runs/run-probe/actions',
-    '/flows/flow-probe/runs/run-probe/actions/Compose',
-  ]));
+  expect(flowPaths).toEqual(
+    expect.arrayContaining(['/flows', '/flows/flow-probe', '/flows/flow-probe/runs?$top=20', '/flows/flow-probe/runs/run-probe/actions', '/flows/flow-probe/runs/run-probe/actions/Compose'])
+  );
 
   await audit.assertClean();
 });

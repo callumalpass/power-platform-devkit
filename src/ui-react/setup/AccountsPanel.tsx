@@ -1,13 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formDataObject, formatDate, formatTimeRemaining } from '../utils.js';
 import type { ToastFn } from '../ui-types.js';
-import {
-  API_SCOPE_OPTIONS,
-  type AuthSession,
-  type BrowserProfileResult,
-  type BrowserProfileStatus,
-  type TokenEntry,
-} from './types.js';
+import { API_SCOPE_OPTIONS, type AuthSession, type BrowserProfileResult, type BrowserProfileStatus, type TokenEntry } from './types.js';
 import type { useAuthSession } from './login.js';
 import type { useConfirm } from './ConfirmDialog.js';
 import { DetailPanel } from './DetailPanel.js';
@@ -70,7 +64,9 @@ function EditAccountBody(props: {
         if (!cancelled) setBrowserProfileLoaded(true);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [interactive, account.name]);
 
   async function handleBrowserProfileOpen() {
@@ -78,7 +74,7 @@ function EditAccountBody(props: {
     try {
       const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile/open`, {
         method: 'POST',
-        body: JSON.stringify({ url: 'https://make.powerapps.com' }),
+        body: JSON.stringify({ url: 'https://make.powerapps.com' })
       });
       setBrowserProfile(result.data);
       toast('Browser profile opened');
@@ -94,7 +90,7 @@ function EditAccountBody(props: {
     try {
       const result = await api<BrowserProfileResult>(`/api/accounts/${encodeURIComponent(account.name)}/browser-profile/verify`, {
         method: 'POST',
-        body: JSON.stringify({ url: 'https://make.powerapps.com' }),
+        body: JSON.stringify({ url: 'https://make.powerapps.com' })
       });
       setBrowserProfile(result.data);
       if (result.data.authenticated) toast('Browser profile is signed in');
@@ -109,7 +105,11 @@ function EditAccountBody(props: {
   function handleBrowserProfileReset() {
     confirm.open({
       title: 'Reset browser profile?',
-      body: <>This removes the saved browser data for account <strong>{account.name}</strong>. You will need to sign in again next time you open Maker or run a Playwright script.</>,
+      body: (
+        <>
+          This removes the saved browser data for account <strong>{account.name}</strong>. You will need to sign in again next time you open Maker or run a Playwright script.
+        </>
+      ),
       confirmLabel: 'Reset profile',
       destructive: true,
       onConfirm: async () => {
@@ -123,7 +123,7 @@ function EditAccountBody(props: {
         } finally {
           setBrowserProfileBusy(false);
         }
-      },
+      }
     });
   }
 
@@ -132,7 +132,7 @@ function EditAccountBody(props: {
     try {
       await api(`/api/accounts/${encodeURIComponent(account.name)}`, {
         method: 'PUT',
-        body: JSON.stringify(formDataObject(event.currentTarget)),
+        body: JSON.stringify(formDataObject(event.currentTarget))
       });
       toast('Account updated');
       await refreshState(true);
@@ -144,7 +144,11 @@ function EditAccountBody(props: {
   function handleRemove() {
     confirm.open({
       title: `Remove account "${account.name}"?`,
-      body: <>This deletes the account configuration from <code>pp</code>. Cached tokens for this account will be discarded. Environments still pointing at this account will need to be reassigned.</>,
+      body: (
+        <>
+          This deletes the account configuration from <code>pp</code>. Cached tokens for this account will be discarded. Environments still pointing at this account will need to be reassigned.
+        </>
+      ),
       confirmLabel: 'Remove account',
       destructive: true,
       typedConfirmation: account.name,
@@ -157,7 +161,7 @@ function EditAccountBody(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
@@ -169,7 +173,9 @@ function EditAccountBody(props: {
       <div className="drawer-meta-grid">
         <div className="drawer-meta-item">
           <span className="drawer-meta-label">Kind</span>
-          <span className="drawer-meta-value"><span className="badge">{account.kind}</span></span>
+          <span className="drawer-meta-value">
+            <span className="badge">{account.kind}</span>
+          </span>
         </div>
         <div className="drawer-meta-item">
           <span className="drawer-meta-label">Token</span>
@@ -196,14 +202,30 @@ function EditAccountBody(props: {
         <input type="hidden" name="name" defaultValue={account.name} />
         <input type="hidden" name="kind" defaultValue={account.kind} />
         <div className="form-row">
-          <div className="field"><span className="field-label">Description</span><input name="description" defaultValue={account.description || ''} placeholder="Optional" /></div>
-          <div className="field"><span className="field-label">Login Hint</span><input name="loginHint" defaultValue={account.loginHint || ''} placeholder="user@example.com" /></div>
+          <div className="field">
+            <span className="field-label">Description</span>
+            <input name="description" defaultValue={account.description || ''} placeholder="Optional" />
+          </div>
+          <div className="field">
+            <span className="field-label">Login Hint</span>
+            <input name="loginHint" defaultValue={account.loginHint || ''} placeholder="user@example.com" />
+          </div>
         </div>
         <div className="form-row">
-          <div className="field"><span className="field-label">Tenant ID</span><input name="tenantId" defaultValue={account.tenantId || ''} /></div>
-          <div className="field"><span className="field-label">Client ID</span><input name="clientId" defaultValue={account.clientId || ''} /></div>
+          <div className="field">
+            <span className="field-label">Tenant ID</span>
+            <input name="tenantId" defaultValue={account.tenantId || ''} />
+          </div>
+          <div className="field">
+            <span className="field-label">Client ID</span>
+            <input name="clientId" defaultValue={account.clientId || ''} />
+          </div>
         </div>
-        <div className="btn-group"><button type="submit" className="btn btn-primary btn-sm">Save changes</button></div>
+        <div className="btn-group">
+          <button type="submit" className="btn btn-primary btn-sm">
+            Save changes
+          </button>
+        </div>
       </form>
 
       {interactive ? (
@@ -214,22 +236,42 @@ function EditAccountBody(props: {
               <p className="desc">Persistent Chromium profile for Maker, Studio, and Playwright scripts.</p>
             </div>
             <div className="btn-group">
-              <button className="btn btn-secondary btn-sm" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileOpen}>Open Maker</button>
-              <button className="btn btn-ghost btn-sm" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileVerify}>Verify</button>
-              <button className="btn btn-ghost btn-sm" type="button" disabled={browserProfileBusy || !browserProfile?.configured} onClick={handleBrowserProfileReset}>Reset</button>
+              <button className="btn btn-secondary btn-sm" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileOpen}>
+                Open Maker
+              </button>
+              <button className="btn btn-ghost btn-sm" type="button" disabled={browserProfileBusy} onClick={handleBrowserProfileVerify}>
+                Verify
+              </button>
+              <button className="btn btn-ghost btn-sm" type="button" disabled={browserProfileBusy || !browserProfile?.configured} onClick={handleBrowserProfileReset}>
+                Reset
+              </button>
             </div>
           </div>
           <dl className="drawer-definitions">
-            <div><dt>Status</dt><dd>{browserProfile?.open ? 'Open' : browserProfile?.exists ? 'Ready' : browserProfileLoaded ? 'Not created' : 'Loading…'}</dd></div>
-            <div><dt>Last opened</dt><dd>{formatDate(browserProfile?.profile?.lastOpenedAt)}</dd></div>
-            <div><dt>Last verified</dt><dd>{formatDate(browserProfile?.profile?.lastVerifiedAt)}</dd></div>
-            <div><dt>Profile path</dt><dd className="drawer-meta-mono">{browserProfile?.profile?.userDataDir || '—'}</dd></div>
+            <div>
+              <dt>Status</dt>
+              <dd>{browserProfile?.open ? 'Open' : browserProfile?.exists ? 'Ready' : browserProfileLoaded ? 'Not created' : 'Loading…'}</dd>
+            </div>
+            <div>
+              <dt>Last opened</dt>
+              <dd>{formatDate(browserProfile?.profile?.lastOpenedAt)}</dd>
+            </div>
+            <div>
+              <dt>Last verified</dt>
+              <dd>{formatDate(browserProfile?.profile?.lastVerifiedAt)}</dd>
+            </div>
+            <div>
+              <dt>Profile path</dt>
+              <dd className="drawer-meta-mono">{browserProfile?.profile?.userDataDir || '—'}</dd>
+            </div>
           </dl>
         </section>
       ) : null}
 
       <div className="drawer-bottom-actions">
-        <button className="btn btn-danger btn-sm" type="button" onClick={handleRemove}>Remove account</button>
+        <button className="btn btn-danger btn-sm" type="button" onClick={handleRemove}>
+          Remove account
+        </button>
       </div>
     </>
   );
@@ -266,7 +308,7 @@ export function AddAccountForm(props: {
     try {
       await api<any>('/api/accounts', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
       toast('Account saved');
       await refreshState(true);
@@ -276,8 +318,8 @@ export function AddAccountForm(props: {
           body: JSON.stringify({
             ...payload,
             excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name]),
-            environmentAlias: globalEnvironment || undefined,
-          }),
+            environmentAlias: globalEnvironment || undefined
+          })
         });
         onLoginStarted(session.data);
       }
@@ -295,16 +337,44 @@ export function AddAccountForm(props: {
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="drawer-form">
       <div className="segmented" role="tablist" aria-label="Form complexity">
-        <button type="button" role="tab" aria-selected={mode === 'basic'} className={`segmented-item ${mode === 'basic' ? 'active' : ''}`} onClick={() => setMode('basic')}>Basic</button>
-        <button type="button" role="tab" aria-selected={mode === 'advanced'} className={`segmented-item ${mode === 'advanced' ? 'active' : ''}`} onClick={() => setMode('advanced')}>Advanced options</button>
+        <button type="button" role="tab" aria-selected={mode === 'basic'} className={`segmented-item ${mode === 'basic' ? 'active' : ''}`} onClick={() => setMode('basic')}>
+          Basic
+        </button>
+        <button type="button" role="tab" aria-selected={mode === 'advanced'} className={`segmented-item ${mode === 'advanced' ? 'active' : ''}`} onClick={() => setMode('advanced')}>
+          Advanced options
+        </button>
       </div>
 
       <div className="form-row">
-        <div className="field"><span className="field-label">Name<span className="field-required" aria-label="required">*</span></span><input name="name" required placeholder="my-work-account" /></div>
-        <div className="field"><span className="field-label">Login Hint<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="The username pre-filled at sign-in. Required for device-code and silent refresh; optional but recommended for interactive login to skip the account picker.">?</span></span><input name="loginHint" placeholder="user@example.com" /></div>
+        <div className="field">
+          <span className="field-label">
+            Name
+            <span className="field-required" aria-label="required">
+              *
+            </span>
+          </span>
+          <input name="name" required placeholder="my-work-account" />
+        </div>
+        <div className="field">
+          <span className="field-label">
+            Login Hint
+            <span
+              className="field-tooltip"
+              role="img"
+              aria-label="Help"
+              data-tooltip="The username pre-filled at sign-in. Required for device-code and silent refresh; optional but recommended for interactive login to skip the account picker."
+            >
+              ?
+            </span>
+          </span>
+          <input name="loginHint" placeholder="user@example.com" />
+        </div>
       </div>
       <div className="form-row">
-        <div className="field"><span className="field-label">Description</span><input name="description" placeholder="Optional" /></div>
+        <div className="field">
+          <span className="field-label">Description</span>
+          <input name="description" placeholder="Optional" />
+        </div>
         <div className="field"></div>
       </div>
 
@@ -314,12 +384,7 @@ export function AddAccountForm(props: {
           <div className="api-scope-checks">
             {API_SCOPE_OPTIONS.map((scope) => (
               <label key={scope.key} className="api-scope-check">
-                <input
-                  type="checkbox"
-                  value={scope.key}
-                  checked={selectedApis[scope.key]}
-                  onChange={(event) => setSelectedApis((current) => ({ ...current, [scope.key]: event.target.checked }))}
-                />
+                <input type="checkbox" value={scope.key} checked={selectedApis[scope.key]} onChange={(event) => setSelectedApis((current) => ({ ...current, [scope.key]: event.target.checked }))} />
                 {scope.label}
               </label>
             ))}
@@ -341,7 +406,7 @@ export function AddAccountForm(props: {
                   { value: 'device-code', label: 'Device code' },
                   { value: 'client-secret', label: 'Client secret' },
                   { value: 'environment-token', label: 'Environment token variable' },
-                  { value: 'static-token', label: 'Static token' },
+                  { value: 'static-token', label: 'Static token' }
                 ]}
               />
             </div>
@@ -350,8 +415,14 @@ export function AddAccountForm(props: {
 
           {showTenantClient ? (
             <div className="form-row">
-              <div className="field"><span className="field-label">Tenant ID</span><input name="tenantId" placeholder="defaults to common" /></div>
-              <div className="field"><span className="field-label">Client ID</span><input name="clientId" placeholder="defaults to built-in app" /></div>
+              <div className="field">
+                <span className="field-label">Tenant ID</span>
+                <input name="tenantId" placeholder="defaults to common" />
+              </div>
+              <div className="field">
+                <span className="field-label">Client ID</span>
+                <input name="clientId" placeholder="defaults to built-in app" />
+              </div>
             </div>
           ) : null}
 
@@ -366,7 +437,7 @@ export function AddAccountForm(props: {
                     onChange={setPreferredFlow}
                     options={[
                       { value: 'interactive', label: 'interactive' },
-                      { value: 'device-code', label: 'device-code' },
+                      { value: 'device-code', label: 'device-code' }
                     ]}
                   />
                 </div>
@@ -381,25 +452,79 @@ export function AddAccountForm(props: {
                       { value: 'select_account', label: 'select_account' },
                       { value: 'login', label: 'login' },
                       { value: 'consent', label: 'consent' },
-                      { value: 'none', label: 'none' },
+                      { value: 'none', label: 'none' }
                     ]}
                   />
                 </div>
               </div>
-              <div className="check-row"><input type="checkbox" name="forcePrompt" id="forcePrompt" /><label htmlFor="forcePrompt">Force prompt on next login</label></div>
-              {accountKind === 'user' ? <div className="check-row"><input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode" /><label htmlFor="fallbackToDeviceCode">Allow fallback to device code</label></div> : null}
+              <div className="check-row">
+                <input type="checkbox" name="forcePrompt" id="forcePrompt" />
+                <label htmlFor="forcePrompt">Force prompt on next login</label>
+              </div>
+              {accountKind === 'user' ? (
+                <div className="check-row">
+                  <input type="checkbox" name="fallbackToDeviceCode" id="fallbackToDeviceCode" />
+                  <label htmlFor="fallbackToDeviceCode">Allow fallback to device code</label>
+                </div>
+              ) : null}
             </>
           ) : null}
 
-          {accountKind === 'client-secret' ? <div className="field"><span className="field-label">Client Secret Env Var<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="The name of an environment variable (on the machine running pp) whose value holds the client secret. pp reads it at login time — the secret itself is never stored on disk.">?</span></span><input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET" /></div> : null}
-          {accountKind === 'environment-token' ? <div className="field"><span className="field-label">Token Env Var<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="Environment variable name that contains a pre-issued bearer token pp will send as-is. Useful for CI or when you already have a token from another tool.">?</span></span><input name="environmentVariable" placeholder="MY_TOKEN_VAR" /></div> : null}
-          {accountKind === 'static-token' ? <div className="field"><span className="field-label">Static Token<span className="field-tooltip" role="img" aria-label="Help" data-tooltip="A bearer token stored directly in pp config. Avoid in shared repos — prefer environment-token.">?</span></span><textarea name="token" placeholder="Paste token"></textarea></div> : null}
+          {accountKind === 'client-secret' ? (
+            <div className="field">
+              <span className="field-label">
+                Client Secret Env Var
+                <span
+                  className="field-tooltip"
+                  role="img"
+                  aria-label="Help"
+                  data-tooltip="The name of an environment variable (on the machine running pp) whose value holds the client secret. pp reads it at login time — the secret itself is never stored on disk."
+                >
+                  ?
+                </span>
+              </span>
+              <input name="clientSecretEnv" placeholder="MY_CLIENT_SECRET" />
+            </div>
+          ) : null}
+          {accountKind === 'environment-token' ? (
+            <div className="field">
+              <span className="field-label">
+                Token Env Var
+                <span
+                  className="field-tooltip"
+                  role="img"
+                  aria-label="Help"
+                  data-tooltip="Environment variable name that contains a pre-issued bearer token pp will send as-is. Useful for CI or when you already have a token from another tool."
+                >
+                  ?
+                </span>
+              </span>
+              <input name="environmentVariable" placeholder="MY_TOKEN_VAR" />
+            </div>
+          ) : null}
+          {accountKind === 'static-token' ? (
+            <div className="field">
+              <span className="field-label">
+                Static Token
+                <span className="field-tooltip" role="img" aria-label="Help" data-tooltip="A bearer token stored directly in pp config. Avoid in shared repos — prefer environment-token.">
+                  ?
+                </span>
+              </span>
+              <textarea name="token" placeholder="Paste token"></textarea>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       <div className="btn-group" style={{ marginTop: 12 }}>
-        {isInteractive ? <button type="submit" className="btn btn-primary" name="intent" value="connect">Save &amp; log in</button> : null}
-        <button type="submit" className="btn btn-secondary" name="intent" value="save">{isInteractive ? 'Save without logging in' : 'Save account'}</button>
+        {isInteractive ? (
+          <button type="submit" className="btn btn-primary" name="intent" value="connect">
+            Save &amp; log in
+          </button>
+        ) : null}
+        <button type="submit" className="btn btn-secondary" name="intent" value="save">
+          {isInteractive ? 'Save without logging in' : 'Save account'}
+        </button>
       </div>
     </form>
   );
@@ -409,10 +534,7 @@ export function AddAccountForm(props: {
 // AccountsPanel (dense table)
 // ---------------------------------------------------------------------------
 
-type DrawerState =
-  | { mode: 'closed' }
-  | { mode: 'new' }
-  | { mode: 'edit'; accountName: string };
+type DrawerState = { mode: 'closed' } | { mode: 'new' } | { mode: 'edit'; accountName: string };
 
 export function AccountsPanel(props: {
   accounts: any[];
@@ -478,11 +600,8 @@ export function AccountsPanel(props: {
   }
 
   async function handleLogin(account: any) {
-    const accountEnvironmentAlias = globalEnvironment && environments.some((environment: any) => (
-      environment.alias === globalEnvironment && environment.account === account.name
-    ))
-      ? globalEnvironment
-      : undefined;
+    const accountEnvironmentAlias =
+      globalEnvironment && environments.some((environment: any) => environment.alias === globalEnvironment && environment.account === account.name) ? globalEnvironment : undefined;
     try {
       const started = await api<any>('/api/auth/sessions', {
         method: 'POST',
@@ -493,8 +612,8 @@ export function AccountsPanel(props: {
           tenantId: account.tenantId,
           clientId: account.clientId,
           environmentAlias: accountEnvironmentAlias,
-          excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name]),
-        }),
+          excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name])
+        })
       });
       login.handleLoginStarted(started.data);
     } catch (error) {
@@ -505,7 +624,11 @@ export function AccountsPanel(props: {
   function handleRemove(account: any) {
     confirm.open({
       title: `Remove account "${account.name}"?`,
-      body: <>This deletes the account configuration from <code>pp</code>. Cached tokens for this account will be discarded. Environments still pointing at this account will need to be reassigned.</>,
+      body: (
+        <>
+          This deletes the account configuration from <code>pp</code>. Cached tokens for this account will be discarded. Environments still pointing at this account will need to be reassigned.
+        </>
+      ),
       confirmLabel: 'Remove account',
       destructive: true,
       typedConfirmation: account.name,
@@ -517,7 +640,7 @@ export function AccountsPanel(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
@@ -525,55 +648,57 @@ export function AccountsPanel(props: {
     return JSON.stringify(account, null, 2);
   }
 
-  const editingAccount = drawer.mode === 'edit'
-    ? accounts.find((a: any) => a.name === drawer.accountName)
-    : null;
+  const editingAccount = drawer.mode === 'edit' ? accounts.find((a: any) => a.name === drawer.accountName) : null;
 
   return (
     <div className="panel setup-table-panel">
       <div className="setup-table-toolbar">
         <h2>Accounts</h2>
         <div className="setup-table-toolbar-actions">
-          <input
-            type="search"
-            className="setup-table-filter"
-            placeholder="Filter accounts…"
-            aria-label="Filter accounts"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => void refreshState(false)}>Refresh</button>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>+ Add account</button>
+          <input type="search" className="setup-table-filter" placeholder="Filter accounts…" aria-label="Filter accounts" value={filter} onChange={(event) => setFilter(event.target.value)} />
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => void refreshState(false)}>
+            Refresh
+          </button>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>
+            + Add account
+          </button>
         </div>
       </div>
 
       {accounts.length === 0 ? (
         <div className="setup-table-empty">
           <p>No accounts configured yet.</p>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>Add your first account</button>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>
+            Add your first account
+          </button>
         </div>
       ) : rows.length === 0 ? (
         <div className="setup-table-empty">No accounts match “{filter}”.</div>
       ) : (
-        <div
-          className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`}
-          style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}
-        >
+        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}>
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
                 <tr>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'name' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('name')}>Name{sort.key === 'name' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('name')}>
+                      Name{sort.key === 'name' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'kind' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('kind')}>Kind{sort.key === 'kind' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('kind')}>
+                      Kind{sort.key === 'kind' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'identity' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('identity')}>Identity{sort.key === 'identity' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('identity')}>
+                      Identity{sort.key === 'identity' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'expiry' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('expiry')}>Token{sort.key === 'expiry' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('expiry')}>
+                      Token{sort.key === 'expiry' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th className="setup-table-count">Envs</th>
                   <th className="setup-table-actions-col" aria-label="Actions" />
@@ -614,34 +739,32 @@ export function AccountsPanel(props: {
                         </span>
                         {account.description ? <div className="setup-row-sub">{account.description}</div> : null}
                       </td>
-                      <td><span className="badge">{account.kind}</span></td>
+                      <td>
+                        <span className="badge">{account.kind}</span>
+                      </td>
                       <td className="setup-row-muted">{account.accountUsername || account.loginHint || '—'}</td>
                       <td>
-                        {expiry ? <span className={`token-expiry ${expiry.cls || ''}`}>{expiry.text}</span>
-                        : state === 'pending' ? <span className="setup-row-muted">checking…</span>
-                        : <span className="token-expiry expired">not signed in</span>}
+                        {expiry ? (
+                          <span className={`token-expiry ${expiry.cls || ''}`}>{expiry.text}</span>
+                        ) : state === 'pending' ? (
+                          <span className="setup-row-muted">checking…</span>
+                        ) : (
+                          <span className="token-expiry expired">not signed in</span>
+                        )}
                       </td>
                       <td className="setup-table-count">{envCountByAccount[account.name] || 0}</td>
                       <td className="setup-table-actions-col">
                         <div className="setup-row-actions" onClick={(event) => event.stopPropagation()}>
                           {primaryAction ? (
-                            <button
-                              type="button"
-                              className={`btn ${primaryAction.variant} btn-sm`}
-                              onClick={() => void handleLogin(account)}
-                            >{primaryAction.label}</button>
+                            <button type="button" className={`btn ${primaryAction.variant} btn-sm`} onClick={() => void handleLogin(account)}>
+                              {primaryAction.label}
+                            </button>
                           ) : null}
-                          <CopyButton
-                            value={accountAsJson(account)}
-                            label="Copy"
-                            title="Copy account config as JSON"
-                            toast={toast}
-                            stopPropagation
-                          />
+                          <CopyButton value={accountAsJson(account)} label="Copy" title="Copy account config as JSON" toast={toast} stopPropagation />
                           <OverflowMenu
                             items={[
                               { label: 'Edit details', onClick: () => setDrawer({ mode: 'edit', accountName: account.name }) },
-                              { label: 'Remove account', destructive: true, onClick: () => handleRemove(account) },
+                              { label: 'Remove account', destructive: true, onClick: () => handleRemove(account) }
                             ]}
                           />
                         </div>
@@ -654,19 +777,8 @@ export function AccountsPanel(props: {
           </div>
           {drawer.mode !== 'closed' ? (
             <div className="setup-split-detail">
-              <div
-                className="setup-detail-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize detail panel"
-                onMouseDown={startDetailResize}
-              />
-              <DetailPanel
-                open={drawer.mode === 'new'}
-                title="Add account"
-                subtitle="Connect to Power Platform via Microsoft identity."
-                onClose={() => setDrawer({ mode: 'closed' })}
-              >
+              <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
+              <DetailPanel open={drawer.mode === 'new'} title="Add account" subtitle="Connect to Power Platform via Microsoft identity." onClose={() => setDrawer({ mode: 'closed' })}>
                 <AddAccountForm
                   accounts={accounts}
                   selectedApis={selectedApis}
@@ -682,7 +794,13 @@ export function AccountsPanel(props: {
               <DetailPanel
                 open={drawer.mode === 'edit' && !!editingAccount}
                 title={editingAccount?.name || 'Account'}
-                subtitle={editingAccount ? <>{editingAccount.kind} · {editingAccount.accountUsername || editingAccount.loginHint || 'no identity'}</> : undefined}
+                subtitle={
+                  editingAccount ? (
+                    <>
+                      {editingAccount.kind} · {editingAccount.accountUsername || editingAccount.loginHint || 'no identity'}
+                    </>
+                  ) : undefined
+                }
                 onClose={() => setDrawer({ mode: 'closed' })}
               >
                 {editingAccount ? (
@@ -701,7 +819,6 @@ export function AccountsPanel(props: {
           ) : null}
         </div>
       )}
-
     </div>
   );
 }

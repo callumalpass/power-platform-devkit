@@ -78,7 +78,9 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
     activeSessionIdRef.current = null;
     try {
       await api(`/api/auth/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setActiveSession(null);
     setLoginTargets([]);
   }
@@ -93,13 +95,7 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
   return { activeSession, loginTargets, handleLoginStarted, handleCancelLogin, clearCompletedLogin };
 }
 
-export function LoginProgress(props: {
-  session: AuthSession | null;
-  loginTargets: LoginTarget[];
-  onCancel: () => void;
-  onDismiss: () => void;
-  toast: ToastFn;
-}) {
+export function LoginProgress(props: { session: AuthSession | null; loginTargets: LoginTarget[]; onCancel: () => void; onDismiss: () => void; toast: ToastFn }) {
   const { session, loginTargets, onCancel, onDismiss, toast } = props;
 
   const completedCount = loginTargets.filter((t) => t.status === 'completed').length;
@@ -110,35 +106,42 @@ export function LoginProgress(props: {
   const terminal = session?.status === 'completed' || session?.status === 'failed' || session?.status === 'cancelled';
   const accountLabel = session?.accountName?.trim() || 'selected account';
   const activeTargetLabel = loginTargetLabel(currentTarget);
-  const title = session?.status === 'failed'
-    ? `Authentication needs attention for ${accountLabel}`
-    : completedCount === total && total > 0
-    ? `Authentication complete for ${accountLabel}`
-    : currentTarget
-      ? currentTarget.status === 'waiting_for_user'
-        ? `Sign in as ${accountLabel} for ${activeTargetLabel} (${currentIndex} of ${total})`
-        : `Connecting ${accountLabel} to ${activeTargetLabel} (${currentIndex} of ${total})`
-      : `Preparing sign-in for ${accountLabel}...`;
+  const title =
+    session?.status === 'failed'
+      ? `Authentication needs attention for ${accountLabel}`
+      : completedCount === total && total > 0
+        ? `Authentication complete for ${accountLabel}`
+        : currentTarget
+          ? currentTarget.status === 'waiting_for_user'
+            ? `Sign in as ${accountLabel} for ${activeTargetLabel} (${currentIndex} of ${total})`
+            : `Connecting ${accountLabel} to ${activeTargetLabel} (${currentIndex} of ${total})`
+          : `Preparing sign-in for ${accountLabel}...`;
 
   return (
     <div className="login-progress-panel">
       <div className="login-progress-header">
-        <div className="login-progress-title">
-          {title}
-        </div>
+        <div className="login-progress-title">{title}</div>
         <div className="login-progress-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => {
-            const links = loginTargets
-              .filter((t) => t.action?.kind === 'browser-url')
-              .map((t) => (t.action?.kind === 'browser-url' ? t.action.url : ''));
-            void copyTextToClipboard(links.join('\n'))
-              .then(() => toast('Copied login URLs'))
-              .catch((error) => toast(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, true));
-          }}>Copy URLs</button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              const links = loginTargets.filter((t) => t.action?.kind === 'browser-url').map((t) => (t.action?.kind === 'browser-url' ? t.action.url : ''));
+              void copyTextToClipboard(links.join('\n'))
+                .then(() => toast('Copied login URLs'))
+                .catch((error) => toast(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, true));
+            }}
+          >
+            Copy URLs
+          </button>
           {terminal ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onDismiss}>Dismiss</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onDismiss}>
+              Dismiss
+            </button>
           ) : (
-            <button type="button" className="btn btn-danger btn-sm" onClick={onCancel}>Cancel</button>
+            <button type="button" className="btn btn-danger btn-sm" onClick={onCancel}>
+              Cancel
+            </button>
           )}
         </div>
       </div>
@@ -147,8 +150,12 @@ export function LoginProgress(props: {
         <div className="device-code-card">
           <div className="device-code-instruction">Go to the following URL and enter the code to sign in:</div>
           <div className="device-code-url-row">
-            <a href={currentDeviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-url">{currentDeviceCode.verificationUri}</a>
-            <button type="button" className="btn btn-ghost device-code-open-btn" onClick={() => window.open(currentDeviceCode.verificationUri, '_blank', 'noreferrer')}>Open</button>
+            <a href={currentDeviceCode.verificationUri} target="_blank" rel="noreferrer" className="device-code-url">
+              {currentDeviceCode.verificationUri}
+            </a>
+            <button type="button" className="btn btn-ghost device-code-open-btn" onClick={() => window.open(currentDeviceCode.verificationUri, '_blank', 'noreferrer')}>
+              Open
+            </button>
             <CopyButton value={currentDeviceCode.verificationUri} label="Copy URL" title="Copy verification URL" toast={toast} />
           </div>
           <div className="device-code-box">

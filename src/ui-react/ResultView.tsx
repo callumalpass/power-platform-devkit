@@ -33,7 +33,10 @@ function extractColumns(records: any[]): string[] {
   for (const row of records) {
     for (const key of Object.keys(row)) {
       if (key.includes('@')) continue;
-      if (!seen.has(key)) { seen.add(key); columns.push(key); }
+      if (!seen.has(key)) {
+        seen.add(key);
+        columns.push(key);
+      }
     }
   }
   return columns;
@@ -82,13 +85,22 @@ function Cell(props: {
               type="button"
               className="record-link"
               data-entity={target}
-              onClick={(e) => { e.stopPropagation(); onRecordClick!(target!, display); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRecordClick!(target!, display);
+              }}
             >
               {lookupLabel || `${short}...`}
             </button>
           ) : (
             <span className="rt-guid-value">
-              {lookupLabel ? <>{lookupLabel} <span style={{ color: 'var(--muted)' }}>({short}...)</span></> : `${short}...`}
+              {lookupLabel ? (
+                <>
+                  {lookupLabel} <span style={{ color: 'var(--muted)' }}>({short}...)</span>
+                </>
+              ) : (
+                `${short}...`
+              )}
             </span>
           )}
           <CopyButton value={display} label="copy" title="Copy full GUID" toast={toast} stopPropagation />
@@ -122,14 +134,7 @@ function Cell(props: {
 // ResultTable
 // ---------------------------------------------------------------------------
 
-function ResultTable(props: {
-  records: any[];
-  primaryIdColumn?: string;
-  totalCount?: number;
-  highlightedRecordId?: string;
-  onRecordClick?: (entity: string, id: string) => void;
-  toast?: ToastFn;
-}) {
+function ResultTable(props: { records: any[]; primaryIdColumn?: string; totalCount?: number; highlightedRecordId?: string; onRecordClick?: (entity: string, id: string) => void; toast?: ToastFn }) {
   const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, toast } = props;
   const [sort, setSort] = useState<SortState>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
@@ -164,7 +169,9 @@ function ResultTable(props: {
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      setTimeout(() => { resizeRef.current = null; }, 0);
+      setTimeout(() => {
+        resizeRef.current = null;
+      }, 0);
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -172,9 +179,7 @@ function ResultTable(props: {
 
   if (!columns.length) return null;
 
-  const countLabel = totalCount != null && totalCount !== records.length
-    ? `${records.length} of ${totalCount.toLocaleString()} records`
-    : `${records.length} record${records.length === 1 ? '' : 's'}`;
+  const countLabel = totalCount != null && totalCount !== records.length ? `${records.length} of ${totalCount.toLocaleString()} records` : `${records.length} record${records.length === 1 ? '' : 's'}`;
 
   return (
     <div className="rt-wrap">
@@ -188,7 +193,10 @@ function ResultTable(props: {
                 const width = colWidths[col];
                 return (
                   <th key={col} className={`rt-th ${isSorted ? 'rt-th-sorted' : ''}`} style={width ? { width } : undefined} onClick={() => handleHeaderClick(col)} title={`Sort by ${col}`}>
-                    <span className="rt-th-label">{columnLabel(col)}{arrow}</span>
+                    <span className="rt-th-label">
+                      {columnLabel(col)}
+                      {arrow}
+                    </span>
                     <span className="rt-resize-handle" onMouseDown={(ev) => handleResizeStart(col, ev)} />
                   </th>
                 );
@@ -201,24 +209,28 @@ function ResultTable(props: {
               const rowClickable = !!(rowId && typeof rowId === 'string' && onRecordClick);
               const highlighted = typeof rowId === 'string' && highlightedRecordId === rowId;
               return (
-              <tr key={i} className={`${rowClickable ? 'rt-row-clickable' : ''} ${highlighted ? 'rt-row-highlight' : ''}`.trim()} onClick={rowClickable ? () => onRecordClick!('__self__', rowId as string) : undefined}>
-                {columns.map((col) => {
-                  const lookup = getLookupInfo(row, col);
-                  return (
-                    <Cell
-                      key={col}
-                      column={col}
-                      value={row[col]}
-                      isPrimaryId={col === primaryIdColumn}
-                      isLookup={!!lookup}
-                      lookupEntity={lookup?.targetEntity}
-                      lookupLabel={lookup?.formattedValue}
-                      onRecordClick={onRecordClick}
-                      toast={toast}
-                    />
-                  );
-                })}
-              </tr>
+                <tr
+                  key={i}
+                  className={`${rowClickable ? 'rt-row-clickable' : ''} ${highlighted ? 'rt-row-highlight' : ''}`.trim()}
+                  onClick={rowClickable ? () => onRecordClick!('__self__', rowId as string) : undefined}
+                >
+                  {columns.map((col) => {
+                    const lookup = getLookupInfo(row, col);
+                    return (
+                      <Cell
+                        key={col}
+                        column={col}
+                        value={row[col]}
+                        isPrimaryId={col === primaryIdColumn}
+                        isLookup={!!lookup}
+                        lookupEntity={lookup?.targetEntity}
+                        lookupLabel={lookup?.formattedValue}
+                        onRecordClick={onRecordClick}
+                        toast={toast}
+                      />
+                    );
+                  })}
+                </tr>
               );
             })}
           </tbody>
@@ -261,8 +273,12 @@ export function ResultView(props: ResultViewProps) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div className="result-toggle">
-          <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>Table</button>
-          <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>JSON</button>
+          <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>
+            Table
+          </button>
+          <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>
+            JSON
+          </button>
         </div>
         <CopyButton value={result || placeholder || 'No data.'} label="Copy JSON" title="Copy result JSON" toast={toast} />
       </div>
@@ -281,14 +297,7 @@ export function ResultView(props: ResultViewProps) {
       )}
 
       {detailTarget && environment && (
-        <RecordDetailModal
-          initial={detailTarget}
-          environment={environment}
-          environmentUrl={environmentUrl}
-          entityMap={entityMap}
-          onClose={() => setDetailTarget(null)}
-          toast={toast}
-        />
+        <RecordDetailModal initial={detailTarget} environment={environment} environmentUrl={environmentUrl} entityMap={entityMap} onClose={() => setDetailTarget(null)} toast={toast} />
       )}
     </div>
   );

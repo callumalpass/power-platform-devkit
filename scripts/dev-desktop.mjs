@@ -13,7 +13,7 @@ import {
   preloadBuildOptions,
   rendererBuildOptions,
   writeHtml,
-  writeRendererBundle,
+  writeRendererBundle
 } from './desktop-build-lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,28 +40,52 @@ process.on('SIGTERM', () => shutdown(0));
 async function startWatchers() {
   await ensureDesktopDir(paths);
 
-  contexts.push(await watchContext('main', mainBuildOptions(paths, {
-    dev: true,
-    plugins: [onRebuild('main', scheduleElectronRestart)],
-  })));
-  contexts.push(await watchContext('preload', preloadBuildOptions(paths, {
-    dev: true,
-    plugins: [onRebuild('preload', scheduleElectronRestart)],
-  })));
-  contexts.push(await watchContext('renderer', rendererBuildOptions(paths, {
-    dev: true,
-    plugins: [onRebuild('renderer', async (result) => {
-      await writeRendererBundle(paths, result);
-      scheduleRendererReload();
-    })],
-  })));
-  contexts.push(await watchContext('html', htmlTemplateBuildOptions(paths, {
-    dev: true,
-    plugins: [onRebuild('html', async () => {
-      await writeHtml(paths);
-      scheduleRendererReload();
-    })],
-  })));
+  contexts.push(
+    await watchContext(
+      'main',
+      mainBuildOptions(paths, {
+        dev: true,
+        plugins: [onRebuild('main', scheduleElectronRestart)]
+      })
+    )
+  );
+  contexts.push(
+    await watchContext(
+      'preload',
+      preloadBuildOptions(paths, {
+        dev: true,
+        plugins: [onRebuild('preload', scheduleElectronRestart)]
+      })
+    )
+  );
+  contexts.push(
+    await watchContext(
+      'renderer',
+      rendererBuildOptions(paths, {
+        dev: true,
+        plugins: [
+          onRebuild('renderer', async (result) => {
+            await writeRendererBundle(paths, result);
+            scheduleRendererReload();
+          })
+        ]
+      })
+    )
+  );
+  contexts.push(
+    await watchContext(
+      'html',
+      htmlTemplateBuildOptions(paths, {
+        dev: true,
+        plugins: [
+          onRebuild('html', async () => {
+            await writeHtml(paths);
+            scheduleRendererReload();
+          })
+        ]
+      })
+    )
+  );
 }
 
 async function watchContext(label, options) {
@@ -89,7 +113,7 @@ function onRebuild(label, callback) {
           console.error(`[desktop-dev] ${label} rebuild hook failed:`, error);
         });
       });
-    },
+    }
   };
 }
 
@@ -103,8 +127,8 @@ function startElectron() {
     env: {
       ...process.env,
       PP_DESKTOP_DEV: '1',
-      PP_DESKTOP_DEV_RELOAD_FILE: reloadSignalPath,
-    },
+      PP_DESKTOP_DEV_RELOAD_FILE: reloadSignalPath
+    }
   });
 
   electronProcess.on('exit', (code, signal) => {
@@ -144,9 +168,7 @@ function scheduleRendererReload() {
 }
 
 function resolveElectronBin() {
-  const localBin = process.platform === 'win32'
-    ? path.join(repoRoot, 'node_modules/.bin/electron.cmd')
-    : path.join(repoRoot, 'node_modules/.bin/electron');
+  const localBin = process.platform === 'win32' ? path.join(repoRoot, 'node_modules/.bin/electron.cmd') : path.join(repoRoot, 'node_modules/.bin/electron');
   return localBinExists(localBin) ? localBin : 'electron';
 }
 

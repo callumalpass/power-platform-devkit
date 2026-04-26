@@ -1,23 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  ConfidentialClientApplication,
-  PublicClientApplication,
-  PromptValue,
-  type AccountInfo,
-  type AuthenticationResult,
-  type ICachePlugin,
-} from '@azure/msal-node';
-import {
-  getAccount,
-  getMsalCacheDir,
-  listAccounts,
-  removeAccount,
-  saveAccount,
-  type Account,
-  type ConfigStoreOptions,
-} from './config.js';
+import { ConfidentialClientApplication, PublicClientApplication, PromptValue, type AccountInfo, type AuthenticationResult, type ICachePlugin } from '@azure/msal-node';
+import { getAccount, getMsalCacheDir, listAccounts, removeAccount, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
@@ -44,13 +29,7 @@ export interface PublicClientLoginOptions {
   onInteractiveUrl?: (url: string) => void | Promise<void>;
   onDeviceCode?: (info: { verificationUri: string; userCode: string; message: string }) => void | Promise<void>;
   loginTargets?: LoginTarget[];
-  onLoginTargetUpdate?: (update: {
-    target: LoginTarget;
-    index: number;
-    total: number;
-    status: 'running' | 'completed';
-    url?: string;
-  }) => void | Promise<void>;
+  onLoginTargetUpdate?: (update: { target: LoginTarget; index: number; total: number; status: 'running' | 'completed'; url?: string }) => void | Promise<void>;
   persistAccount?: boolean;
 }
 
@@ -104,8 +83,8 @@ export class AuthService {
     } catch (error) {
       return fail(
         createDiagnostic('error', 'ACCOUNT_LOGIN_INPUT_INVALID', error instanceof Error ? error.message : String(error), {
-          source: 'pp/auth',
-        }),
+          source: 'pp/auth'
+        })
       );
     }
 
@@ -120,7 +99,7 @@ export class AuthService {
         target,
         index,
         total: targets.length,
-        status: 'running',
+        status: 'running'
       });
       const tokenResult = await this.getToken(accountResult.data.name, target.resource, {
         ...options,
@@ -133,9 +112,9 @@ export class AuthService {
             index,
             total: targets.length,
             status: 'running',
-            url,
+            url
           });
-        },
+        }
       });
       if (!tokenResult.success || !tokenResult.data) {
         if (!primaryToken) {
@@ -147,14 +126,14 @@ export class AuthService {
           collectedDiagnostics.push({
             ...d,
             level: 'warning',
-            message: `${target.label ?? target.resource}: ${d.message}`,
+            message: `${target.label ?? target.resource}: ${d.message}`
           });
         }
         await options.onLoginTargetUpdate?.({
           target,
           index,
           total: targets.length,
-          status: 'completed',
+          status: 'completed'
         });
         continue;
       }
@@ -163,28 +142,29 @@ export class AuthService {
         target,
         index,
         total: targets.length,
-        status: 'completed',
+        status: 'completed'
       });
     }
 
     const claims = decodeJwtClaims(primaryToken ?? '');
     const refreshed = await this.getAccount(accountResult.data.name);
 
-    return ok({
-      account: summarizeAccount(refreshed.success && refreshed.data ? refreshed.data : accountResult.data),
-      resources: targets.map((target) => target.resource),
-      resource: targets[0]?.resource ?? DEFAULT_LOGIN_RESOURCE,
-      tenantId: readStringClaim(claims, 'tid'),
-      expiresAt: readNumericClaim(claims, 'exp'),
-    }, collectedDiagnostics);
+    return ok(
+      {
+        account: summarizeAccount(refreshed.success && refreshed.data ? refreshed.data : accountResult.data),
+        resources: targets.map((target) => target.resource),
+        resource: targets[0]?.resource ?? DEFAULT_LOGIN_RESOURCE,
+        tenantId: readStringClaim(claims, 'tid'),
+        expiresAt: readNumericClaim(claims, 'exp')
+      },
+      collectedDiagnostics
+    );
   }
 
   async getToken(name: string, resource: string, options: PublicClientLoginOptions = {}): Promise<OperationResult<string>> {
     const accountResult = await this.getAccount(name);
     if (!accountResult.success || !accountResult.data) {
-      return accountResult.success
-        ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${name} was not found.`, { source: 'pp/auth' }))
-        : fail(...accountResult.diagnostics);
+      return accountResult.success ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${name} was not found.`, { source: 'pp/auth' })) : fail(...accountResult.diagnostics);
     }
     const account = accountResult.data;
     const provider = createTokenProvider(accountResult.data, this.options, options);
@@ -256,11 +236,11 @@ class ClientSecretTokenProvider implements TokenProvider {
       auth: {
         clientId: this.account.clientId,
         clientSecret,
-        authority: authorityForTenant(this.account.tenantId),
-      },
+        authority: authorityForTenant(this.account.tenantId)
+      }
     });
     const result = await app.acquireTokenByClientCredential({
-      scopes: resolveScopes(this.account, resource),
+      scopes: resolveScopes(this.account, resource)
     });
     return ensureAccessToken(result, this.account.name);
   }
@@ -270,7 +250,7 @@ class UserTokenProvider implements TokenProvider {
   constructor(
     private readonly account: UserAccount,
     private readonly options: ConfigStoreOptions,
-    private readonly loginOptions: PublicClientLoginOptions,
+    private readonly loginOptions: PublicClientLoginOptions
   ) {}
 
   async getAccessToken(resource: string): Promise<string> {
@@ -279,11 +259,7 @@ class UserTokenProvider implements TokenProvider {
   }
 }
 
-export function createTokenProvider(
-  account: Account,
-  options: ConfigStoreOptions = {},
-  loginOptions: PublicClientLoginOptions = {},
-): OperationResult<TokenProvider> {
+export function createTokenProvider(account: Account, options: ConfigStoreOptions = {}, loginOptions: PublicClientLoginOptions = {}): OperationResult<TokenProvider> {
   switch (account.kind) {
     case 'static-token':
       return ok(new StaticTokenProvider(account.token));
@@ -309,7 +285,7 @@ export function summarizeAccount(account: Account): Record<string, unknown> {
         kind: account.kind,
         tenantId: account.tenantId,
         clientId: account.clientId,
-        clientSecretEnv: account.clientSecretEnv,
+        clientSecretEnv: account.clientSecretEnv
       };
     case 'user':
     case 'device-code':
@@ -322,7 +298,7 @@ export function summarizeAccount(account: Account): Record<string, unknown> {
         loginHint: account.loginHint,
         accountUsername: account.accountUsername,
         homeAccountId: account.homeAccountId,
-        localAccountId: account.localAccountId,
+        localAccountId: account.localAccountId
       };
   }
 }
@@ -346,7 +322,7 @@ function buildAccount(input: LoginAccountInput): Account {
     tenantId: input.tenantId,
     clientId: input.clientId,
     scopes: input.scopes,
-    loginHint: input.loginHint,
+    loginHint: input.loginHint
   };
 
   switch (input.kind) {
@@ -365,7 +341,7 @@ function buildAccount(input: LoginAccountInput): Account {
         kind: 'client-secret',
         tenantId: input.tenantId,
         clientId: input.clientId,
-        clientSecretEnv: input.clientSecretEnv,
+        clientSecretEnv: input.clientSecretEnv
       };
     case 'device-code':
       return { ...base, kind: 'device-code' };
@@ -374,7 +350,7 @@ function buildAccount(input: LoginAccountInput): Account {
         ...base,
         kind: 'user',
         prompt: input.prompt,
-        fallbackToDeviceCode: input.fallbackToDeviceCode,
+        fallbackToDeviceCode: input.fallbackToDeviceCode
       };
   }
 }
@@ -383,7 +359,7 @@ async function acquireAndPersistPublicClientToken(
   account: UserAccount,
   options: ConfigStoreOptions,
   resource: string,
-  loginOptions: PublicClientLoginOptions,
+  loginOptions: PublicClientLoginOptions
 ): Promise<{ accessToken: string; account: UserAccount }> {
   const app = await createPublicClientApplication(account, options);
   const scopes = resolveScopes(account, resource);
@@ -410,9 +386,9 @@ async function acquireAndPersistPublicClientToken(
           await loginOptions.onDeviceCode?.({
             verificationUri: response.verificationUri,
             userCode: response.userCode,
-            message: response.message,
+            message: response.message
           });
-        },
+        }
       });
     } else {
       if (loginOptions.allowInteractive === false) {
@@ -420,19 +396,14 @@ async function acquireAndPersistPublicClientToken(
       }
       result = await app.acquireTokenInteractive({
         scopes,
-        prompt:
-          loginOptions.forcePrompt
-            ? PromptValue.LOGIN
-            : account.kind === 'user' && account.prompt
-              ? promptValue(account.prompt)
-              : undefined,
+        prompt: loginOptions.forcePrompt ? PromptValue.LOGIN : account.kind === 'user' && account.prompt ? promptValue(account.prompt) : undefined,
         loginHint: account.loginHint,
         openBrowser: async (url) => {
           await loginOptions.onInteractiveUrl?.(url);
           if (loginOptions.openInteractiveBrowser !== false) {
             await openBrowser(url);
           }
-        },
+        }
       });
     }
   }
@@ -444,7 +415,7 @@ async function acquireAndPersistPublicClientToken(
     accountUsername: accountInfo?.username ?? account.accountUsername,
     homeAccountId: accountInfo?.homeAccountId ?? account.homeAccountId,
     localAccountId: accountInfo?.localAccountId ?? account.localAccountId,
-    tokenCacheKey: resolveTokenCacheKey(account),
+    tokenCacheKey: resolveTokenCacheKey(account)
   };
   if (loginOptions.persistAccount !== false) {
     await saveAccount(nextAccount, options);
@@ -456,18 +427,11 @@ function loginFailureDiagnostic(account: Account, resource: string, error: unkno
   const message = error instanceof Error ? error.message : String(error);
   const normalizedResource = normalizeResource(resource);
   const isInteractive = account.kind === 'user' || account.kind === 'device-code';
-  const code =
-    isInteractive && /JSON/i.test(message)
-      ? 'INTERACTIVE_LOGIN_RESPONSE_INVALID'
-      : isInteractive
-        ? 'INTERACTIVE_LOGIN_FAILED'
-        : 'TOKEN_ACQUISITION_FAILED';
+  const code = isInteractive && /JSON/i.test(message) ? 'INTERACTIVE_LOGIN_RESPONSE_INVALID' : isInteractive ? 'INTERACTIVE_LOGIN_FAILED' : 'TOKEN_ACQUISITION_FAILED';
   return createDiagnostic('error', code, `Failed to acquire a token for ${account.name} on ${normalizedResource}.`, {
     source: 'pp/auth',
     detail: message + (error instanceof Error && error.stack ? `\n\n${error.stack}` : ''),
-    hint: isInteractive
-      ? 'Try device code for this account or re-run login for just this API to isolate the failing resource.'
-      : undefined,
+    hint: isInteractive ? 'Try device code for this account or re-run login for just this API to isolate the failing resource.' : undefined
   });
 }
 
@@ -497,14 +461,14 @@ async function createPublicClientApplication(account: UserAccount, options: Conf
         await quarantineCorruptCacheFile(cachePath);
         throw new Error(`Failed to write MSAL cache for ${account.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    },
+    }
   };
   return new PublicClientApplication({
     auth: {
       clientId: account.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
-      authority: authorityForTenant(account.tenantId ?? DEFAULT_USER_TENANT),
+      authority: authorityForTenant(account.tenantId ?? DEFAULT_USER_TENANT)
     },
-    cache: { cachePlugin },
+    cache: { cachePlugin }
   });
 }
 
@@ -552,11 +516,13 @@ async function removeAccountCredentialCache(account: Account, options: ConfigSto
     try {
       await rm(path, { force: true });
     } catch (error) {
-      diagnostics.push(createDiagnostic('warning', 'MSAL_CACHE_DELETE_FAILED', `Failed to delete MSAL cache ${path}.`, {
-        source: 'pp/auth',
-        detail: error instanceof Error ? error.message : String(error),
-        path,
-      }));
+      diagnostics.push(
+        createDiagnostic('warning', 'MSAL_CACHE_DELETE_FAILED', `Failed to delete MSAL cache ${path}.`, {
+          source: 'pp/auth',
+          detail: error instanceof Error ? error.message : String(error),
+          path
+        })
+      );
     }
   }
   return ok(undefined, diagnostics);
@@ -581,7 +547,7 @@ function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
   const normalized = (targets?.length ? targets : [defaultTarget])
     .map((target) => ({
       ...target,
-      resource: normalizeResource(target.resource),
+      resource: normalizeResource(target.resource)
     }))
     .filter((target) => {
       if (!target.resource || seen.has(target.resource)) return false;

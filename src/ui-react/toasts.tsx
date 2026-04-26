@@ -20,9 +20,12 @@ export function useToasts() {
     const item: ToastItem = { id, message, isError, timestamp: Date.now() };
     setToasts((current) => [...current, item]);
     setLog((current) => [item, ...current].slice(0, 50));
-    const timer = window.setTimeout(() => {
-      dismissToast(id);
-    }, isError ? 5000 : 2500);
+    const timer = window.setTimeout(
+      () => {
+        dismissToast(id);
+      },
+      isError ? 5000 : 2500
+    );
     timersRef.current.set(id, timer);
   }
 
@@ -46,12 +49,7 @@ export function ToastViewport(props: { toasts: ToastItem[]; dismissToast: (id: n
       {props.toasts.map((toast) => (
         <div key={toast.id} className={`toast ${toast.isError ? 'error' : 'ok'}`}>
           <span className="toast-message">{toast.message}</span>
-          <button
-            type="button"
-            className="toast-dismiss"
-            aria-label="Dismiss notification"
-            onClick={() => props.dismissToast(toast.id)}
-          >
+          <button type="button" className="toast-dismiss" aria-label="Dismiss notification" onClick={() => props.dismissToast(toast.id)}>
             x
           </button>
         </div>

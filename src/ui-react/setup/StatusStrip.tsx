@@ -49,12 +49,7 @@ export function StatusStrip(props: {
           <strong>{environments.length}</strong> environment{environments.length === 1 ? '' : 's'}
         </span>
         {issues.length > 0 ? (
-          <button
-            type="button"
-            className="setup-status-strip-item issues"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-          >
+          <button type="button" className="setup-status-strip-item issues" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
             <span className="health-dot error"></span>
             {issues.length} {issues.length === 1 ? 'issue' : 'issues'}
           </button>
@@ -66,8 +61,12 @@ export function StatusStrip(props: {
         )}
         <span className="setup-status-strip-spacer"></span>
         <span className="setup-status-strip-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onRecheck}>Re-check</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onRefresh}>Refresh</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onRecheck}>
+            Re-check
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onRefresh}>
+            Refresh
+          </button>
         </span>
       </div>
       {expanded && issues.length > 0 ? (
@@ -76,12 +75,7 @@ export function StatusStrip(props: {
             <div key={i} className="status-issue">
               <span className="health-dot error"></span>
               <span>{issue.message}</span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ marginLeft: 'auto' }}
-                onClick={issue.kind === 'account' ? onJumpToAccounts : onJumpToEnvironments}
-              >
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={issue.kind === 'account' ? onJumpToAccounts : onJumpToEnvironments}>
                 Open
               </button>
             </div>

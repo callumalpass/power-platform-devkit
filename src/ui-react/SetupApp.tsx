@@ -116,7 +116,9 @@ export function SetupApp() {
                   <span className="env-trigger-placeholder">Select…</span>
                 )}
               </span>
-              <span className="env-trigger-chevron" aria-hidden="true">▾</span>
+              <span className="env-trigger-chevron" aria-hidden="true">
+                ▾
+              </span>
             </button>
           </div>
           <div className="header-flex-spacer" aria-hidden="true" />
@@ -138,17 +140,15 @@ export function SetupApp() {
 
       <div className="app-main">
         <div className="tab-panel stack active" id="panel-setup">
-          <SetupTab
-            active={true}
-            shellData={shellData}
-            globalEnvironment={globalEnvironment}
-            refreshState={refreshState}
-            toast={pushToast}
-          />
+          <SetupTab active={true} shellData={shellData} globalEnvironment={globalEnvironment} refreshState={refreshState} toast={pushToast} />
         </div>
       </div>
 
-      {stateLoading ? <div className="app-loading-bar" aria-hidden="true"><span /></div> : null}
+      {stateLoading ? (
+        <div className="app-loading-bar" aria-hidden="true">
+          <span />
+        </div>
+      ) : null}
 
       {envPickerOpen ? (
         <EnvironmentPickerModal
@@ -171,9 +171,7 @@ export function SetupApp() {
         />
       ) : null}
 
-      {shortcutHelpOpen ? (
-        <ShortcutHelpModal tabs={SETUP_TAB_ORDER} showConsoleShortcuts={false} onClose={() => setShortcutHelpOpen(false)} />
-      ) : null}
+      {shortcutHelpOpen ? <ShortcutHelpModal tabs={SETUP_TAB_ORDER} showConsoleShortcuts={false} onClose={() => setShortcutHelpOpen(false)} /> : null}
 
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </>

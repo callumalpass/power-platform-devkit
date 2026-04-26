@@ -1,11 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  findDeepestFlowExpressionNodeEndingAt,
-  flowExpressionAccessSegments,
-  flowExpressionNodeText,
-  parseFlowExpression,
-} from '../src/flow-expression-parser.js';
+import { findDeepestFlowExpressionNodeEndingAt, flowExpressionAccessSegments, flowExpressionNodeText, parseFlowExpression } from '../src/flow-expression-parser.js';
 
 test('flow expression parser reads function calls, escaped strings, and access chains', () => {
   const call = parseFlowExpression("body('Bob''s_action')");

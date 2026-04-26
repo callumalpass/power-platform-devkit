@@ -1,0 +1,9 @@
+dist/
+node_modules/
+release/
+test-results/
+.tmp-test/
+.ops/
+pnpm-lock.yaml
+docs/videos/
+canvas-src/

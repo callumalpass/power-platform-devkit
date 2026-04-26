@@ -9,13 +9,11 @@ if (!container) {
   container = document.createElement('div');
   container.id = 'app-root';
   document.body.appendChild(container);
-} else {
-  document.getElementById('legacy-shell')?.remove();
 }
 
 const root = createRoot(container);
 root.render(
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 );

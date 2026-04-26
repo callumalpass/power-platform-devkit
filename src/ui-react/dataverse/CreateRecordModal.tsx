@@ -25,18 +25,20 @@ export function CreateRecordModal(props: {
   const backdropRef = useRef<HTMLDivElement | null>(null);
 
   const creatableAttributes = useMemo(() => {
-    return (entityDetail.attributes || []).filter((attr: any) => {
-      if (!attr.logicalName || !attr.isValidForCreate) return false;
-      if (attr.isPrimaryId) return false;
-      if (attr.attributeOf) return false;
-      const typeName = String(attr.attributeTypeName || attr.attributeType || '').toLowerCase();
-      if (['partylisttype', 'virtualtype', 'entitynametype', 'managedpropertytype', 'image', 'filetype'].includes(typeName)) return false;
-      return true;
-    }).sort((a: any, b: any) => {
-      if (a.isPrimaryName && !b.isPrimaryName) return -1;
-      if (!a.isPrimaryName && b.isPrimaryName) return 1;
-      return (a.displayName || a.logicalName).localeCompare(b.displayName || b.logicalName);
-    });
+    return (entityDetail.attributes || [])
+      .filter((attr: any) => {
+        if (!attr.logicalName || !attr.isValidForCreate) return false;
+        if (attr.isPrimaryId) return false;
+        if (attr.attributeOf) return false;
+        const typeName = String(attr.attributeTypeName || attr.attributeType || '').toLowerCase();
+        if (['partylisttype', 'virtualtype', 'entitynametype', 'managedpropertytype', 'image', 'filetype'].includes(typeName)) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => {
+        if (a.isPrimaryName && !b.isPrimaryName) return -1;
+        if (!a.isPrimaryName && b.isPrimaryName) return 1;
+        return (a.displayName || a.logicalName).localeCompare(b.displayName || b.logicalName);
+      });
   }, [entityDetail]);
 
   const filteredCreatableAttributes = useMemo(() => {
@@ -45,9 +47,7 @@ export function CreateRecordModal(props: {
       const key = payloadKeyForAttribute(attr);
       if (changedOnly && !(key in values)) return false;
       if (!filter) return true;
-      return [attr.logicalName, attr.displayName, attr.description, attr.attributeTypeName, attr.attributeType]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(filter));
+      return [attr.logicalName, attr.displayName, attr.description, attr.attributeTypeName, attr.attributeType].filter(Boolean).some((value) => String(value).toLowerCase().includes(filter));
     });
   }, [changedOnly, creatableAttributes, fieldFilter, values]);
 
@@ -63,7 +63,7 @@ export function CreateRecordModal(props: {
     return [
       { label: 'Required', items: required },
       { label: 'Common', items: common },
-      { label: 'All Fields', items: other },
+      { label: 'All Fields', items: other }
     ].filter((group) => group.items.length);
   }, [filteredCreatableAttributes]);
 
@@ -74,7 +74,11 @@ export function CreateRecordModal(props: {
   function updateValue(key: string, value: unknown) {
     setValues((prev) => {
       const next = { ...prev };
-      if (value === '' || value === null || value === undefined) { delete next[key]; } else { next[key] = value; }
+      if (value === '' || value === null || value === undefined) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
       return next;
     });
   }
@@ -108,8 +112,8 @@ export function CreateRecordModal(props: {
           entitySetName: detail.entitySetName || entityMap.get(targetLogicalName),
           select,
           filter,
-          top: 10,
-        }),
+          top: 10
+        })
       });
       updateLookupSearch(key, {
         loading: false,
@@ -117,7 +121,7 @@ export function CreateRecordModal(props: {
         target: targetLogicalName,
         primaryId,
         primaryName,
-        results: resultPayload.data?.records || [],
+        results: resultPayload.data?.records || []
       });
     } catch (err) {
       updateLookupSearch(key, { loading: false, error: err instanceof Error ? err.message : String(err), results: [] });
@@ -138,7 +142,7 @@ export function CreateRecordModal(props: {
     const key = payloadKeyForAttribute(attr);
     const val = values[key];
     const commonProps = {
-      'aria-label': attr.displayName || attr.logicalName,
+      'aria-label': attr.displayName || attr.logicalName
     };
     if (isLookupAttribute(attr)) {
       const targets = Array.isArray(attr.targets) && attr.targets.length ? attr.targets : [];
@@ -175,13 +179,23 @@ export function CreateRecordModal(props: {
           </div>
           {selectedTarget ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto', gap: 6 }}>
-              <input className="rt-edit-input" type="text" value={lookupState.query || ''} onChange={(e) => updateLookupSearch(key, { query: e.target.value, target: selectedTarget })} placeholder="Search by primary name" />
+              <input
+                className="rt-edit-input"
+                type="text"
+                value={lookupState.query || ''}
+                onChange={(e) => updateLookupSearch(key, { query: e.target.value, target: selectedTarget })}
+                placeholder="Search by primary name"
+              />
               <button className="btn btn-secondary" type="button" onClick={() => void searchLookup(attr, selectedTarget)} disabled={lookupState.loading}>
                 {lookupState.loading ? 'Searching...' : 'Search'}
               </button>
             </div>
           ) : null}
-          {lookupState.error ? <div className="create-record-help" style={{ color: 'var(--danger)' }}>{lookupState.error}</div> : null}
+          {lookupState.error ? (
+            <div className="create-record-help" style={{ color: 'var(--danger)' }}>
+              {lookupState.error}
+            </div>
+          ) : null}
           {Array.isArray(lookupState.results) && lookupState.results.length ? (
             <div className="create-record-lookup-results">
               {lookupState.results.map((row: any, index: number) => {
@@ -211,8 +225,8 @@ export function CreateRecordModal(props: {
             { value: '', label: 'Select value...' },
             ...attr.optionValues.map((option: any) => ({
               value: String(option.value),
-              label: option.label ? `${option.label} (${option.value})` : String(option.value),
-            })),
+              label: option.label ? `${option.label} (${option.value})` : String(option.value)
+            }))
           ]}
         />
       );
@@ -227,22 +241,60 @@ export function CreateRecordModal(props: {
           options={[
             { value: '', label: 'Use default' },
             { value: 'true', label: 'Yes' },
-            { value: 'false', label: 'No' },
+            { value: 'false', label: 'No' }
           ]}
         />
       );
     }
     if (typeName.includes('integer') || typeName.includes('decimal') || typeName.includes('double') || typeName.includes('money') || typeName.includes('bigint')) {
       const step = attr.precision != null && attr.precision > 0 ? `0.${'0'.repeat(Math.max(0, attr.precision - 1))}1` : '1';
-      return <input className="rt-edit-input" type="number" min={attr.minValue ?? undefined} max={attr.maxValue ?? undefined} step={step} value={val === undefined ? '' : String(val)} onChange={(e) => updateValue(key, e.target.value === '' ? null : Number(e.target.value))} {...commonProps} />;
+      return (
+        <input
+          className="rt-edit-input"
+          type="number"
+          min={attr.minValue ?? undefined}
+          max={attr.maxValue ?? undefined}
+          step={step}
+          value={val === undefined ? '' : String(val)}
+          onChange={(e) => updateValue(key, e.target.value === '' ? null : Number(e.target.value))}
+          {...commonProps}
+        />
+      );
     }
     if (typeName.includes('memo')) {
-      return <textarea className="rt-edit-input" rows={3} maxLength={attr.maxLength ?? undefined} value={val === undefined ? '' : String(val)} onChange={(e) => updateValue(key, e.target.value || null)} {...commonProps} />;
+      return (
+        <textarea
+          className="rt-edit-input"
+          rows={3}
+          maxLength={attr.maxLength ?? undefined}
+          value={val === undefined ? '' : String(val)}
+          onChange={(e) => updateValue(key, e.target.value || null)}
+          {...commonProps}
+        />
+      );
     }
     if (typeName.includes('datetime')) {
-      return <input className="rt-edit-input" type="datetime-local" value={dateInputValue(val)} onChange={(e) => updateValue(key, e.target.value ? new Date(e.target.value).toISOString() : null)} {...commonProps} />;
+      return (
+        <input
+          className="rt-edit-input"
+          type="datetime-local"
+          value={dateInputValue(val)}
+          onChange={(e) => updateValue(key, e.target.value ? new Date(e.target.value).toISOString() : null)}
+          {...commonProps}
+        />
+      );
     }
-    return <input className="rt-edit-input" type="text" maxLength={attr.maxLength ?? undefined} value={val === undefined ? '' : String(val)} onChange={(e) => updateValue(key, e.target.value || null)} placeholder={isRequiredAttribute(attr) || attr.isPrimaryName ? 'Required' : ''} {...commonProps} />;
+    return (
+      <input
+        className="rt-edit-input"
+        type="text"
+        maxLength={attr.maxLength ?? undefined}
+        value={val === undefined ? '' : String(val)}
+        onChange={(e) => updateValue(key, e.target.value || null)}
+        placeholder={isRequiredAttribute(attr) || attr.isPrimaryName ? 'Required' : ''}
+        {...commonProps}
+      />
+    );
   }
 
   function readSubmitBody(): Record<string, unknown> | null {
@@ -265,7 +317,10 @@ export function CreateRecordModal(props: {
     if (!body) return;
     const errors = validateCreateBody(body, creatableAttributes);
     setFormErrors(errors);
-    if (errors.length) { toast(errors[0], true); return; }
+    if (errors.length) {
+      toast(errors[0], true);
+      return;
+    }
     setSaving(true);
     try {
       const payload = await api<any>('/api/dv/records/create', {
@@ -275,8 +330,8 @@ export function CreateRecordModal(props: {
           entitySetName: entityDetail.entitySetName,
           logicalName: entityDetail.logicalName,
           primaryIdAttribute: entityDetail.primaryIdAttribute,
-          body,
-        }),
+          body
+        })
       });
       const created = payload.data;
       toast(created?.id ? 'Record created and opened.' : 'Record created. Dataverse did not return the new row ID.');
@@ -289,16 +344,26 @@ export function CreateRecordModal(props: {
   }
 
   return (
-    <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
+    <div
+      className="rt-modal-backdrop"
+      ref={backdropRef}
+      onClick={(e) => {
+        if (e.target === backdropRef.current) onClose();
+      }}
+    >
       <div className="rt-modal size-md">
         <div className="rt-modal-header">
           <div>
             <h3 className="rt-modal-title">New {entityDetail.displayName || entityDetail.logicalName}</h3>
-            <span className="rt-modal-id">{environment} / {entityDetail.entitySetName}</span>
+            <span className="rt-modal-id">
+              {environment} / {entityDetail.entitySetName}
+            </span>
           </div>
           <div className="rt-modal-actions">
             <CopyButton value={advanced ? jsonText : JSON.stringify(values, null, 2)} label="Copy request" title="Copy create request body" toast={toast} />
-            <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
             <button className="btn btn-primary" type="button" onClick={() => void handleSubmit()} disabled={saving}>
               {saving ? 'Creating...' : 'Create'}
             </button>
@@ -307,21 +372,37 @@ export function CreateRecordModal(props: {
         <div className="rt-modal-body body-flush">
           <div className="create-record-toolbar">
             <input className="rt-edit-input" type="text" placeholder="Filter fields..." value={fieldFilter} onChange={(e) => setFieldFilter(e.target.value)} />
-            <label className="rt-edit-check"><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> Changed only</label>
-            <label className="rt-edit-check"><input type="checkbox" checked={advanced} onChange={(e) => { setAdvanced(e.target.checked); if (e.target.checked) setJsonText(JSON.stringify(values, null, 2)); }} /> Advanced JSON</label>
+            <label className="rt-edit-check">
+              <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> Changed only
+            </label>
+            <label className="rt-edit-check">
+              <input
+                type="checkbox"
+                checked={advanced}
+                onChange={(e) => {
+                  setAdvanced(e.target.checked);
+                  if (e.target.checked) setJsonText(JSON.stringify(values, null, 2));
+                }}
+              />{' '}
+              Advanced JSON
+            </label>
           </div>
           <div className="create-record-warning">
             Creates a Dataverse row in <strong>{environment}</strong>. Review required fields and lookup binds before submitting.
           </div>
           {metadataWarnings.length ? (
             <div className="create-record-metadata-warning">
-              {metadataWarnings.slice(0, 3).map((warning) => <div key={warning}>{warning}</div>)}
+              {metadataWarnings.slice(0, 3).map((warning) => (
+                <div key={warning}>{warning}</div>
+              ))}
               {metadataWarnings.length > 3 ? <div>{metadataWarnings.length - 3} more metadata warnings. Advanced JSON is still available.</div> : null}
             </div>
           ) : null}
           {formErrors.length ? (
             <div className="rt-modal-error">
-              {formErrors.map((error) => <div key={error}>{error}</div>)}
+              {formErrors.map((error) => (
+                <div key={error}>{error}</div>
+              ))}
             </div>
           ) : null}
           {advanced ? (
@@ -343,9 +424,7 @@ export function CreateRecordModal(props: {
                           </td>
                           <td className="rt-detail-value">
                             {inputForAttribute(attr)}
-                            <div className="create-record-help">
-                              {[attr.description, fieldConstraintLabel(attr)].filter(Boolean).join(' ')}
-                            </div>
+                            <div className="create-record-help">{[attr.description, fieldConstraintLabel(attr)].filter(Boolean).join(' ')}</div>
                           </td>
                         </tr>
                       );

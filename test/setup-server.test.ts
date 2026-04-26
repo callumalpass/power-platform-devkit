@@ -16,7 +16,7 @@ async function startTestServer(): Promise<RunningSetupServer> {
     assetsDir: await createAssetsDir(),
     configDir: await mkdtemp(join(tmpdir(), 'pp-setup-config-')),
     openBrowser: false,
-    idleTimeoutMs: 0,
+    idleTimeoutMs: 0
   });
 }
 
@@ -53,10 +53,10 @@ test('setup server routes authorized API calls through the shared app API', asyn
   t.after(() => running.close());
 
   const response = await fetch(new URL('/api/app/status', running.url), {
-    headers: { 'x-pp-setup-token': running.token },
+    headers: { 'x-pp-setup-token': running.token }
   });
   assert.equal(response.status, 200);
-  const body = await response.json() as any;
+  const body = (await response.json()) as any;
   assert.equal(body.success, true);
   assert.equal(body.data.kind, 'pp-setup');
 });

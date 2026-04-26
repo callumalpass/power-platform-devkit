@@ -141,17 +141,17 @@ The MCP server only calls dispose during shutdown.
 
 The Microsoft MCP server exposes these tools and maps them to the following endpoints.
 
-| MCP tool | Method and path | Notes |
-| --- | --- | --- |
-| `compile_canvas` | `POST /<version>/api/yaml/validate-directory` | Validates a set of `.pa.yaml` files. Observed behavior: in an active coauthoring session this can also apply the YAML into the live dirty Studio document. |
-| `sync_canvas` | `GET /<version>/api/yaml/fetch` | Returns source-control YAML files from the live authoring session. Component support is incomplete; see "Component limitations" below. |
-| `list_controls` | `GET /<version>/api/yaml/controls` | Lists controls available in the current authoring session. |
-| `describe_control` | `GET /<version>/api/yaml/controls/{controlName}` | Returns metadata, variants, input properties, and output properties. |
-| `list_apis` | `GET /<version>/api/yaml/apis` | Lists APIs/connectors available in the current authoring session. |
-| `describe_api` | `GET /<version>/api/yaml/apis/{apiName}` | Returns connector operations and parameters. |
-| `list_data_sources` | `GET /<version>/api/yaml/datasources` | Lists data sources in the current app/session. |
-| `get_data_source_schema` | `GET /<version>/api/yaml/datasources/{dataSourceName}` | Returns columns and Power Fx types for one data source. |
-| `get_accessibility_errors` | `GET /<version>/api/yaml/accessibility-errors` | Dynamically registered only for server versions `v3.26041+`. |
+| MCP tool                   | Method and path                                        | Notes                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compile_canvas`           | `POST /<version>/api/yaml/validate-directory`          | Validates a set of `.pa.yaml` files. Observed behavior: in an active coauthoring session this can also apply the YAML into the live dirty Studio document. |
+| `sync_canvas`              | `GET /<version>/api/yaml/fetch`                        | Returns source-control YAML files from the live authoring session. Component support is incomplete; see "Component limitations" below.                     |
+| `list_controls`            | `GET /<version>/api/yaml/controls`                     | Lists controls available in the current authoring session.                                                                                                 |
+| `describe_control`         | `GET /<version>/api/yaml/controls/{controlName}`       | Returns metadata, variants, input properties, and output properties.                                                                                       |
+| `list_apis`                | `GET /<version>/api/yaml/apis`                         | Lists APIs/connectors available in the current authoring session.                                                                                          |
+| `describe_api`             | `GET /<version>/api/yaml/apis/{apiName}`               | Returns connector operations and parameters.                                                                                                               |
+| `list_data_sources`        | `GET /<version>/api/yaml/datasources`                  | Lists data sources in the current app/session.                                                                                                             |
+| `get_data_source_schema`   | `GET /<version>/api/yaml/datasources/{dataSourceName}` | Returns columns and Power Fx types for one data source.                                                                                                    |
+| `get_accessibility_errors` | `GET /<version>/api/yaml/accessibility-errors`         | Dynamically registered only for server versions `v3.26041+`.                                                                                               |
 
 ## Request And Response Shapes
 
@@ -243,11 +243,7 @@ Response:
 ```json
 {
   "count": 117,
-  "controls": [
-    { "name": "Button" },
-    { "name": "Label" },
-    { "name": "Gallery" }
-  ]
+  "controls": [{ "name": "Button" }, { "name": "Label" }, { "name": "Gallery" }]
 }
 ```
 
@@ -791,10 +787,7 @@ In a live probe, `geterrorsasync` returned the injected formula errors over Sign
 category returned an empty result list:
 
 ```json
-[
-  { "dresult": { "f": [] } },
-  { "seq": 1 }
-]
+[{ "dresult": { "f": [] } }, { "seq": 1 }]
 ```
 
 The MCP also has an accessibility checker endpoint:

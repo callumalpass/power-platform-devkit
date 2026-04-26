@@ -36,7 +36,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   async function dvGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, allowInteractive: false, softFail: true }),
+      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, allowInteractive: false, softFail: true })
     });
     return result.data?.response;
   }
@@ -44,7 +44,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   async function graphGet(path: string) {
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
+      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true })
     });
     return result.data?.response;
   }
@@ -53,7 +53,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
     const result = await api<any>('/api/request/execute', {
       method: 'POST',
       body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
-      allowFailure: true,
+      allowFailure: true
     });
     return result.success === false ? null : result.data?.response;
   }
@@ -75,27 +75,29 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
       const [user, rolesResult, teamsResult] = await Promise.all([
         dvGet(`/systemusers(${userId})?$select=fullname,domainname,internalemailaddress,azureactivedirectoryobjectid`),
         dvGet(`/systemusers(${userId})/systemuserroles_association?$select=name,roleid`),
-        dvGet(`/systemusers(${userId})/teammembership_association?$select=name,teamid`),
+        dvGet(`/systemusers(${userId})/teammembership_association?$select=name,teamid`)
       ]);
 
       const roles: NonNullable<AccessData['roles']> = Array.isArray(rolesResult?.value) ? rolesResult.value.map((r: any) => ({ name: r.name, roleid: r.roleid })) : [];
       const teams: NonNullable<AccessData['teams']> = Array.isArray(teamsResult?.value) ? teamsResult.value.map((t: any) => ({ name: t.name, teamid: t.teamid })) : [];
 
-      await Promise.all(teams.map(async (team) => {
-        try {
-          const teamRolesResult = await dvGet(`/teams(${team.teamid})/teamroles_association?$select=name,roleid`);
-          team.roles = Array.isArray(teamRolesResult?.value) ? teamRolesResult.value.map((r: any) => ({ name: r.name, roleid: r.roleid })) : [];
-        } catch {
-          team.roles = [];
-        }
-      }));
+      await Promise.all(
+        teams.map(async (team) => {
+          try {
+            const teamRolesResult = await dvGet(`/teams(${team.teamid})/teamroles_association?$select=name,roleid`);
+            team.roles = Array.isArray(teamRolesResult?.value) ? teamRolesResult.value.map((r: any) => ({ name: r.name, roleid: r.roleid })) : [];
+          } catch {
+            team.roles = [];
+          }
+        })
+      );
 
       let graph: AccessData['graph'] | undefined;
       try {
         const [me, managerResult, licensesResult] = await Promise.all([
           graphGet('/me?$select=displayName,jobTitle,department,officeLocation,mail'),
           graphGetOptional('/me/manager?$select=displayName'),
-          graphGetOptional('/me/licenseDetails'),
+          graphGetOptional('/me/licenseDetails')
         ]);
         graph = {
           displayName: me?.displayName,
@@ -104,9 +106,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
           officeLocation: me?.officeLocation,
           mail: me?.mail,
           manager: managerResult?.displayName,
-          licenses: Array.isArray(licensesResult?.value)
-            ? licensesResult.value.map((l: any) => l.skuPartNumber).filter(Boolean)
-            : [],
+          licenses: Array.isArray(licensesResult?.value) ? licensesResult.value.map((l: any) => l.skuPartNumber).filter(Boolean) : []
         };
       } catch {
         // Graph not available — that's fine
@@ -127,18 +127,28 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   }, [active, environment]);
 
   if (!environment) {
-    return <div className="panel"><p className="desc">Select an environment to view your access.</p></div>;
+    return (
+      <div className="panel">
+        <p className="desc">Select an environment to view your access.</p>
+      </div>
+    );
   }
 
   if (loading && !data) {
-    return <div className="panel"><div className="rt-modal-loading">Loading access data...</div></div>;
+    return (
+      <div className="panel">
+        <div className="rt-modal-loading">Loading access data...</div>
+      </div>
+    );
   }
 
   if (error && !data) {
     return (
       <div className="panel">
         <div className="rt-modal-error">{error}</div>
-        <button className="btn btn-primary" type="button" style={{ marginTop: 12 }} onClick={() => void loadAccess()}>Retry</button>
+        <button className="btn btn-primary" type="button" style={{ marginTop: 12 }} onClick={() => void loadAccess()}>
+          Retry
+        </button>
       </div>
     );
   }
@@ -164,14 +174,18 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
             ['UPN', data.user?.domainname, undefined, undefined],
             ['Email', data.user?.internalemailaddress, undefined, undefined],
             ['User ID', data.userId, 'systemuser', 'systemusers'],
-            ['Business Unit', data.businessUnitId, 'businessunit', 'businessunits'],
+            ['Business Unit', data.businessUnitId, 'businessunit', 'businessunits']
           ].map(([label, value, entity, entitySet]) => (
             <div key={String(label)} className="metric">
               <div className="metric-label">{label}</div>
               <div className="metric-value">
                 {value && entity ? (
-                  <span className="record-link" onClick={() => detail.open(String(entity), String(entitySet), String(value))}>{String(value).slice(0, 8)}...</span>
-                ) : (value || '-')}
+                  <span className="record-link" onClick={() => detail.open(String(entity), String(entitySet), String(value))}>
+                    {String(value).slice(0, 8)}...
+                  </span>
+                ) : (
+                  value || '-'
+                )}
               </div>
             </div>
           ))}
@@ -184,13 +198,15 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
                 ['Job Title', data.graph.jobTitle],
                 ['Department', data.graph.department],
                 ['Office', data.graph.officeLocation],
-                ['Manager', data.graph.manager],
-              ].filter(([, v]) => v).map(([label, value]) => (
-                <div key={String(label)} className="metric">
-                  <div className="metric-label">{label}</div>
-                  <div className="metric-value">{value}</div>
-                </div>
-              ))}
+                ['Manager', data.graph.manager]
+              ]
+                .filter(([, v]) => v)
+                .map(([label, value]) => (
+                  <div key={String(label)} className="metric">
+                    <div className="metric-label">{label}</div>
+                    <div className="metric-value">{value}</div>
+                  </div>
+                ))}
             </div>
           </>
         ) : null}
@@ -207,7 +223,9 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
               {data.roles!.map((role) => (
                 <div key={role.roleid} className="card-item" style={{ cursor: 'pointer' }} onClick={() => detail.open('role', 'roles', role.roleid)}>
                   <span style={{ fontWeight: 500, fontSize: '0.8125rem' }}>{role.name}</span>
-                  <span className="record-link" style={{ fontFamily: 'var(--mono)', fontSize: '0.6875rem' }}>{role.roleid.slice(0, 8)}...</span>
+                  <span className="record-link" style={{ fontFamily: 'var(--mono)', fontSize: '0.6875rem' }}>
+                    {role.roleid.slice(0, 8)}...
+                  </span>
                 </div>
               ))}
             </div>
@@ -224,14 +242,29 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
           <div className="card-list">
             {data.teams!.map((team) => (
               <div key={team.teamid} className="access-team-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: team.roles?.length ? 8 : 0, cursor: 'pointer' }} onClick={() => detail.open('team', 'teams', team.teamid)}>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: team.roles?.length ? 8 : 0, cursor: 'pointer' }}
+                  onClick={() => detail.open('team', 'teams', team.teamid)}
+                >
                   <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{team.name}</span>
-                  <span className="record-link" style={{ fontFamily: 'var(--mono)', fontSize: '0.6875rem' }}>{team.teamid.slice(0, 8)}...</span>
+                  <span className="record-link" style={{ fontFamily: 'var(--mono)', fontSize: '0.6875rem' }}>
+                    {team.teamid.slice(0, 8)}...
+                  </span>
                 </div>
                 {team.roles?.length ? (
                   <div className="access-team-roles">
                     {team.roles.map((role) => (
-                      <span key={role.roleid} className="badge" style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); detail.open('role', 'roles', role.roleid); }}>{role.name}</span>
+                      <span
+                        key={role.roleid}
+                        className="badge"
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          detail.open('role', 'roles', role.roleid);
+                        }}
+                      >
+                        {role.name}
+                      </span>
                     ))}
                   </div>
                 ) : (
@@ -251,15 +284,15 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
           <p className="desc">Microsoft 365 license assignments from Azure AD.</p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {data.graph.licenses.map((sku) => (
-              <span key={sku} className="badge">{sku}</span>
+              <span key={sku} className="badge">
+                {sku}
+              </span>
             ))}
           </div>
         </div>
       ) : null}
 
-      {detail.target && environment && (
-        <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
-      )}
+      {detail.target && environment && <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />}
     </>
   );
 }

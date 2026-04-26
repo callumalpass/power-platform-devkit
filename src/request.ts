@@ -15,11 +15,7 @@ export {
   type EnvironmentTokenApi,
   type ExecuteRequestResult,
   type PreparedRequest,
-  type RequestInput,
+  type RequestInput
 } from './request-executor.js';
 
-export {
-  addEnvironmentWithDiscovery,
-  discoverEnvironments,
-  type DiscoveredEnvironment,
-} from './environment-discovery.js';
+export { addEnvironmentWithDiscovery, discoverEnvironments, type DiscoveredEnvironment } from './environment-discovery.js';

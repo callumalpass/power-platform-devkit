@@ -36,13 +36,7 @@ export type FlowConnectionUsage = {
   referenceName?: string;
 };
 
-export type FlowConnectionReferenceStatus =
-  | 'bound'
-  | 'logical'
-  | 'unbound'
-  | 'missing-connection'
-  | 'wrong-connector'
-  | 'unused';
+export type FlowConnectionReferenceStatus = 'bound' | 'logical' | 'unbound' | 'missing-connection' | 'wrong-connector' | 'unused';
 
 export type FlowConnectionReference = {
   name: string;
@@ -93,7 +87,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         code: 'CONNECTION_REFERENCE_MISSING',
         message: `${usage.name} uses a connector but does not name a connection reference.`,
         actionName: usage.name,
-        path: usage.path,
+        path: usage.path
       });
       continue;
     }
@@ -105,7 +99,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         message: `${usage.name} uses missing connection reference ${usage.referenceName}.`,
         referenceName: usage.referenceName,
         actionName: usage.name,
-        path: usage.path,
+        path: usage.path
       });
       continue;
     }
@@ -117,7 +111,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         message: `${usage.name} expects ${apiLabel(usage)}, but ${reference.name} is ${apiLabel(reference)}.`,
         referenceName: reference.name,
         actionName: usage.name,
-        path: usage.path,
+        path: usage.path
       });
     }
   }
@@ -133,7 +127,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         level: 'error',
         code: 'CONNECTION_API_MISMATCH',
         message: `${reference.name} is for ${apiLabel(reference)}, but the bound connection is ${apiLabel(reference.connection)}.`,
-        referenceName: reference.name,
+        referenceName: reference.name
       });
     } else if (reference.connection) {
       reference.status = 'bound';
@@ -143,7 +137,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         level: reference.usages.length ? 'error' : 'warning',
         code: 'CONNECTION_NOT_FOUND',
         message: `${reference.name} points at a connection that was not found in this environment.`,
-        referenceName: reference.name,
+        referenceName: reference.name
       });
     } else if (reference.logicalName) {
       reference.status = 'logical';
@@ -151,7 +145,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         level: 'info',
         code: 'CONNECTION_REFERENCE_LOGICAL',
         message: `${reference.name} is bound through solution reference ${reference.logicalName}; no concrete environment connection was returned.`,
-        referenceName: reference.name,
+        referenceName: reference.name
       });
     } else if (reference.usages.length) {
       reference.status = 'unbound';
@@ -159,7 +153,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         level: 'error',
         code: 'CONNECTION_REFERENCE_UNBOUND',
         message: `${reference.name} is used but has no bound connection.`,
-        referenceName: reference.name,
+        referenceName: reference.name
       });
     } else {
       reference.status = 'unused';
@@ -171,7 +165,7 @@ export function buildFlowConnectionModel(source: string, connections: FlowEnviro
         level: 'info',
         code: 'CONNECTION_REFERENCE_UNUSED',
         message: `${reference.name} is not used by any connector action or trigger.`,
-        referenceName: reference.name,
+        referenceName: reference.name
       });
     }
 
@@ -207,7 +201,7 @@ export function setFlowConnectionReference(source: string, referenceName: string
   const name = sanitizeReferenceName(referenceName);
   if (!name) throw new Error('Connection reference name is required.');
   const refs = ensureObject(parsed.properties, 'connectionReferences');
-  const existing = isObject(refs[name]) ? refs[name] as MutableJson : {};
+  const existing = isObject(refs[name]) ? (refs[name] as MutableJson) : {};
   refs[name] = buildConnectionReferenceValue(existing, connection);
   return JSON.stringify(parsed.root, null, 2);
 }
@@ -215,7 +209,7 @@ export function setFlowConnectionReference(source: string, referenceName: string
 export function removeFlowConnectionReference(source: string, referenceName: string): string {
   const parsed = parseFlowRoot(source, true);
   if (!parsed) throw new Error('Flow definition JSON must be an object.');
-  const refs = isObject(parsed.properties.connectionReferences) ? parsed.properties.connectionReferences as MutableJson : undefined;
+  const refs = isObject(parsed.properties.connectionReferences) ? (parsed.properties.connectionReferences as MutableJson) : undefined;
   if (!refs || !Object.prototype.hasOwnProperty.call(refs, referenceName)) {
     throw new Error(`${referenceName} was not found.`);
   }
@@ -248,12 +242,18 @@ export function findReferenceForUsage(model: FlowConnectionModel, usage: FlowCon
 
 export function connectionStatusLabel(status: FlowConnectionReferenceStatus): string {
   switch (status) {
-    case 'bound': return 'Bound';
-    case 'logical': return 'Solution reference';
-    case 'unbound': return 'Unbound';
-    case 'missing-connection': return 'Missing connection';
-    case 'wrong-connector': return 'Wrong connector';
-    case 'unused': return 'Unused';
+    case 'bound':
+      return 'Bound';
+    case 'logical':
+      return 'Solution reference';
+    case 'unbound':
+      return 'Unbound';
+    case 'missing-connection':
+      return 'Missing connection';
+    case 'wrong-connector':
+      return 'Wrong connector';
+    case 'unused':
+      return 'Unused';
   }
 }
 
@@ -289,12 +289,7 @@ function normalizeConnectionReference(name: string, raw: MutableJson): FlowConne
   const apiId = firstString(prop(raw, 'api.id'), prop(raw, 'apiId'), prop(raw, 'connectorid'), apiIdFromMaybeApiId(prop(raw, 'id')));
   const apiName = firstString(apiNameFromId(apiId), prop(raw, 'api.name'), prop(raw, 'apiName'));
   const connectionId = firstString(prop(raw, 'connection.id'), connectionIdFromMaybeConnectionId(prop(raw, 'id')), prop(raw, 'connectionId'), prop(raw, 'connectionid'));
-  const connectionName = firstString(
-    prop(raw, 'connectionName'),
-    prop(raw, 'connection.name'),
-    connectionNameFromId(connectionId),
-    connectionNameFromId(prop(raw, 'id')),
-  );
+  const connectionName = firstString(prop(raw, 'connectionName'), prop(raw, 'connection.name'), connectionNameFromId(connectionId), connectionNameFromId(prop(raw, 'id')));
   return {
     name,
     apiName,
@@ -307,7 +302,7 @@ function normalizeConnectionReference(name: string, raw: MutableJson): FlowConne
     raw,
     usages: [],
     status: 'unbound',
-    issues: [],
+    issues: []
   };
 }
 
@@ -320,7 +315,7 @@ function mergeConnectionReference(existing: FlowConnectionReference, next: FlowC
     connectionName: existing.connectionName || next.connectionName,
     connectionId: existing.connectionId || next.connectionId,
     logicalName: existing.logicalName || next.logicalName,
-    runtimeSource: existing.runtimeSource || next.runtimeSource,
+    runtimeSource: existing.runtimeSource || next.runtimeSource
   };
 }
 
@@ -364,7 +359,7 @@ function readConnectorUsage(name: string, kind: 'action' | 'trigger', path: stri
     prop(host, 'connectionReferenceName'),
     prop(host, 'connection.referenceName'),
     referenceNameFromConnectionExpression(prop(host, 'connection.name')),
-    prop(host, 'connectionName'),
+    prop(host, 'connectionName')
   );
   const connectorLike = isConnectorActionType(actionType) || Boolean(host && typeof host === 'object' && (apiId || apiName || operationId || explicitReference));
   if (!connectorLike) return null;
@@ -376,10 +371,12 @@ function findConnectionForReference(reference: FlowConnectionReference, connecti
   const id = normalizeConnectionId(reference.connectionId);
   const logicalName = normalizeConnectionName(reference.logicalName);
   return connections.find((connection) => {
-    return (name && normalizeConnectionName(connection.name) === name)
-      || (id && normalizeConnectionId(connection.id) === id)
-      || (reference.connectionName && normalizeConnectionId(connection.id).endsWith(`/connections/${reference.connectionName.toLowerCase()}`))
-      || (logicalName && (connection.solutionReferences || []).some((solutionReference) => normalizeConnectionName(solutionReference.logicalName) === logicalName));
+    return (
+      (name && normalizeConnectionName(connection.name) === name) ||
+      (id && normalizeConnectionId(connection.id) === id) ||
+      (reference.connectionName && normalizeConnectionId(connection.id).endsWith(`/connections/${reference.connectionName.toLowerCase()}`)) ||
+      (logicalName && (connection.solutionReferences || []).some((solutionReference) => normalizeConnectionName(solutionReference.logicalName) === logicalName))
+    );
   });
 }
 
@@ -387,20 +384,21 @@ function buildConnectionReferenceValue(existing: MutableJson, connection: FlowEn
   const apiId = connection.apiId || (connection.apiName ? `/providers/Microsoft.PowerApps/apis/${connection.apiName}` : undefined);
   const apiName = connection.apiName || apiNameFromId(connection.apiId);
   const existingConnectionName = firstString(existing.connectionName, prop(existing, 'connection.name'));
-  const logicalName = firstString(prop(existing, 'connection.connectionReferenceLogicalName'), existing.connectionReferenceLogicalName)
-    || (!existingConnectionName ? connection.solutionReferences?.find((reference) => reference.logicalName)?.logicalName : undefined);
+  const logicalName =
+    firstString(prop(existing, 'connection.connectionReferenceLogicalName'), existing.connectionReferenceLogicalName) ||
+    (!existingConnectionName ? connection.solutionReferences?.find((reference) => reference.logicalName)?.logicalName : undefined);
   if (logicalName && !existingConnectionName) {
     return {
       ...existing,
       runtimeSource: firstString(existing.runtimeSource) || 'embedded',
       api: {
         ...(isObject(existing.api) ? existing.api : {}),
-        ...(apiName ? { name: apiName } : {}),
+        ...(apiName ? { name: apiName } : {})
       },
       connection: {
         ...(isObject(existing.connection) ? existing.connection : {}),
-        connectionReferenceLogicalName: logicalName,
-      },
+        connectionReferenceLogicalName: logicalName
+      }
     };
   }
   return {
@@ -412,13 +410,13 @@ function buildConnectionReferenceValue(existing: MutableJson, connection: FlowEn
     api: {
       ...(isObject(existing.api) ? existing.api : {}),
       ...(apiId ? { id: apiId } : {}),
-      ...(apiName ? { name: apiName } : {}),
+      ...(apiName ? { name: apiName } : {})
     },
     connection: {
       ...(isObject(existing.connection) ? existing.connection : {}),
       ...(connection.id ? { id: connection.id } : {}),
-      name: connection.name,
-    },
+      name: connection.name
+    }
   };
 }
 
@@ -430,13 +428,15 @@ function parseFlowRoot(source: string, mutable = false): ParsedFlowRoot | null {
     return null;
   }
   if (!isObject(parsed)) return null;
-  const root = mutable ? structuredClone(parsed) as MutableJson : parsed;
-  const properties = isObject(root.properties) ? root.properties as MutableJson : root;
+  const root = mutable ? (structuredClone(parsed) as MutableJson) : parsed;
+  const properties = isObject(root.properties) ? (root.properties as MutableJson) : root;
   const definition = isObject(properties.definition)
-    ? properties.definition as MutableJson
+    ? (properties.definition as MutableJson)
     : isObject(root.definition)
-      ? root.definition as MutableJson
-      : (isObject(root.actions) || isObject(root.triggers)) ? root : null;
+      ? (root.definition as MutableJson)
+      : isObject(root.actions) || isObject(root.triggers)
+        ? root
+        : null;
   return { root, properties, definition };
 }
 
@@ -460,14 +460,16 @@ function apiLabel(value: { apiDisplayName?: string; apiName?: string; apiId?: st
 }
 
 function isConnectorActionType(value: string | undefined): boolean {
-  return value === 'OpenApiConnection'
-    || value === 'ApiConnection'
-    || value === 'OpenApiConnectionWebhook'
-    || value === 'ApiConnectionWebhook';
+  return value === 'OpenApiConnection' || value === 'ApiConnection' || value === 'OpenApiConnectionWebhook' || value === 'ApiConnectionWebhook';
 }
 
 function sanitizeReferenceName(value: string): string {
-  return value.trim().replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'shared_connector';
+  return (
+    value
+      .trim()
+      .replace(/[^A-Za-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'shared_connector'
+  );
 }
 
 function apiDescriptorFromNameOrId(value: string): { apiName?: string; apiId?: string } {

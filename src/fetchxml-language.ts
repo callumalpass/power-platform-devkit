@@ -105,7 +105,7 @@ const ELEMENT_CHILDREN: Record<string, string[]> = {
   condition: [],
   attribute: [],
   order: [],
-  'all-attributes': [],
+  'all-attributes': []
 };
 
 const ELEMENT_ATTRIBUTES: Record<string, string[]> = {
@@ -116,7 +116,7 @@ const ELEMENT_ATTRIBUTES: Record<string, string[]> = {
   filter: ['type', 'hint', 'isquickfindfields'],
   condition: ['attribute', 'operator', 'value', 'entityname', 'alias', 'uiname', 'uitype'],
   'link-entity': ['name', 'from', 'to', 'alias', 'link-type', 'intersect', 'visible'],
-  'all-attributes': [],
+  'all-attributes': []
 };
 
 const ROOT_TAGS = ['fetch'];
@@ -129,12 +129,36 @@ const OPERATORS_BY_KIND: Record<string, string[]> = {
   string: ['eq', 'ne', 'like', 'not-like', 'begins-with', 'not-begin-with', 'ends-with', 'not-end-with', 'in', 'not-in', 'null', 'not-null'],
   number: ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'between', 'not-between', 'in', 'not-in', 'null', 'not-null'],
   money: ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'between', 'not-between', 'in', 'not-in', 'null', 'not-null'],
-  date: ['on', 'on-or-before', 'on-or-after', 'yesterday', 'today', 'tomorrow', 'last-week', 'this-week', 'next-week', 'last-month', 'this-month', 'next-month', 'last-year', 'this-year', 'next-year', 'last-x-days', 'next-x-days', 'last-x-months', 'next-x-months', 'last-x-years', 'next-x-years', 'null', 'not-null'],
+  date: [
+    'on',
+    'on-or-before',
+    'on-or-after',
+    'yesterday',
+    'today',
+    'tomorrow',
+    'last-week',
+    'this-week',
+    'next-week',
+    'last-month',
+    'this-month',
+    'next-month',
+    'last-year',
+    'this-year',
+    'next-year',
+    'last-x-days',
+    'next-x-days',
+    'last-x-months',
+    'next-x-months',
+    'last-x-years',
+    'next-x-years',
+    'null',
+    'not-null'
+  ],
   lookup: ['eq', 'ne', 'in', 'not-in', 'eq-userid', 'ne-userid', 'eq-businessid', 'ne-businessid', 'null', 'not-null'],
   choice: ['eq', 'ne', 'in', 'not-in', 'contain-values', 'not-contain-values', 'null', 'not-null'],
   boolean: ['eq', 'ne', 'null', 'not-null'],
   owner: ['eq', 'ne', 'eq-userid', 'ne-userid', 'eq-businessid', 'ne-businessid', 'null', 'not-null'],
-  guid: ['eq', 'ne', 'in', 'not-in', 'null', 'not-null'],
+  guid: ['eq', 'ne', 'in', 'not-in', 'null', 'not-null']
 };
 
 const TAG_COMPLETION_APPLY_SUFFIX = new Map<string, string>([
@@ -145,14 +169,10 @@ const TAG_COMPLETION_APPLY_SUFFIX = new Map<string, string>([
   ['attribute', ' name="" />'],
   ['order', ' attribute="" />'],
   ['link-entity', ' name="" from="" to=""></link-entity>'],
-  ['all-attributes', ' />'],
+  ['all-attributes', ' />']
 ]);
 
-export function analyzeFetchXml(
-  source: string,
-  cursor: number,
-  metadata?: FetchXmlLanguageMetadata,
-): FetchXmlLanguageResult {
+export function analyzeFetchXml(source: string, cursor: number, metadata?: FetchXmlLanguageMetadata): FetchXmlLanguageResult {
   const parsed = parseDocument(source, cursor);
   const currentTag = readCurrentTagContext(source, cursor);
   const path = buildContextPath(parsed.stackAtCursor, currentTag?.elementName);
@@ -166,7 +186,7 @@ export function analyzeFetchXml(
         from: currentTag.from,
         to: currentTag.to,
         path,
-        entityScope,
+        entityScope
       }
     : {
         kind: 'text',
@@ -174,13 +194,13 @@ export function analyzeFetchXml(
         from: cursor,
         to: cursor,
         path,
-        entityScope,
+        entityScope
       };
 
   return {
     context,
     completions: buildCompletions(context, parsed, currentTag, metadata),
-    diagnostics: [...parsed.diagnostics, ...buildSemanticDiagnostics(parsed, metadata)],
+    diagnostics: [...parsed.diagnostics, ...buildSemanticDiagnostics(parsed, metadata)]
   };
 }
 
@@ -210,9 +230,7 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
       }
       const top = stack[stack.length - 1];
       if (top.name !== parsedTag.name) {
-        diagnostics.push(
-          rangeDiagnostic('error', 'FETCHXML_MISMATCHED_CLOSING_TAG', `Expected </${top.name}> but found </${parsedTag.name}>.`, from, to),
-        );
+        diagnostics.push(rangeDiagnostic('error', 'FETCHXML_MISMATCHED_CLOSING_TAG', `Expected </${top.name}> but found </${parsedTag.name}>.`, from, to));
         const idx = findFrameIndex(stack, parsedTag.name);
         if (idx >= 0) stack.splice(idx);
         continue;
@@ -225,7 +243,7 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
       name: parsedTag.name,
       from,
       parentName: stack[stack.length - 1]?.name,
-      attributes: parsedTag.attributes,
+      attributes: parsedTag.attributes
     };
     if (!parsedTag.selfClosing) stack.push(frame);
   }
@@ -233,9 +251,7 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
   if (source.length <= cursor) stackAtCursor = stack.map(cloneFrame);
 
   for (const frame of stack) {
-    diagnostics.push(
-      rangeDiagnostic('warning', 'FETCHXML_UNCLOSED_TAG', `Tag <${frame.name}> is not closed.`, frame.from, Math.min(frame.from + frame.name.length + 1, source.length)),
-    );
+    diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNCLOSED_TAG', `Tag <${frame.name}> is not closed.`, frame.from, Math.min(frame.from + frame.name.length + 1, source.length)));
   }
 
   return { elements, stackAtCursor, diagnostics };
@@ -261,7 +277,7 @@ function parseTagToken(token: string, offset: number): ParsedElement | undefined
     to: offset + token.length,
     selfClosing,
     closing: false,
-    attributes,
+    attributes
   };
 }
 
@@ -298,7 +314,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
       text,
       from: lt + 2,
       to: cursor,
-      parsedAttributes: [],
+      parsedAttributes: []
     };
   }
 
@@ -314,7 +330,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
       text: fragment.slice(1),
       from: lt + 1,
       to: cursor,
-      parsedAttributes: [],
+      parsedAttributes: []
     };
   }
 
@@ -360,7 +376,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
         text: currentName,
         from: attrNameFrom,
         to: lt + index,
-        parsedAttributes: rawAttributes,
+        parsedAttributes: rawAttributes
       };
     }
     if (mode === 'after-name') {
@@ -380,7 +396,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
         text: currentName,
         from: attrNameFrom,
         to: lt + index,
-        parsedAttributes: rawAttributes,
+        parsedAttributes: rawAttributes
       };
     }
     if (mode === 'before-value') {
@@ -402,7 +418,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
         text: '',
         from: lt + index,
         to: lt + index,
-        parsedAttributes: rawAttributes,
+        parsedAttributes: rawAttributes
       };
     }
     if (mode === 'value') {
@@ -428,7 +444,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
       text: currentName,
       from: attrNameFrom,
       to: cursor,
-      parsedAttributes: rawAttributes,
+      parsedAttributes: rawAttributes
     };
   }
 
@@ -440,7 +456,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
       text: currentValue,
       from: mode === 'value' ? attrValueFrom : cursor,
       to: cursor,
-      parsedAttributes: rawAttributes,
+      parsedAttributes: rawAttributes
     };
   }
 
@@ -450,16 +466,11 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
     text: '',
     from: cursor,
     to: cursor,
-    parsedAttributes: rawAttributes,
+    parsedAttributes: rawAttributes
   };
 }
 
-function buildCompletions(
-  context: FetchXmlCursorContext,
-  parsed: ParsedDocument,
-  currentTag: CurrentTagContext | undefined,
-  metadata?: FetchXmlLanguageMetadata,
-): FetchXmlCompletionItem[] {
+function buildCompletions(context: FetchXmlCursorContext, parsed: ParsedDocument, currentTag: CurrentTagContext | undefined, metadata?: FetchXmlLanguageMetadata): FetchXmlCompletionItem[] {
   switch (context.kind) {
     case 'tag-name':
       return filterByPrefix(tagCompletions(allowedTagsForPath(context.path)), context.text);
@@ -481,7 +492,7 @@ function tagCompletions(tagNames: string[]): FetchXmlCompletionItem[] {
     label: tag,
     type: 'tag',
     detail: `<${tag}>`,
-    apply: `${tag}${TAG_COMPLETION_APPLY_SUFFIX.get(tag) ?? '>'}`,
+    apply: `${tag}${TAG_COMPLETION_APPLY_SUFFIX.get(tag) ?? '>'}`
   }));
 }
 
@@ -493,16 +504,11 @@ function attributeNameCompletions(elementName: string | undefined, currentTag?: 
     .map((name) => ({
       label: name,
       type: 'attribute',
-      apply: `${name}=""`,
+      apply: `${name}=""`
     }));
 }
 
-function attributeValueCompletions(
-  context: FetchXmlCursorContext,
-  parsed: ParsedDocument,
-  currentTag: CurrentTagContext | undefined,
-  metadata?: FetchXmlLanguageMetadata,
-): FetchXmlCompletionItem[] {
+function attributeValueCompletions(context: FetchXmlCursorContext, parsed: ParsedDocument, currentTag: CurrentTagContext | undefined, metadata?: FetchXmlLanguageMetadata): FetchXmlCompletionItem[] {
   const attrName = context.attributeName;
   const elementName = context.elementName;
   if (!attrName || !elementName) return [];
@@ -516,18 +522,15 @@ function attributeValueCompletions(
       label: entity.logicalName,
       type: 'value',
       detail: entity.displayName,
-      info: entity.entitySetName,
+      info: entity.entitySetName
     }));
   }
-  if (
-    (attrName === 'name' && (elementName === 'attribute' || elementName === 'order')) ||
-    (attrName === 'attribute' && elementName === 'condition')
-  ) {
+  if ((attrName === 'name' && (elementName === 'attribute' || elementName === 'order')) || (attrName === 'attribute' && elementName === 'condition')) {
     return (scopeEntity?.attributes ?? []).map((attribute) => ({
       label: attribute.logicalName,
       type: 'value',
       detail: attribute.attributeTypeName || attribute.attributeType,
-      info: attribute.displayName,
+      info: attribute.displayName
     }));
   }
   if (attrName === 'from' && elementName === 'link-entity') {
@@ -537,7 +540,7 @@ function attributeValueCompletions(
       label: attribute.logicalName,
       type: 'value',
       detail: attribute.attributeTypeName || attribute.attributeType,
-      info: attribute.displayName,
+      info: attribute.displayName
     }));
   }
   if (attrName === 'to' && elementName === 'link-entity') {
@@ -545,7 +548,7 @@ function attributeValueCompletions(
       label: attribute.logicalName,
       type: 'value',
       detail: attribute.attributeTypeName || attribute.attributeType,
-      info: attribute.displayName,
+      info: attribute.displayName
     }));
   }
   if (attrName === 'operator' && elementName === 'condition') {
@@ -574,17 +577,13 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
   for (const element of parsed.elements.filter((item) => !item.closing)) {
     const allowedChildren = element.parentName ? ELEMENT_CHILDREN[element.parentName] : ROOT_TAGS;
     if (!allowedChildren.includes(element.name) && !(element.parentName == null && element.name === 'fetch')) {
-      diagnostics.push(
-        rangeDiagnostic('warning', 'FETCHXML_UNEXPECTED_ELEMENT', `<${element.name}> is not valid inside <${element.parentName ?? 'document'}>.`, element.from, element.to),
-      );
+      diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNEXPECTED_ELEMENT', `<${element.name}> is not valid inside <${element.parentName ?? 'document'}>.`, element.from, element.to));
     }
 
     const allowedAttributes = new Set(ELEMENT_ATTRIBUTES[element.name] ?? []);
     for (const attribute of element.attributes) {
       if (!allowedAttributes.has(attribute.name)) {
-        diagnostics.push(
-          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ATTRIBUTE', `Attribute ${attribute.name} is not valid on <${element.name}>.`, attribute.nameFrom, attribute.nameTo),
-        );
+        diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ATTRIBUTE', `Attribute ${attribute.name} is not valid on <${element.name}>.`, attribute.nameFrom, attribute.nameTo));
       }
     }
   }
@@ -596,23 +595,27 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
     if ((element.name === 'entity' || element.name === 'link-entity') && attrMap.has('name')) {
       const nameAttr = attrMap.get('name')!;
       if (!workspace.entities.has(nameAttr.value)) {
-        diagnostics.push(
-          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ENTITY', `Unknown Dataverse entity ${nameAttr.value}.`, nameAttr.valueFrom, nameAttr.valueTo),
-        );
+        diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ENTITY', `Unknown Dataverse entity ${nameAttr.value}.`, nameAttr.valueFrom, nameAttr.valueTo));
       }
     }
 
     const attributeNameAttr = attrMap.get('name');
     if (element.name === 'attribute' && attributeNameAttr && scopeEntity && !hasAttribute(scopeEntity, attributeNameAttr.value)) {
       diagnostics.push(
-        rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ATTRIBUTE_REF', `Unknown attribute ${attributeNameAttr.value} for ${scopeEntity.logicalName}.`, attributeNameAttr.valueFrom, attributeNameAttr.valueTo),
+        rangeDiagnostic(
+          'warning',
+          'FETCHXML_UNKNOWN_ATTRIBUTE_REF',
+          `Unknown attribute ${attributeNameAttr.value} for ${scopeEntity.logicalName}.`,
+          attributeNameAttr.valueFrom,
+          attributeNameAttr.valueTo
+        )
       );
     }
 
     const orderAttr = attrMap.get('attribute');
     if (element.name === 'order' && orderAttr && scopeEntity && !hasAttribute(scopeEntity, orderAttr.value)) {
       diagnostics.push(
-        rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ORDER_ATTRIBUTE', `Unknown order attribute ${orderAttr.value} for ${scopeEntity.logicalName}.`, orderAttr.valueFrom, orderAttr.valueTo),
+        rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_ORDER_ATTRIBUTE', `Unknown order attribute ${orderAttr.value} for ${scopeEntity.logicalName}.`, orderAttr.valueFrom, orderAttr.valueTo)
       );
     }
 
@@ -622,7 +625,13 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
       const attribute = conditionAttr && scopeEntity ? scopeEntity.attributes.find((item) => item.logicalName === conditionAttr.value) : undefined;
       if (conditionAttr && scopeEntity && !attribute) {
         diagnostics.push(
-          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_CONDITION_ATTRIBUTE', `Unknown condition attribute ${conditionAttr.value} for ${scopeEntity.logicalName}.`, conditionAttr.valueFrom, conditionAttr.valueTo),
+          rangeDiagnostic(
+            'warning',
+            'FETCHXML_UNKNOWN_CONDITION_ATTRIBUTE',
+            `Unknown condition attribute ${conditionAttr.value} for ${scopeEntity.logicalName}.`,
+            conditionAttr.valueFrom,
+            conditionAttr.valueTo
+          )
         );
       }
       if (operatorAttr && attribute) {
@@ -634,8 +643,8 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
               'FETCHXML_OPERATOR_TYPE_MISMATCH',
               `Operator ${operatorAttr.value} does not match ${attribute.logicalName} (${attribute.attributeTypeName || attribute.attributeType || 'attribute'}).`,
               operatorAttr.valueFrom,
-              operatorAttr.valueTo,
-            ),
+              operatorAttr.valueTo
+            )
           );
         }
       }
@@ -648,13 +657,11 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
       const linkedEntity = linkedNameAttr ? workspace.entities.get(linkedNameAttr.value) : undefined;
       if (fromAttr && linkedEntity && !hasAttribute(linkedEntity, fromAttr.value)) {
         diagnostics.push(
-          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_FROM', `Unknown link source attribute ${fromAttr.value} for ${linkedEntity.logicalName}.`, fromAttr.valueFrom, fromAttr.valueTo),
+          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_FROM', `Unknown link source attribute ${fromAttr.value} for ${linkedEntity.logicalName}.`, fromAttr.valueFrom, fromAttr.valueTo)
         );
       }
       if (toAttr && scopeEntity && !hasAttribute(scopeEntity, toAttr.value)) {
-        diagnostics.push(
-          rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_TO', `Unknown link target attribute ${toAttr.value} for ${scopeEntity.logicalName}.`, toAttr.valueFrom, toAttr.valueTo),
-        );
+        diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_TO', `Unknown link target attribute ${toAttr.value} for ${scopeEntity.logicalName}.`, toAttr.valueFrom, toAttr.valueTo));
       }
     }
   }
@@ -674,11 +681,7 @@ function allowedTagsForPath(path: string[]): string[] {
   return ELEMENT_CHILDREN[parent] ?? [];
 }
 
-function resolveEntityScope(
-  stack: ElementFrame[],
-  currentTag: CurrentTagContext | undefined,
-  metadata?: FetchXmlLanguageMetadata,
-): string | undefined {
+function resolveEntityScope(stack: ElementFrame[], currentTag: CurrentTagContext | undefined, metadata?: FetchXmlLanguageMetadata): string | undefined {
   const workspace = indexMetadata(metadata);
   const scopedNames: string[] = [];
 
@@ -697,12 +700,7 @@ function resolveEntityScope(
   return scopedNames[scopedNames.length - 1] ?? workspace.rootEntityName;
 }
 
-function resolveElementScopeEntity(
-  element: ParsedElement,
-  elements: ParsedElement[],
-  workspace: IndexedMetadata,
-  rootEntity?: FetchXmlLanguageEntity,
-): FetchXmlLanguageEntity | undefined {
+function resolveElementScopeEntity(element: ParsedElement, elements: ParsedElement[], workspace: IndexedMetadata, rootEntity?: FetchXmlLanguageEntity): FetchXmlLanguageEntity | undefined {
   if (element.name === 'entity') {
     const nameValue = element.attributes.find((attribute) => attribute.name === 'name')?.value;
     return (nameValue && workspace.entities.get(nameValue)) || rootEntity;
@@ -745,7 +743,7 @@ function indexMetadata(metadata?: FetchXmlLanguageMetadata): IndexedMetadata {
   return {
     entities: new Map(entitiesArray.map((entity) => [entity.logicalName, entity])),
     entitiesArray,
-    rootEntityName: metadata?.rootEntityName,
+    rootEntityName: metadata?.rootEntityName
   };
 }
 
@@ -792,7 +790,7 @@ function cloneFrame(frame: ElementFrame): ElementFrame {
     name: frame.name,
     from: frame.from,
     parentName: frame.parentName,
-    attributes: frame.attributes.map((attribute) => ({ ...attribute })),
+    attributes: frame.attributes.map((attribute) => ({ ...attribute }))
   };
 }
 

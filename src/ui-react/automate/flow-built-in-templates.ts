@@ -40,13 +40,13 @@ export const BUILT_IN_CATEGORIES: Array<{ key: BuiltInActionCategory; label: str
   { key: 'schedule', label: 'Schedule', hint: 'Wait before continuing' },
   { key: 'response', label: 'Responses', hint: 'Return data to the caller' },
   { key: 'flow', label: 'Flows', hint: 'Run another cloud flow' },
-  { key: 'expression', label: 'Expression helpers', hint: 'Insert common expression actions' },
+  { key: 'expression', label: 'Expression helpers', hint: 'Insert common expression actions' }
 ];
 
 export const BUILT_IN_TRIGGER_CATEGORIES: Array<{ key: BuiltInTriggerCategory; label: string; hint: string }> = [
   { key: 'manual', label: 'Manual', hint: 'Start from Power Automate, Power Apps, or another caller' },
   { key: 'schedule', label: 'Schedule', hint: 'Start on a recurrence' },
-  { key: 'http', label: 'HTTP', hint: 'Start from an incoming request' },
+  { key: 'http', label: 'HTTP', hint: 'Start from an incoming request' }
 ];
 
 /**
@@ -60,60 +60,402 @@ export const BUILT_IN_TRIGGER_CATEGORIES: Array<{ key: BuiltInTriggerCategory; l
  */
 export const BUILT_IN_ACTION_TEMPLATES: BuiltInActionTemplate[] = [
   // Control flow
-  { key: 'condition', category: 'control', label: 'Condition', desc: 'Branch with if / else', name: 'Condition', operationName: 'Condition', operationType: 'Condition', action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } }) },
-  { key: 'apply-to-each', category: 'control', label: 'Apply to each', desc: 'Loop over items in an array', name: 'Apply_to_each', operationName: 'Foreach', operationType: 'Foreach', action: () => ({ type: 'Foreach', foreach: "@triggerBody()?['value']", actions: {} }) },
-  { key: 'switch', category: 'control', label: 'Switch', desc: 'Branch on multiple values', name: 'Switch', operationName: 'Switch', operationType: 'Switch', action: () => ({ type: 'Switch', expression: '', cases: {}, default: { actions: {} } }) },
-  { key: 'do-until', category: 'control', label: 'Do until', desc: 'Loop until a condition is true', name: 'Do_until', operationName: 'Until', operationType: 'Until', action: () => ({ type: 'Until', expression: '@false', limit: { count: 60, timeout: 'PT1H' }, actions: {} }) },
+  {
+    key: 'condition',
+    category: 'control',
+    label: 'Condition',
+    desc: 'Branch with if / else',
+    name: 'Condition',
+    operationName: 'Condition',
+    operationType: 'Condition',
+    action: () => ({ type: 'If', expression: { equals: ['', ''] }, actions: {}, else: { actions: {} } })
+  },
+  {
+    key: 'apply-to-each',
+    category: 'control',
+    label: 'Apply to each',
+    desc: 'Loop over items in an array',
+    name: 'Apply_to_each',
+    operationName: 'Foreach',
+    operationType: 'Foreach',
+    action: () => ({ type: 'Foreach', foreach: "@triggerBody()?['value']", actions: {} })
+  },
+  {
+    key: 'switch',
+    category: 'control',
+    label: 'Switch',
+    desc: 'Branch on multiple values',
+    name: 'Switch',
+    operationName: 'Switch',
+    operationType: 'Switch',
+    action: () => ({ type: 'Switch', expression: '', cases: {}, default: { actions: {} } })
+  },
+  {
+    key: 'do-until',
+    category: 'control',
+    label: 'Do until',
+    desc: 'Loop until a condition is true',
+    name: 'Do_until',
+    operationName: 'Until',
+    operationType: 'Until',
+    action: () => ({ type: 'Until', expression: '@false', limit: { count: 60, timeout: 'PT1H' }, actions: {} })
+  },
   { key: 'scope', category: 'control', label: 'Scope', desc: 'Group related actions', name: 'Scope', operationName: 'Scope', operationType: 'Scope', action: () => ({ type: 'Scope', actions: {} }) },
-  { key: 'terminate', category: 'control', label: 'Terminate', desc: 'Stop the run with a status', name: 'Terminate', operationName: 'Terminate', operationType: 'Terminate', action: () => ({ type: 'Terminate', inputs: { runStatus: 'Cancelled' } }) },
+  {
+    key: 'terminate',
+    category: 'control',
+    label: 'Terminate',
+    desc: 'Stop the run with a status',
+    name: 'Terminate',
+    operationName: 'Terminate',
+    operationType: 'Terminate',
+    action: () => ({ type: 'Terminate', inputs: { runStatus: 'Cancelled' } })
+  },
 
   // Data operations
-  { key: 'compose', category: 'data', label: 'Compose', desc: 'Transform or pass through a value', name: 'Compose', operationName: 'Compose', operationType: 'Compose', action: () => ({ type: 'Compose', inputs: '' }) },
-  { key: 'parse-json', category: 'data', label: 'Parse JSON', desc: 'Validate and extract fields from a JSON string', name: 'Parse_JSON', operationName: 'ParseJson', operationType: 'ParseJson', action: () => ({ type: 'ParseJson', inputs: { content: '', schema: {} } }) },
-  { key: 'filter-array', category: 'data', label: 'Filter array', desc: 'Keep array items matching a condition', name: 'Filter_array', operationName: 'Query', operationType: 'Query', action: () => ({ type: 'Query', inputs: { from: '', where: '@true' } }) },
-  { key: 'select', category: 'data', label: 'Select', desc: 'Map each item to a new shape', name: 'Select', operationName: 'Select', operationType: 'Select', action: () => ({ type: 'Select', inputs: { from: '', select: {} } }) },
-  { key: 'join', category: 'data', label: 'Join', desc: 'Join array values into text', name: 'Join', operationName: 'Join', operationType: 'Join', action: () => ({ type: 'Join', inputs: { from: '', joinWith: ',' } }) },
-  { key: 'csv-table', category: 'data', label: 'Create CSV table', desc: 'Turn an array into CSV text', name: 'Create_CSV_table', operationName: 'TableCsv', operationType: 'Table', action: () => ({ type: 'Table', inputs: { from: '', format: 'CSV' } }) },
-  { key: 'html-table', category: 'data', label: 'Create HTML table', desc: 'Turn an array into an HTML table', name: 'Create_HTML_table', operationName: 'TableHtml', operationType: 'Table', action: () => ({ type: 'Table', inputs: { from: '', format: 'HTML' } }) },
+  {
+    key: 'compose',
+    category: 'data',
+    label: 'Compose',
+    desc: 'Transform or pass through a value',
+    name: 'Compose',
+    operationName: 'Compose',
+    operationType: 'Compose',
+    action: () => ({ type: 'Compose', inputs: '' })
+  },
+  {
+    key: 'parse-json',
+    category: 'data',
+    label: 'Parse JSON',
+    desc: 'Validate and extract fields from a JSON string',
+    name: 'Parse_JSON',
+    operationName: 'ParseJson',
+    operationType: 'ParseJson',
+    action: () => ({ type: 'ParseJson', inputs: { content: '', schema: {} } })
+  },
+  {
+    key: 'filter-array',
+    category: 'data',
+    label: 'Filter array',
+    desc: 'Keep array items matching a condition',
+    name: 'Filter_array',
+    operationName: 'Query',
+    operationType: 'Query',
+    action: () => ({ type: 'Query', inputs: { from: '', where: '@true' } })
+  },
+  {
+    key: 'select',
+    category: 'data',
+    label: 'Select',
+    desc: 'Map each item to a new shape',
+    name: 'Select',
+    operationName: 'Select',
+    operationType: 'Select',
+    action: () => ({ type: 'Select', inputs: { from: '', select: {} } })
+  },
+  {
+    key: 'join',
+    category: 'data',
+    label: 'Join',
+    desc: 'Join array values into text',
+    name: 'Join',
+    operationName: 'Join',
+    operationType: 'Join',
+    action: () => ({ type: 'Join', inputs: { from: '', joinWith: ',' } })
+  },
+  {
+    key: 'csv-table',
+    category: 'data',
+    label: 'Create CSV table',
+    desc: 'Turn an array into CSV text',
+    name: 'Create_CSV_table',
+    operationName: 'TableCsv',
+    operationType: 'Table',
+    action: () => ({ type: 'Table', inputs: { from: '', format: 'CSV' } })
+  },
+  {
+    key: 'html-table',
+    category: 'data',
+    label: 'Create HTML table',
+    desc: 'Turn an array into an HTML table',
+    name: 'Create_HTML_table',
+    operationName: 'TableHtml',
+    operationType: 'Table',
+    action: () => ({ type: 'Table', inputs: { from: '', format: 'HTML' } })
+  },
 
   // Variables
-  { key: 'init-variable', category: 'variable', label: 'Initialize variable', desc: 'Declare a named variable', name: 'Initialize_variable', operationName: 'InitializeVariable', operationType: 'InitializeVariable', action: () => ({ type: 'InitializeVariable', inputs: { variables: [{ name: '', type: 'string', value: '' }] } }) },
-  { key: 'set-variable', category: 'variable', label: 'Set variable', desc: 'Update a variable value', name: 'Set_variable', operationName: 'SetVariable', operationType: 'SetVariable', action: () => ({ type: 'SetVariable', inputs: { name: '', value: '' } }) },
-  { key: 'increment-variable', category: 'variable', label: 'Increment variable', desc: 'Add to a numeric variable', name: 'Increment_variable', operationName: 'IncrementVariable', operationType: 'IncrementVariable', action: () => ({ type: 'IncrementVariable', inputs: { name: '', value: 1 } }) },
-  { key: 'decrement-variable', category: 'variable', label: 'Decrement variable', desc: 'Subtract from a numeric variable', name: 'Decrement_variable', operationName: 'DecrementVariable', operationType: 'DecrementVariable', action: () => ({ type: 'DecrementVariable', inputs: { name: '', value: 1 } }) },
-  { key: 'append-array-variable', category: 'variable', label: 'Append to array variable', desc: 'Add one item to an array variable', name: 'Append_to_array_variable', operationName: 'AppendToArrayVariable', operationType: 'AppendToArrayVariable', action: () => ({ type: 'AppendToArrayVariable', inputs: { name: '', value: '' } }) },
-  { key: 'append-string-variable', category: 'variable', label: 'Append to string variable', desc: 'Add text to a string variable', name: 'Append_to_string_variable', operationName: 'AppendToStringVariable', operationType: 'AppendToStringVariable', action: () => ({ type: 'AppendToStringVariable', inputs: { name: '', value: '' } }) },
+  {
+    key: 'init-variable',
+    category: 'variable',
+    label: 'Initialize variable',
+    desc: 'Declare a named variable',
+    name: 'Initialize_variable',
+    operationName: 'InitializeVariable',
+    operationType: 'InitializeVariable',
+    action: () => ({ type: 'InitializeVariable', inputs: { variables: [{ name: '', type: 'string', value: '' }] } })
+  },
+  {
+    key: 'set-variable',
+    category: 'variable',
+    label: 'Set variable',
+    desc: 'Update a variable value',
+    name: 'Set_variable',
+    operationName: 'SetVariable',
+    operationType: 'SetVariable',
+    action: () => ({ type: 'SetVariable', inputs: { name: '', value: '' } })
+  },
+  {
+    key: 'increment-variable',
+    category: 'variable',
+    label: 'Increment variable',
+    desc: 'Add to a numeric variable',
+    name: 'Increment_variable',
+    operationName: 'IncrementVariable',
+    operationType: 'IncrementVariable',
+    action: () => ({ type: 'IncrementVariable', inputs: { name: '', value: 1 } })
+  },
+  {
+    key: 'decrement-variable',
+    category: 'variable',
+    label: 'Decrement variable',
+    desc: 'Subtract from a numeric variable',
+    name: 'Decrement_variable',
+    operationName: 'DecrementVariable',
+    operationType: 'DecrementVariable',
+    action: () => ({ type: 'DecrementVariable', inputs: { name: '', value: 1 } })
+  },
+  {
+    key: 'append-array-variable',
+    category: 'variable',
+    label: 'Append to array variable',
+    desc: 'Add one item to an array variable',
+    name: 'Append_to_array_variable',
+    operationName: 'AppendToArrayVariable',
+    operationType: 'AppendToArrayVariable',
+    action: () => ({ type: 'AppendToArrayVariable', inputs: { name: '', value: '' } })
+  },
+  {
+    key: 'append-string-variable',
+    category: 'variable',
+    label: 'Append to string variable',
+    desc: 'Add text to a string variable',
+    name: 'Append_to_string_variable',
+    operationName: 'AppendToStringVariable',
+    operationType: 'AppendToStringVariable',
+    action: () => ({ type: 'AppendToStringVariable', inputs: { name: '', value: '' } })
+  },
 
   // HTTP
-  { key: 'http', category: 'http', label: 'HTTP', desc: 'Call any REST endpoint', name: 'HTTP', operationName: 'Http', operationType: 'Http', action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } }) },
-  { key: 'http-swagger', category: 'http', label: 'HTTP + Swagger', desc: 'Call a Swagger operation', name: 'HTTP_Swagger', operationName: 'HttpSwagger', operationType: 'HttpSwagger', action: () => ({ type: 'HttpSwagger', inputs: { method: 'GET', uri: '', operationId: '' } }) },
-  { key: 'http-webhook', category: 'http', label: 'HTTP Webhook', desc: 'Subscribe and unsubscribe with HTTP', name: 'HTTP_Webhook', operationName: 'HttpWebhook', operationType: 'HttpWebhook', action: () => ({ type: 'HttpWebhook', inputs: { subscribe: { method: 'GET', uri: '' }, unsubscribe: { method: 'GET', uri: '' } } }) },
+  {
+    key: 'http',
+    category: 'http',
+    label: 'HTTP',
+    desc: 'Call any REST endpoint',
+    name: 'HTTP',
+    operationName: 'Http',
+    operationType: 'Http',
+    action: () => ({ type: 'Http', inputs: { method: 'GET', uri: '' } })
+  },
+  {
+    key: 'http-swagger',
+    category: 'http',
+    label: 'HTTP + Swagger',
+    desc: 'Call a Swagger operation',
+    name: 'HTTP_Swagger',
+    operationName: 'HttpSwagger',
+    operationType: 'HttpSwagger',
+    action: () => ({ type: 'HttpSwagger', inputs: { method: 'GET', uri: '', operationId: '' } })
+  },
+  {
+    key: 'http-webhook',
+    category: 'http',
+    label: 'HTTP Webhook',
+    desc: 'Subscribe and unsubscribe with HTTP',
+    name: 'HTTP_Webhook',
+    operationName: 'HttpWebhook',
+    operationType: 'HttpWebhook',
+    action: () => ({ type: 'HttpWebhook', inputs: { subscribe: { method: 'GET', uri: '' }, unsubscribe: { method: 'GET', uri: '' } } })
+  },
 
   // Response variants share operationType='Response' but differ by kind.
-  { key: 'response', category: 'response', label: 'Response', desc: 'Return an HTTP response to the caller', name: 'Response', operationName: 'Response', operationType: 'Response', action: () => ({ type: 'Response', kind: 'http', inputs: { statusCode: 200 } }) },
-  { key: 'powerapps-response', category: 'response', label: 'Power Apps response', desc: 'Return values to Power Apps or another flow', name: 'Respond_to_a_Power_App_or_flow', operationName: 'PowerAppsResponse', operationType: 'Response', action: () => ({ type: 'Response', kind: 'PowerApp', inputs: {} }) },
-  { key: 'powerpages-response', category: 'response', label: 'Power Pages response', desc: 'Return values to Power Pages', name: 'Return_values_to_Power_Pages', operationName: 'PowerPagesResponse', operationType: 'Response', action: () => ({ type: 'Response', kind: 'PowerPages', inputs: {} }) },
-  { key: 'virtual-agent-response', category: 'response', label: 'Virtual Agent response', desc: 'Return values to Power Virtual Agents', name: 'Return_values_to_Power_Virtual_Agents', operationName: 'VirtualAgentResponse', operationType: 'Response', action: () => ({ type: 'Response', kind: 'VirtualAgent', inputs: {} }) },
-  { key: 'skills-response', category: 'response', label: 'Skills response', desc: 'Return values to the agent', name: 'Respond_to_the_agent', operationName: 'SkillsResponse', operationType: 'Response', action: () => ({ type: 'Response', kind: 'Skills', inputs: {} }) },
+  {
+    key: 'response',
+    category: 'response',
+    label: 'Response',
+    desc: 'Return an HTTP response to the caller',
+    name: 'Response',
+    operationName: 'Response',
+    operationType: 'Response',
+    action: () => ({ type: 'Response', kind: 'http', inputs: { statusCode: 200 } })
+  },
+  {
+    key: 'powerapps-response',
+    category: 'response',
+    label: 'Power Apps response',
+    desc: 'Return values to Power Apps or another flow',
+    name: 'Respond_to_a_Power_App_or_flow',
+    operationName: 'PowerAppsResponse',
+    operationType: 'Response',
+    action: () => ({ type: 'Response', kind: 'PowerApp', inputs: {} })
+  },
+  {
+    key: 'powerpages-response',
+    category: 'response',
+    label: 'Power Pages response',
+    desc: 'Return values to Power Pages',
+    name: 'Return_values_to_Power_Pages',
+    operationName: 'PowerPagesResponse',
+    operationType: 'Response',
+    action: () => ({ type: 'Response', kind: 'PowerPages', inputs: {} })
+  },
+  {
+    key: 'virtual-agent-response',
+    category: 'response',
+    label: 'Virtual Agent response',
+    desc: 'Return values to Power Virtual Agents',
+    name: 'Return_values_to_Power_Virtual_Agents',
+    operationName: 'VirtualAgentResponse',
+    operationType: 'Response',
+    action: () => ({ type: 'Response', kind: 'VirtualAgent', inputs: {} })
+  },
+  {
+    key: 'skills-response',
+    category: 'response',
+    label: 'Skills response',
+    desc: 'Return values to the agent',
+    name: 'Respond_to_the_agent',
+    operationName: 'SkillsResponse',
+    operationType: 'Response',
+    action: () => ({ type: 'Response', kind: 'Skills', inputs: {} })
+  },
 
   // Schedule
-  { key: 'delay', category: 'schedule', label: 'Delay', desc: 'Wait for a duration', name: 'Delay', operationName: 'Delay', operationType: 'Wait', action: () => ({ type: 'Wait', inputs: { interval: { count: 1, unit: 'Minute' } } }) },
-  { key: 'delay-until', category: 'schedule', label: 'Delay until', desc: 'Wait until a timestamp', name: 'Delay_until', operationName: 'DelayUntil', operationType: 'Wait', action: () => ({ type: 'Wait', inputs: { until: { timestamp: '' } } }) },
+  {
+    key: 'delay',
+    category: 'schedule',
+    label: 'Delay',
+    desc: 'Wait for a duration',
+    name: 'Delay',
+    operationName: 'Delay',
+    operationType: 'Wait',
+    action: () => ({ type: 'Wait', inputs: { interval: { count: 1, unit: 'Minute' } } })
+  },
+  {
+    key: 'delay-until',
+    category: 'schedule',
+    label: 'Delay until',
+    desc: 'Wait until a timestamp',
+    name: 'Delay_until',
+    operationName: 'DelayUntil',
+    operationType: 'Wait',
+    action: () => ({ type: 'Wait', inputs: { until: { timestamp: '' } } })
+  },
 
   // Child flow
-  { key: 'run-child-flow', category: 'flow', label: 'Run child flow', desc: 'Call another flow in the solution', name: 'Run_child_flow', operationName: 'RunChildFlow', operationType: 'Workflow', action: () => ({ type: 'Workflow', inputs: { host: { workflowReferenceName: '' }, body: {} } }) },
+  {
+    key: 'run-child-flow',
+    category: 'flow',
+    label: 'Run child flow',
+    desc: 'Call another flow in the solution',
+    name: 'Run_child_flow',
+    operationName: 'RunChildFlow',
+    operationType: 'Workflow',
+    action: () => ({ type: 'Workflow', inputs: { host: { workflowReferenceName: '' }, body: {} } })
+  },
 
   // Datetime / number / text expressions — these surface as Compose actions with a prefilled
   // expression matching what the Microsoft designer emits.
-  { key: 'add-to-time', category: 'expression', label: 'Add to time', desc: 'Add a duration to a timestamp', name: 'Add_to_time', operationName: 'AddToTime', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@addToTime('', 1, 'Hour')" }) },
-  { key: 'convert-time-zone', category: 'expression', label: 'Convert time zone', desc: 'Convert a timestamp between time zones', name: 'Convert_time_zone', operationName: 'ConvertTimeZone', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@convertTimeZone('', 'UTC', 'Pacific Standard Time')" }) },
-  { key: 'current-time', category: 'expression', label: 'Current time', desc: 'Use the current UTC timestamp', name: 'Current_time', operationName: 'CurrentTime', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: '@utcNow()' }) },
-  { key: 'future-time', category: 'expression', label: 'Future time', desc: 'Calculate a future timestamp', name: 'Get_future_time', operationName: 'GetFutureTime', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@getFutureTime(1, 'Hour')" }) },
-  { key: 'past-time', category: 'expression', label: 'Past time', desc: 'Calculate a past timestamp', name: 'Get_past_time', operationName: 'GetPastTime', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@getPastTime(1, 'Hour')" }) },
-  { key: 'subtract-from-time', category: 'expression', label: 'Subtract from time', desc: 'Subtract a duration from a timestamp', name: 'Subtract_from_time', operationName: 'SubtractFromTime', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@subtractFromTime('', 1, 'Hour')" }) },
-  { key: 'format-number', category: 'expression', label: 'Format number', desc: 'Format a number as text', name: 'Format_number', operationName: 'FormatNumber', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@formatNumber(0, '0.00')" }) },
-  { key: 'index-of', category: 'expression', label: 'Find text position', desc: 'Find text inside text', name: 'Find_text_position', operationName: 'IndexOf', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@indexOf('', '')" }) },
-  { key: 'substring', category: 'expression', label: 'Substring', desc: 'Extract part of text', name: 'Substring', operationName: 'Substring', operationType: 'Expression', action: () => ({ type: 'Compose', inputs: "@substring('', 0, 1)" }) },
+  {
+    key: 'add-to-time',
+    category: 'expression',
+    label: 'Add to time',
+    desc: 'Add a duration to a timestamp',
+    name: 'Add_to_time',
+    operationName: 'AddToTime',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@addToTime('', 1, 'Hour')" })
+  },
+  {
+    key: 'convert-time-zone',
+    category: 'expression',
+    label: 'Convert time zone',
+    desc: 'Convert a timestamp between time zones',
+    name: 'Convert_time_zone',
+    operationName: 'ConvertTimeZone',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@convertTimeZone('', 'UTC', 'Pacific Standard Time')" })
+  },
+  {
+    key: 'current-time',
+    category: 'expression',
+    label: 'Current time',
+    desc: 'Use the current UTC timestamp',
+    name: 'Current_time',
+    operationName: 'CurrentTime',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: '@utcNow()' })
+  },
+  {
+    key: 'future-time',
+    category: 'expression',
+    label: 'Future time',
+    desc: 'Calculate a future timestamp',
+    name: 'Get_future_time',
+    operationName: 'GetFutureTime',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@getFutureTime(1, 'Hour')" })
+  },
+  {
+    key: 'past-time',
+    category: 'expression',
+    label: 'Past time',
+    desc: 'Calculate a past timestamp',
+    name: 'Get_past_time',
+    operationName: 'GetPastTime',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@getPastTime(1, 'Hour')" })
+  },
+  {
+    key: 'subtract-from-time',
+    category: 'expression',
+    label: 'Subtract from time',
+    desc: 'Subtract a duration from a timestamp',
+    name: 'Subtract_from_time',
+    operationName: 'SubtractFromTime',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@subtractFromTime('', 1, 'Hour')" })
+  },
+  {
+    key: 'format-number',
+    category: 'expression',
+    label: 'Format number',
+    desc: 'Format a number as text',
+    name: 'Format_number',
+    operationName: 'FormatNumber',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@formatNumber(0, '0.00')" })
+  },
+  {
+    key: 'index-of',
+    category: 'expression',
+    label: 'Find text position',
+    desc: 'Find text inside text',
+    name: 'Find_text_position',
+    operationName: 'IndexOf',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@indexOf('', '')" })
+  },
+  {
+    key: 'substring',
+    category: 'expression',
+    label: 'Substring',
+    desc: 'Extract part of text',
+    name: 'Substring',
+    operationName: 'Substring',
+    operationType: 'Expression',
+    action: () => ({ type: 'Compose', inputs: "@substring('', 0, 1)" })
+  }
 ];
 
 export const BUILT_IN_TRIGGER_TEMPLATES: BuiltInTriggerTemplate[] = [
@@ -132,10 +474,10 @@ export const BUILT_IN_TRIGGER_TEMPLATES: BuiltInTriggerTemplate[] = [
         schema: {
           type: 'object',
           properties: {},
-          required: [],
-        },
-      },
-    }),
+          required: []
+        }
+      }
+    })
   },
   {
     key: 'recurrence',
@@ -149,9 +491,9 @@ export const BUILT_IN_TRIGGER_TEMPLATES: BuiltInTriggerTemplate[] = [
       type: 'Recurrence',
       recurrence: {
         frequency: 'Day',
-        interval: 1,
-      },
-    }),
+        interval: 1
+      }
+    })
   },
   {
     key: 'http-request',
@@ -168,18 +510,17 @@ export const BUILT_IN_TRIGGER_TEMPLATES: BuiltInTriggerTemplate[] = [
         schema: {
           type: 'object',
           properties: {},
-          required: [],
-        },
-      },
-    }),
-  },
+          required: []
+        }
+      }
+    })
+  }
 ];
 
-const BUILT_IN_BY_NAME = Object.fromEntries(
-  BUILT_IN_ACTION_TEMPLATES
-    .filter((template) => template.operationName)
-    .map((template) => [template.operationName, template.action]),
-) as Record<string, () => Record<string, unknown>>;
+const BUILT_IN_BY_NAME = Object.fromEntries(BUILT_IN_ACTION_TEMPLATES.filter((template) => template.operationName).map((template) => [template.operationName, template.action])) as Record<
+  string,
+  () => Record<string, unknown>
+>;
 
 const BUILT_IN_BY_TYPE: Record<string, () => Record<string, unknown>> = {
   If: BUILT_IN_BY_NAME.Condition!,
@@ -206,18 +547,17 @@ const BUILT_IN_BY_TYPE: Record<string, () => Record<string, unknown>> = {
   DecrementVariable: BUILT_IN_BY_NAME.DecrementVariable!,
   AppendToArrayVariable: BUILT_IN_BY_NAME.AppendToArrayVariable!,
   AppendToStringVariable: BUILT_IN_BY_NAME.AppendToStringVariable!,
-  Expression: BUILT_IN_BY_NAME.Compose!,
+  Expression: BUILT_IN_BY_NAME.Compose!
 };
 
-const BUILT_IN_TRIGGER_BY_NAME = Object.fromEntries(
-  BUILT_IN_TRIGGER_TEMPLATES
-    .filter((template) => template.operationName)
-    .map((template) => [template.operationName, template.trigger]),
-) as Record<string, () => Record<string, unknown>>;
+const BUILT_IN_TRIGGER_BY_NAME = Object.fromEntries(BUILT_IN_TRIGGER_TEMPLATES.filter((template) => template.operationName).map((template) => [template.operationName, template.trigger])) as Record<
+  string,
+  () => Record<string, unknown>
+>;
 
 const BUILT_IN_TRIGGER_BY_TYPE: Record<string, () => Record<string, unknown>> = {
   Recurrence: BUILT_IN_TRIGGER_BY_NAME.Recurrence!,
-  Request: BUILT_IN_TRIGGER_BY_NAME.Manual!,
+  Request: BUILT_IN_TRIGGER_BY_NAME.Manual!
 };
 
 export const WDL_ACTION_TYPES = [
@@ -247,17 +587,10 @@ export const WDL_ACTION_TYPES = [
   'Terminate',
   'Until',
   'Wait',
-  'Workflow',
+  'Workflow'
 ] as const;
 
-export const WDL_TRIGGER_TYPES = [
-  'ApiConnection',
-  'Http',
-  'HttpWebhook',
-  'OpenApiConnection',
-  'Recurrence',
-  'Request',
-] as const;
+export const WDL_TRIGGER_TYPES = ['ApiConnection', 'Http', 'HttpWebhook', 'OpenApiConnection', 'Recurrence', 'Request'] as const;
 
 /**
  * Build a default WDL JSON payload for a built-in action. Returns null if the operation does
@@ -337,14 +670,14 @@ function recurrenceFields(): BuiltInActionField[] {
     { label: 'Interval', path: ['recurrence', 'interval'] },
     { label: 'Start time', path: ['recurrence', 'startTime'] },
     { label: 'Time zone', path: ['recurrence', 'timeZone'] },
-    { label: 'Schedule', path: ['recurrence', 'schedule'], kind: 'json' },
+    { label: 'Schedule', path: ['recurrence', 'schedule'], kind: 'json' }
   ];
 }
 
 function requestTriggerFields(): BuiltInActionField[] {
   return [
     { label: 'Kind', path: ['kind'], kind: 'select', options: ['Button', 'PowerApp', 'Http'] },
-    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
+    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' }
   ];
 }
 
@@ -352,7 +685,7 @@ function httpRequestTriggerFields(): BuiltInActionField[] {
   return [
     { label: 'Method', path: ['inputs', 'method'], kind: 'select', options: ['GET', 'POST', 'PUT', 'PATCH'] },
     { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
-    { label: 'Relative path', path: ['inputs', 'relativePath'] },
+    { label: 'Relative path', path: ['inputs', 'relativePath'] }
   ];
 }
 
@@ -363,7 +696,7 @@ function httpFields(): BuiltInActionField[] {
     { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
     { label: 'Queries', path: ['inputs', 'queries'], kind: 'json' },
     { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
-    { label: 'Authentication', path: ['inputs', 'authentication'], kind: 'json' },
+    { label: 'Authentication', path: ['inputs', 'authentication'], kind: 'json' }
   ];
 }
 
@@ -373,7 +706,7 @@ function httpSwaggerFields(): BuiltInActionField[] {
     { label: 'URI', path: ['inputs', 'uri'] },
     { label: 'Operation ID', path: ['inputs', 'operationId'] },
     { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
-    { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+    { label: 'Body', path: ['inputs', 'body'], kind: 'json' }
   ];
 }
 
@@ -384,35 +717,35 @@ function httpWebhookFields(): BuiltInActionField[] {
     { label: 'Subscribe headers', path: ['inputs', 'subscribe', 'headers'], kind: 'json' },
     { label: 'Subscribe body', path: ['inputs', 'subscribe', 'body'], kind: 'json' },
     { label: 'Unsubscribe method', path: ['inputs', 'unsubscribe', 'method'], kind: 'select', options: ['GET', 'POST', 'DELETE'] },
-    { label: 'Unsubscribe URI', path: ['inputs', 'unsubscribe', 'uri'] },
+    { label: 'Unsubscribe URI', path: ['inputs', 'unsubscribe', 'uri'] }
   ];
 }
 
 function parseJsonFields(): BuiltInActionField[] {
   return [
     { label: 'Content', path: ['inputs', 'content'], kind: 'json' },
-    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
+    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' }
   ];
 }
 
 function queryFields(): BuiltInActionField[] {
   return [
     { label: 'From', path: ['inputs', 'from'], kind: 'json' },
-    { label: 'Where', path: ['inputs', 'where'], kind: 'json' },
+    { label: 'Where', path: ['inputs', 'where'], kind: 'json' }
   ];
 }
 
 function selectFields(): BuiltInActionField[] {
   return [
     { label: 'From', path: ['inputs', 'from'], kind: 'json' },
-    { label: 'Map', path: ['inputs', 'select'], kind: 'json' },
+    { label: 'Map', path: ['inputs', 'select'], kind: 'json' }
   ];
 }
 
 function joinFields(): BuiltInActionField[] {
   return [
     { label: 'From', path: ['inputs', 'from'], kind: 'json' },
-    { label: 'Join with', path: ['inputs', 'joinWith'] },
+    { label: 'Join with', path: ['inputs', 'joinWith'] }
   ];
 }
 
@@ -420,7 +753,7 @@ function tableFields(): BuiltInActionField[] {
   return [
     { label: 'From', path: ['inputs', 'from'], kind: 'json' },
     { label: 'Format', path: ['inputs', 'format'], kind: 'select', options: ['CSV', 'HTML'] },
-    { label: 'Columns', path: ['inputs', 'columns'], kind: 'json' },
+    { label: 'Columns', path: ['inputs', 'columns'], kind: 'json' }
   ];
 }
 
@@ -428,7 +761,7 @@ function conditionFields(): BuiltInActionField[] {
   return [
     { label: 'Expression', path: ['expression'], kind: 'json' },
     { label: 'True actions', path: ['actions'], kind: 'json' },
-    { label: 'False branch', path: ['else'], kind: 'json' },
+    { label: 'False branch', path: ['else'], kind: 'json' }
   ];
 }
 
@@ -436,7 +769,7 @@ function foreachFields(): BuiltInActionField[] {
   return [
     { label: 'Collection', path: ['foreach'], kind: 'json' },
     { label: 'Actions', path: ['actions'], kind: 'json' },
-    { label: 'Runtime configuration', path: ['runtimeConfiguration'], kind: 'json' },
+    { label: 'Runtime configuration', path: ['runtimeConfiguration'], kind: 'json' }
   ];
 }
 
@@ -444,7 +777,7 @@ function untilFields(): BuiltInActionField[] {
   return [
     { label: 'Expression', path: ['expression'], kind: 'json' },
     { label: 'Actions', path: ['actions'], kind: 'json' },
-    { label: 'Limit', path: ['limit'], kind: 'json' },
+    { label: 'Limit', path: ['limit'], kind: 'json' }
   ];
 }
 
@@ -452,7 +785,7 @@ function switchFields(): BuiltInActionField[] {
   return [
     { label: 'Expression', path: ['expression'], kind: 'json' },
     { label: 'Cases', path: ['cases'], kind: 'json' },
-    { label: 'Default', path: ['default'], kind: 'json' },
+    { label: 'Default', path: ['default'], kind: 'json' }
   ];
 }
 
@@ -462,7 +795,7 @@ function responseFields(): BuiltInActionField[] {
     { label: 'Status code', path: ['inputs', 'statusCode'], kind: 'json' },
     { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
     { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
-    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' },
+    { label: 'Schema', path: ['inputs', 'schema'], kind: 'json' }
   ];
 }
 
@@ -471,28 +804,28 @@ function waitFields(action: Record<string, unknown>): BuiltInActionField[] {
   if (isRecord(inputs.until)) return [{ label: 'Timestamp', path: ['inputs', 'until', 'timestamp'] }];
   return [
     { label: 'Count', path: ['inputs', 'interval', 'count'], kind: 'json' },
-    { label: 'Unit', path: ['inputs', 'interval', 'unit'], kind: 'select', options: ['Second', 'Minute', 'Hour', 'Day', 'Week', 'Month'] },
+    { label: 'Unit', path: ['inputs', 'interval', 'unit'], kind: 'select', options: ['Second', 'Minute', 'Hour', 'Day', 'Week', 'Month'] }
   ];
 }
 
 function terminateFields(): BuiltInActionField[] {
   return [
     { label: 'Run status', path: ['inputs', 'runStatus'], kind: 'select', options: ['Succeeded', 'Failed', 'Cancelled'] },
-    { label: 'Run error', path: ['inputs', 'runError'], kind: 'json' },
+    { label: 'Run error', path: ['inputs', 'runError'], kind: 'json' }
   ];
 }
 
 function workflowFields(): BuiltInActionField[] {
   return [
     { label: 'Workflow reference name', path: ['inputs', 'host', 'workflowReferenceName'] },
-    { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+    { label: 'Body', path: ['inputs', 'body'], kind: 'json' }
   ];
 }
 
 function variableMutationFields(type: string): BuiltInActionField[] {
   return [
     { label: 'Name', path: ['inputs', 'name'] },
-    { label: type === 'incrementvariable' || type === 'decrementvariable' ? 'Amount' : 'Value', path: ['inputs', 'value'], kind: 'json' },
+    { label: type === 'incrementvariable' || type === 'decrementvariable' ? 'Amount' : 'Value', path: ['inputs', 'value'], kind: 'json' }
   ];
 }
 

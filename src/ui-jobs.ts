@@ -17,17 +17,14 @@ export interface UiJob<T = unknown> {
 export class UiJobStore {
   private readonly jobs = new Map<string, UiJob>();
 
-  createJob<T>(
-    kind: UiJobKind,
-    run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>,
-  ): UiJob<T> {
+  createJob<T>(kind: UiJobKind, run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>): UiJob<T> {
     const now = new Date().toISOString();
     const job: UiJob<T> = {
       id: randomUUID(),
       kind,
       status: 'pending',
       createdAt: now,
-      updatedAt: now,
+      updatedAt: now
     };
     this.jobs.set(job.id, job);
     void this.runJob(job.id, run);
@@ -46,10 +43,7 @@ export class UiJobStore {
     return job;
   }
 
-  private async runJob<T>(
-    id: string,
-    run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>,
-  ): Promise<void> {
+  private async runJob<T>(id: string, run: (update: (metadata: Record<string, unknown>) => void) => Promise<OperationResult<T>>): Promise<void> {
     try {
       const result = await run((metadata) => {
         const job = this.jobs.get(id) as UiJob<T> | undefined;
@@ -69,12 +63,14 @@ export class UiJobStore {
       job.updatedAt = new Date().toISOString();
       job.result = {
         success: false,
-        diagnostics: [{
-          level: 'error',
-          code: 'UI_JOB_FAILED',
-          message: error instanceof Error ? error.message : String(error),
-          source: 'pp/ui-jobs',
-        }],
+        diagnostics: [
+          {
+            level: 'error',
+            code: 'UI_JOB_FAILED',
+            message: error instanceof Error ? error.message : String(error),
+            source: 'pp/ui-jobs'
+          }
+        ]
       };
     }
   }

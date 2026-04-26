@@ -4,15 +4,7 @@ import type { FlowApiOperationSchema, ToastFn } from '../ui-types.js';
 import type { FlowActionEditTarget } from './types.js';
 import { isActionLikeOutlineItem, outlineTitle } from './outline-utils.js';
 import { CommonActionFields, SchemaFieldEditor } from './FlowActionFieldEditors.js';
-import {
-  connectorFieldPath,
-  existingConnectorParameterFields,
-  formatOutlineEditName,
-  isObject,
-  readPathValue,
-  resolveActionOperation,
-  setPathValue,
-} from './flow-action-document.js';
+import { connectorFieldPath, existingConnectorParameterFields, formatOutlineEditName, isObject, readPathValue, resolveActionOperation, setPathValue } from './flow-action-document.js';
 import { WDL_ACTION_TYPES, WDL_TRIGGER_TYPES } from './flow-built-in-templates.js';
 import { Combobox, Select } from '../Select.js';
 import { isMonacoKeyboardEvent } from '../monaco-support.js';
@@ -24,16 +16,10 @@ import {
   groupConnectorFields,
   useFlowDynamicOptions,
   useFlowDynamicSchemaFields,
-  visibleConnectorSchemaFields,
+  visibleConnectorSchemaFields
 } from './flow-dynamic-schema.js';
 import { useFlowEditorSchemaIndex } from './flow-editor-schema-index.js';
-import {
-  compatibleConnectionReferences,
-  connectorLabel,
-  setActionConnectionReference,
-  type FlowConnectionModel,
-  type FlowConnectionReference,
-} from './flow-connections.js';
+import { compatibleConnectionReferences, connectorLabel, setActionConnectionReference, type FlowConnectionModel, type FlowConnectionReference } from './flow-connections.js';
 
 type EditActionTab = 'fields' | 'json';
 
@@ -49,7 +35,7 @@ export function EditFlowActionModal(props: {
   const [actionName, setActionName] = useState(props.target.name);
   const [draft, setDraft] = useState<Record<string, unknown>>(props.target.value);
   const [rawText, setRawText] = useState(() => JSON.stringify(props.target.value, null, 2));
-  const [tab, setTab] = useState<EditActionTab>(() => isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
+  const [tab, setTab] = useState<EditActionTab>(() => (isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json'));
   const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const operationRef = useMemo(() => resolveActionOperation(props.source, draft), [props.source, draft]);
@@ -77,10 +63,16 @@ export function EditFlowActionModal(props: {
     }
     setSchemaLoading(true);
     void loadFlowApiOperationSchema(props.environment, operationRef.apiRef, operationRef.operationId)
-      .then((result) => { if (!cancelled) setSchema(result); })
+      .then((result) => {
+        if (!cancelled) setSchema(result);
+      })
       .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
-      .finally(() => { if (!cancelled) setSchemaLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setSchemaLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [operationRef.apiRef, operationRef.operationId, props.environment, props.toast]);
 
   useEffect(() => {
@@ -113,7 +105,9 @@ export function EditFlowActionModal(props: {
       try {
         const parsed = JSON.parse(rawText) as unknown;
         if (isObject(parsed)) setDraft(parsed);
-      } catch { /* keep current draft */ }
+      } catch {
+        /* keep current draft */
+      }
     }
     if (next === 'json' && tab === 'fields') {
       setRawText(JSON.stringify(draft, null, 2));
@@ -161,7 +155,7 @@ export function EditFlowActionModal(props: {
   const hasConnectorSchema = actionLike && Boolean(operationRef.apiRef && operationRef.operationId);
   const compatibleReferences = useMemo(
     () => compatibleConnectionReferences(props.connectionModel, { apiId: operationRef.apiId, apiName: operationRef.apiName }),
-    [operationRef.apiId, operationRef.apiName, props.connectionModel],
+    [operationRef.apiId, operationRef.apiName, props.connectionModel]
   );
   const schemaLabel = schemaLoading
     ? 'Loading schema…'
@@ -182,7 +176,9 @@ export function EditFlowActionModal(props: {
               {operationRef.operationId ? <span className="flow-action-edit-badge mono">{operationRef.operationId}</span> : null}
             </div>
           </div>
-          <button className="btn btn-ghost" type="button" onClick={props.onClose}>Close</button>
+          <button className="btn btn-ghost" type="button" onClick={props.onClose}>
+            Close
+          </button>
         </div>
         <div className="rt-modal-body flow-action-edit-body">
           <div className="flow-action-edit-section flow-action-edit-grid">
@@ -205,8 +201,12 @@ export function EditFlowActionModal(props: {
           </div>
 
           <div className="flow-action-edit-tabs">
-            <button type="button" className={`flow-action-edit-tab ${tab === 'fields' ? 'active' : ''}`} onClick={() => switchTab('fields')}>Fields</button>
-            <button type="button" className={`flow-action-edit-tab ${tab === 'json' ? 'active' : ''}`} onClick={() => switchTab('json')}>JSON</button>
+            <button type="button" className={`flow-action-edit-tab ${tab === 'fields' ? 'active' : ''}`} onClick={() => switchTab('fields')}>
+              Fields
+            </button>
+            <button type="button" className={`flow-action-edit-tab ${tab === 'json' ? 'active' : ''}`} onClick={() => switchTab('json')}>
+              JSON
+            </button>
             {schemaLabel ? <span className="flow-action-edit-schema-label">{schemaLabel}</span> : null}
           </div>
 
@@ -224,13 +224,11 @@ export function EditFlowActionModal(props: {
                         ...(operationRef.connectionReferenceName && !compatibleReferences.some((reference) => reference.name === operationRef.connectionReferenceName)
                           ? [{ value: operationRef.connectionReferenceName, label: `${operationRef.connectionReferenceName} (missing or incompatible)` }]
                           : []),
-                        ...compatibleReferences.map(referenceOption),
+                        ...compatibleReferences.map(referenceOption)
                       ]}
                     />
                   ) : (
-                    <div className="flow-connection-issue warning">
-                      No compatible reference exists for {operationRef.apiName || operationRef.apiId || `this connector ${noun}`}.
-                    </div>
+                    <div className="flow-connection-issue warning">No compatible reference exists for {operationRef.apiName || operationRef.apiId || `this connector ${noun}`}.</div>
                   )}
                 </div>
               ) : null}
@@ -238,7 +236,11 @@ export function EditFlowActionModal(props: {
               {hasConnectorSchema && (connectorFields.length || existingParameterFields.length) ? (
                 <div className="flow-action-edit-section">
                   <h3>Connector parameters</h3>
-                  {schema?.description ? <p className="desc" style={{ marginBottom: 0 }}>{schema.description}</p> : null}
+                  {schema?.description ? (
+                    <p className="desc" style={{ marginBottom: 0 }}>
+                      {schema.description}
+                    </p>
+                  ) : null}
                   {connectorFieldGroups.map((group) => (
                     <div key={group.location} className="flow-action-field-group">
                       <div className="flow-action-field-group-title">{connectorLocationLabel(group.location)}</div>
@@ -266,17 +268,19 @@ export function EditFlowActionModal(props: {
                   <CommonActionFields action={draft} source={props.source} schemaIndex={expressionSchemaIndex} onChange={updateDraft} />
                 </div>
               ) : null}
-              {!actionLike && !hasConnectorSchema ? (
-                <div className="empty">Use the JSON tab to edit this workflow section.</div>
-              ) : null}
+              {!actionLike && !hasConnectorSchema ? <div className="empty">Use the JSON tab to edit this workflow section.</div> : null}
             </>
           ) : (
             <div className="flow-action-edit-section">
               <div className="flow-action-json-toolbar">
                 <span className="flow-action-edit-note">Edit the exact JSON object that will replace this outline item.</span>
                 <div className="flow-action-json-toolbar-actions">
-                  <button className="btn btn-ghost" type="button" onClick={formatRawJson}>Format</button>
-                  <button className="btn btn-ghost" type="button" onClick={syncJsonFromFields}>Reset from fields</button>
+                  <button className="btn btn-ghost" type="button" onClick={formatRawJson}>
+                    Format
+                  </button>
+                  <button className="btn btn-ghost" type="button" onClick={syncJsonFromFields}>
+                    Reset from fields
+                  </button>
                 </div>
               </div>
               <FlowExpressionValueEditor value={rawText} source={props.source} schemaIndex={expressionSchemaIndex} mode="json" onChange={setRawText} />
@@ -285,8 +289,12 @@ export function EditFlowActionModal(props: {
           )}
         </div>
         <div className="flow-action-edit-footer">
-          <span className="flow-action-edit-footer-text">Updates the editor only - use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span></span>
-          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>Apply Changes</button>
+          <span className="flow-action-edit-footer-text">
+            Updates the editor only - use Check & Save when ready. <span className="flow-action-edit-footer-hint">Ctrl+Enter</span>
+          </span>
+          <button className="btn btn-primary" type="button" disabled={!actionName.trim() || (tab === 'json' && Boolean(rawError))} onClick={tryApply}>
+            Apply Changes
+          </button>
         </div>
       </div>
     </div>
@@ -297,6 +305,6 @@ function referenceOption(reference: FlowConnectionReference) {
   const connection = reference.connection ? ` -> ${reference.connection.displayName || reference.connection.name}` : '';
   return {
     value: reference.name,
-    label: `${reference.name} (${connectorLabel(reference)})${connection}`,
+    label: `${reference.name} (${connectorLabel(reference)})${connection}`
   };
 }

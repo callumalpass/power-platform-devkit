@@ -28,14 +28,7 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   }
 }
 
-export function CopyButton(props: {
-  value: unknown;
-  label?: string;
-  title?: string;
-  className?: string;
-  toast?: ToastFn;
-  stopPropagation?: boolean;
-}) {
+export function CopyButton(props: { value: unknown; label?: string; title?: string; className?: string; toast?: ToastFn; stopPropagation?: boolean }) {
   const { value, label = 'Copy', title = 'Copy to clipboard', className = 'copy-mini', toast, stopPropagation } = props;
   const text = value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (

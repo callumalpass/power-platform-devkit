@@ -14,19 +14,25 @@ test('PpClient wraps account helpers with configured config dir', async () => {
   const accounts = await pp.accounts.list();
 
   assert.equal(accounts.success, true);
-  assert.deepEqual(accounts.data?.map((account) => account.name), ['work']);
+  assert.deepEqual(
+    accounts.data?.map((account) => account.name),
+    ['work']
+  );
 });
 
 test('PpClient.request accepts env and account aliases', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-client-request-'));
   await saveAccount({ name: 'work', kind: 'static-token', token: 'test-token' }, { configDir });
-  await saveEnvironment({
-    alias: 'dev',
-    account: 'work',
-    url: 'https://org.crm.dynamics.com',
-    makerEnvironmentId: 'f3f934b0-7b79-e09e-b393-f0b21c05fcce',
-    tenantId: 'tenant-id',
-  }, { configDir });
+  await saveEnvironment(
+    {
+      alias: 'dev',
+      account: 'work',
+      url: 'https://org.crm.dynamics.com',
+      makerEnvironmentId: 'f3f934b0-7b79-e09e-b393-f0b21c05fcce',
+      tenantId: 'tenant-id'
+    },
+    { configDir }
+  );
 
   const calls: Array<{ url: string; authorization: string | null }> = [];
   const originalFetch = globalThis.fetch;
@@ -43,7 +49,7 @@ test('PpClient.request accepts env and account aliases', async () => {
       account: 'work',
       api: 'dv',
       path: '/accounts',
-      readIntent: true,
+      readIntent: true
     });
 
     assert.equal(result.success, true);
@@ -57,11 +63,7 @@ test('PpClient.request accepts env and account aliases', async () => {
 test('PpClient environment operations report missing env as diagnostics', async () => {
   const pp = new PpClient();
 
-  const results = await Promise.all([
-    pp.whoami({}),
-    pp.ping({}),
-    pp.token({}),
-  ]);
+  const results = await Promise.all([pp.whoami({}), pp.ping({}), pp.token({})]);
 
   for (const result of results) {
     assert.equal(result.success, false);

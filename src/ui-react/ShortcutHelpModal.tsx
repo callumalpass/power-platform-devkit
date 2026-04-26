@@ -11,25 +11,25 @@ const GROUPS: Group[] = [
       { keys: ['Alt', '1–7'], description: 'Jump to tab (setup, console, dataverse, automate, apps, canvas, platform)' },
       { keys: ['Ctrl/⌘', 'K'], description: 'Open environment picker' },
       { keys: ['?'], description: 'Show this help' },
-      { keys: ['Esc'], description: 'Close modal or dismiss active overlay' },
-    ],
+      { keys: ['Esc'], description: 'Close modal or dismiss active overlay' }
+    ]
   },
   {
     title: 'Console',
     items: [
       { keys: ['Enter'], description: 'Send request (from the path input)' },
       { keys: ['Ctrl/⌘', 'Enter'], description: 'Send request from any console input' },
-      { keys: ['Esc'], description: 'Cancel in-flight request' },
-    ],
+      { keys: ['Esc'], description: 'Cancel in-flight request' }
+    ]
   },
   {
     title: 'Environment picker',
     items: [
       { keys: ['↑', '↓'], description: 'Move between results' },
       { keys: ['Enter'], description: 'Switch to selected environment' },
-      { keys: ['Tab'], description: 'Focus stays inside the picker' },
-    ],
-  },
+      { keys: ['Tab'], description: 'Focus stays inside the picker' }
+    ]
+  }
 ];
 
 type Props = { onClose: () => void; tabs?: readonly TabName[]; showConsoleShortcuts?: boolean };
@@ -61,12 +61,16 @@ export function ShortcutHelpModal({ onClose, tabs, showConsoleShortcuts = true }
       aria-modal="true"
       aria-labelledby="shortcut-help-title"
       ref={backdropRef}
-      onClick={(event) => { if (event.target === backdropRef.current) onClose(); }}
+      onClick={(event) => {
+        if (event.target === backdropRef.current) onClose();
+      }}
     >
       <div className="rt-modal shortcut-help-modal">
         <div className="shortcut-help-header">
           <h2 id="shortcut-help-title">Keyboard shortcuts</h2>
-          <button ref={closeRef} type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+          <button ref={closeRef} type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            Close
+          </button>
         </div>
         <div className="shortcut-help-body">
           {groups.map((group) => (
@@ -97,20 +101,20 @@ export function ShortcutHelpModal({ onClose, tabs, showConsoleShortcuts = true }
 
 function shortcutGroups(tabs: readonly TabName[], showConsoleShortcuts: boolean): Group[] {
   const [navigation, ...rest] = GROUPS;
-  const tabShortcut = tabs.length > 1
-    ? [{
-        keys: ['Alt', `1-${tabs.length}`],
-        description: `Jump to tab (${tabs.join(', ')})`,
-      }]
-    : [];
+  const tabShortcut =
+    tabs.length > 1
+      ? [
+          {
+            keys: ['Alt', `1-${tabs.length}`],
+            description: `Jump to tab (${tabs.join(', ')})`
+          }
+        ]
+      : [];
   return [
     {
       ...navigation,
-      items: [
-        ...tabShortcut,
-        ...navigation.items.slice(1),
-      ],
+      items: [...tabShortcut, ...navigation.items.slice(1)]
     },
-    ...(showConsoleShortcuts ? rest : rest.filter((group) => group.title !== 'Console')),
+    ...(showConsoleShortcuts ? rest : rest.filter((group) => group.title !== 'Console'))
   ];
 }

@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import {
-  applyMonacoAppTheme,
-  attachMonacoVim,
-  MonacoVimToggle,
-  type MonacoVimAttachment,
-  useMonacoVimPreference,
-} from './monaco-support.js';
+import { applyMonacoAppTheme, attachMonacoVim, MonacoVimToggle, type MonacoVimAttachment, useMonacoVimPreference } from './monaco-support.js';
 
 type Props = {
   value: string;
@@ -29,7 +23,9 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
   const [vimMode, setVimMode] = useState('off');
   const vimEnabledRef = useRef(vimEnabled);
 
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
   useEffect(() => {
     vimEnabledRef.current = vimEnabled;
     vimAttachmentRef.current?.setEnabled(vimEnabled);
@@ -55,13 +51,13 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
       scrollBeyondLastLine: false,
       tabSize: 2,
       wordWrap: 'on',
-      theme: 'pp-app',
+      theme: 'pp-app'
     });
     modelRef.current = model;
     editorRef.current = editor;
     vimAttachmentRef.current = attachMonacoVim(editor, vimStatusRef.current, {
       enabled: vimEnabledRef.current,
-      onModeChange: setVimMode,
+      onModeChange: setVimMode
     });
 
     const sub = model.onDidChangeContent(() => {

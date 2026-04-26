@@ -22,7 +22,7 @@ export function createDesktopBuildPaths(repoRoot) {
     iconIcoSource: path.join(repoRoot, 'packaging', 'windows', 'assets', 'pp-icon.ico'),
     iconPngSource: path.join(repoRoot, 'packaging', 'windows', 'assets', 'pp-icon-256x256.png'),
     iconIcoOutfile: path.join(desktopDir, 'pp-icon.ico'),
-    iconPngOutfile: path.join(desktopDir, 'pp-icon-256x256.png'),
+    iconPngOutfile: path.join(desktopDir, 'pp-icon-256x256.png')
   };
 }
 
@@ -42,7 +42,7 @@ export function mainBuildOptions(paths, options = {}) {
     external: ['electron'],
     sourcemap: options.dev ? 'inline' : false,
     logLevel: 'silent',
-    plugins: options.plugins,
+    plugins: options.plugins
   };
 }
 
@@ -57,7 +57,7 @@ export function preloadBuildOptions(paths, options = {}) {
     external: ['electron'],
     sourcemap: options.dev ? 'inline' : false,
     logLevel: 'silent',
-    plugins: options.plugins,
+    plugins: options.plugins
   };
 }
 
@@ -80,18 +80,18 @@ function browserRendererBuildOptions(paths, entryPoint, options = {}) {
     sourcemap: options.dev ? 'inline' : false,
     minify: !options.dev,
     define: {
-      'process.env.NODE_ENV': options.dev ? '"development"' : '"production"',
+      'process.env.NODE_ENV': options.dev ? '"development"' : '"production"'
     },
     alias: {
       'monaco-editor/esm/vs/editor/editor.api': 'monaco-editor/esm/vs/editor/editor.api.js',
-      'monaco-editor/esm/vs/editor/common/commands/shiftCommand': 'monaco-editor/esm/vs/editor/common/commands/shiftCommand.js',
+      'monaco-editor/esm/vs/editor/common/commands/shiftCommand': 'monaco-editor/esm/vs/editor/common/commands/shiftCommand.js'
     },
     loader: {
       '.css': 'text',
-      '.ttf': 'dataurl',
+      '.ttf': 'dataurl'
     },
     logLevel: 'silent',
-    plugins: options.plugins,
+    plugins: options.plugins
   };
 }
 
@@ -105,7 +105,7 @@ export function htmlTemplateBuildOptions(paths, options = {}) {
     outfile: paths.htmlTemplateOutfile,
     sourcemap: options.dev ? 'inline' : false,
     logLevel: 'silent',
-    plugins: options.plugins,
+    plugins: options.plugins
   };
 }
 
@@ -114,9 +114,7 @@ export async function writeRendererBundle(paths, result, outfile = paths.rendere
   if (!rendererOutput) throw new Error('No output generated for the Desktop renderer bundle.');
   const monacoCssPath = path.join(paths.repoRoot, 'node_modules/monaco-editor/min/vs/editor/editor.main.css');
   const monacoCss = options.includeMonacoCss === false ? '' : await readFile(monacoCssPath, 'utf8').catch(() => '');
-  const styleBoot = monacoCss
-    ? `(()=>{const style=document.createElement("style");style.textContent=${JSON.stringify(monacoCss)};document.head.appendChild(style);})();\n`
-    : '';
+  const styleBoot = monacoCss ? `(()=>{const style=document.createElement("style");style.textContent=${JSON.stringify(monacoCss)};document.head.appendChild(style);})();\n` : '';
   await writeFile(outfile, `${styleBoot}${rendererOutput.trim()}\n`, 'utf8');
 }
 
@@ -127,17 +125,25 @@ export async function writeHtml(paths) {
 
 export async function writeDesktopPackage(paths) {
   const rootPackage = JSON.parse(await readFile(path.join(paths.repoRoot, 'package.json'), 'utf8'));
-  await writeFile(paths.packageJsonOutfile, JSON.stringify({
-    name: 'pp-desktop',
-    productName: 'PP Desktop',
-    version: rootPackage.version,
-    description: 'Desktop app for working with Microsoft Power Platform.',
-    main: 'main.cjs',
-    packageManager: 'traversal@0.0.0',
-    author: rootPackage.author ?? 'pp',
-    license: rootPackage.license,
-    dependencies: {},
-  }, null, 2) + '\n', 'utf8');
+  await writeFile(
+    paths.packageJsonOutfile,
+    JSON.stringify(
+      {
+        name: 'pp-desktop',
+        productName: 'PP Desktop',
+        version: rootPackage.version,
+        description: 'Desktop app for working with Microsoft Power Platform.',
+        main: 'main.cjs',
+        packageManager: 'traversal@0.0.0',
+        author: rootPackage.author ?? 'pp',
+        license: rootPackage.license,
+        dependencies: {}
+      },
+      null,
+      2
+    ) + '\n',
+    'utf8'
+  );
 }
 
 export async function copyDesktopIcons(paths) {

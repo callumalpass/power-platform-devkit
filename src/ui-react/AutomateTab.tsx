@@ -21,12 +21,23 @@ import {
   setFlowActivationState,
   saveFlowDefinition,
   type FlowValidationKind,
-  type FlowValidationResult,
+  type FlowValidationResult
 } from './automate-data.js';
 import type { FlowAction, FlowAnalysis, FlowAnalysisOutlineItem, FlowItem, FlowRun, ToastFn } from './ui-types.js';
 import { RecordDetailModal, useRecordDetail } from './RecordDetailModal.js';
 import { useMonacoVimPreference } from './monaco-support.js';
-import { AddFlowActionModal, EditFlowActionModal, FlowDiffModal, addActionToFlowDocument, addTriggerToFlowDocument, findSiblingActionNames, readOutlineEditTarget, removeActionFromFlowDocument, reorderActionInFlowDocument, replaceOutlineItemInFlowDocument } from './automate/FlowDefinitionModals.js';
+import {
+  AddFlowActionModal,
+  EditFlowActionModal,
+  FlowDiffModal,
+  addActionToFlowDocument,
+  addTriggerToFlowDocument,
+  findSiblingActionNames,
+  readOutlineEditTarget,
+  removeActionFromFlowDocument,
+  reorderActionInFlowDocument,
+  replaceOutlineItemInFlowDocument
+} from './automate/FlowDefinitionModals.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { FlowDefinitionPanel } from './automate/FlowDefinitionPanel.js';
 import { FlowConnectionsPanel, type FlowConnectionInspectSeed } from './automate/FlowConnectionsPanel.js';
@@ -56,15 +67,10 @@ const EMPTY_CALLBACK_URL_STATE: FlowCallbackUrlState = {
   value: '',
   kind: 'authenticated',
   error: '',
-  visible: false,
+  visible: false
 };
 
-export function AutomateTab(props: {
-  active: boolean;
-  environment: string;
-  openConsole: (seed: { api: string; method: string; path: string }) => void;
-  toast: ToastFn;
-}) {
+export function AutomateTab(props: { active: boolean; environment: string; openConsole: (seed: { api: string; method: string; path: string }) => void; toast: ToastFn }) {
   const { active, environment, openConsole, toast } = props;
   const detail = useRecordDetail();
   const confirm = useConfirm();
@@ -148,17 +154,13 @@ export function AutomateTab(props: {
     });
   }, [filter, flows]);
 
-
   const isFlowEditable = currentFlow?.source === 'flow';
   const isFlowDirty = Boolean(currentFlow && flowDocument !== loadedFlowDocument);
   const flowBusy = flowOperation !== null;
-  const connectionModel = useMemo(
-    () => buildFlowConnectionModel(flowDocument, environmentConnections),
-    [environmentConnections, flowDocument],
-  );
+  const connectionModel = useMemo(() => buildFlowConnectionModel(flowDocument, environmentConnections), [environmentConnections, flowDocument]);
   const flowProblems = useMemo(
     () => buildFlowProblems(analysis?.diagnostics || [], flowValidation, currentFlow ? connectionModel.issues : []),
-    [analysis?.diagnostics, connectionModel.issues, currentFlow, flowValidation],
+    [analysis?.diagnostics, connectionModel.issues, currentFlow, flowValidation]
   );
   const hasBlockingServiceErrors = Boolean(flowValidation?.kind === 'errors' && flowValidation.items.some((item) => item.level === 'error'));
 
@@ -235,10 +237,7 @@ export function AutomateTab(props: {
     setRuns([]);
     setLoadingRuns(true);
     try {
-      const [document, loadedRuns] = await Promise.all([
-        loadFlowDefinitionDocument(environment, flow),
-        loadFlowRuns(environment, flow).catch(() => []),
-      ]);
+      const [document, loadedRuns] = await Promise.all([loadFlowDefinitionDocument(environment, flow), loadFlowRuns(environment, flow).catch(() => [])]);
       setFlowDocument(document);
       setLoadedFlowDocument(document);
       setFlowValidation(null);
@@ -254,7 +253,7 @@ export function AutomateTab(props: {
     callbackUrlRequestRef.current += 1;
     setFlowCallbackUrl({
       ...EMPTY_CALLBACK_URL_STATE,
-      flowId: flowIdentifier(flow),
+      flowId: flowIdentifier(flow)
     });
   }
 
@@ -285,7 +284,7 @@ export function AutomateTab(props: {
           value: '',
           kind: 'authenticated',
           error: error instanceof Error ? error.message : String(error),
-          visible: false,
+          visible: false
         });
       }
     }
@@ -353,7 +352,7 @@ export function AutomateTab(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
@@ -412,7 +411,7 @@ export function AutomateTab(props: {
       const updated = await saveFlowDefinition(environment, currentFlow, flowDocument);
       setLoadedFlowDocument(flowDocument);
       setCurrentFlow(updated);
-      setFlows((items) => items.map((item) => sameFlowIdentity(item, currentFlow) ? { ...item, ...updated } : item));
+      setFlows((items) => items.map((item) => (sameFlowIdentity(item, currentFlow) ? { ...item, ...updated } : item)));
       toast(skipServiceCheck ? 'Flow definition saved without service check' : 'Flow definition checked and saved');
     } catch (error) {
       setFlowValidation(flowValidationFromError('errors', error));
@@ -478,11 +477,17 @@ export function AutomateTab(props: {
       title: `Remove ${name}?`,
       destructive: true,
       confirmLabel: 'Remove action',
-      body: childCount > 0 ? (
-        <>Removing this action also deletes {childCount} nested action{childCount === 1 ? '' : 's'}. Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that dependency.</>
-      ) : (
-        <>Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that dependency.</>
-      ),
+      body:
+        childCount > 0 ? (
+          <>
+            Removing this action also deletes {childCount} nested action{childCount === 1 ? '' : 's'}. Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that
+            dependency.
+          </>
+        ) : (
+          <>
+            Any other actions whose <code>runAfter</code> references <strong>{name}</strong> will lose that dependency.
+          </>
+        ),
       onConfirm: () => {
         try {
           const next = removeActionFromFlowDocument(flowDocument, name);
@@ -495,7 +500,7 @@ export function AutomateTab(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
@@ -563,7 +568,7 @@ export function AutomateTab(props: {
         const runTriggerName = flowRunTriggerNames(currentFlow, flowDocument)[0] || 'manual';
         await api<any>('/api/request/execute', {
           method: 'POST',
-          body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`, responseType: 'void' }),
+          body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`, responseType: 'void' })
         });
       } else {
         await setFlowActivationState(environment, currentFlow, action === 'start');
@@ -656,16 +661,14 @@ export function AutomateTab(props: {
       if (currentFlow) {
         [loadedActions, loadedRunAnalysis] = await Promise.all([
           loadRunActions(environment, currentFlow, run).catch(() => []),
-          loadRunDefinitionAnalysis(environment, currentFlow, run).catch(() => null),
+          loadRunDefinitionAnalysis(environment, currentFlow, run).catch(() => null)
         ]);
       }
       if (selectedRunRef.current === run.name) {
         setActions(loadedActions);
         setRunAnalysis(loadedRunAnalysis);
         if (options.preserveActionRef !== undefined) {
-          const refreshedAction = options.preserveActionRef
-            ? loadedActions.find((action, index) => runActionRef(action, index) === options.preserveActionRef) || null
-            : null;
+          const refreshedAction = options.preserveActionRef ? loadedActions.find((action, index) => runActionRef(action, index) === options.preserveActionRef) || null : null;
           selectedActionRequestRef.current += 1;
           setCurrentAction(refreshedAction);
           setActionDetail(refreshedAction);
@@ -717,8 +720,12 @@ export function AutomateTab(props: {
         loading={loadingFlows}
         currentFlow={currentFlow}
         onFilterChange={setFilter}
-        onRefresh={() => { void loadFlows(true); }}
-        onSelect={(flow) => { void selectFlow(flow); }}
+        onRefresh={() => {
+          void loadFlows(true);
+        }}
+        onSelect={(flow) => {
+          void selectFlow(flow);
+        }}
       />
       <div className="detail-area">
         <FlowDetailHeader
@@ -727,8 +734,12 @@ export function AutomateTab(props: {
           toast={toast}
           onOpenRecord={detail.open}
           onOpenConsole={openConsole}
-          onFlowAction={(action) => { void flowAction(action); }}
-          onRevealCallbackUrl={() => { void revealFlowCallbackUrl(); }}
+          onFlowAction={(action) => {
+            void flowAction(action);
+          }}
+          onRevealCallbackUrl={() => {
+            void revealFlowCallbackUrl();
+          }}
           onHideCallbackUrl={hideFlowCallbackUrl}
         />
 
@@ -736,12 +747,7 @@ export function AutomateTab(props: {
           <>
             <div className="dv-sub-nav">
               {(['definition', 'runs', 'outline', 'connections'] as AutomateSubTab[]).map((tabName) => (
-                <button
-                  key={tabName}
-                  className={`sub-tab ${flowSubTab === tabName ? 'active' : ''}`}
-                  type="button"
-                  onClick={() => setFlowSubTab(tabName)}
-                >
+                <button key={tabName} className={`sub-tab ${flowSubTab === tabName ? 'active' : ''}`} type="button" onClick={() => setFlowSubTab(tabName)}>
                   {tabName === 'definition' ? 'Definition' : tabName === 'runs' ? 'Runs' : tabName === 'outline' ? 'Outline' : 'Connections'}
                 </button>
               ))}
@@ -768,22 +774,36 @@ export function AutomateTab(props: {
               toast={toast}
               vimEnabled={vimEnabled}
               flowVimMode={flowVimMode}
-              onAddAction={() => { setAddActionRunAfter(undefined); setAddActionContainer(null); setShowAddAction(true); }}
+              onAddAction={() => {
+                setAddActionRunAfter(undefined);
+                setAddActionContainer(null);
+                setShowAddAction(true);
+              }}
               onAddAfter={handleAddActionAfter}
               onAddInside={handleAddActionInside}
               onAddTrigger={() => setShowAddTrigger(true)}
               onHighlightJson={handleHighlightJson}
               onRemoveAction={handleRemoveAction}
-              onCheckErrors={() => { void runFlowValidation('errors'); }}
-              onCheckWarnings={() => { void runFlowValidation('warnings'); }}
+              onCheckErrors={() => {
+                void runFlowValidation('errors');
+              }}
+              onCheckWarnings={() => {
+                void runFlowValidation('warnings');
+              }}
               onDocumentChange={updateFlowDocument}
               onEditAction={openActionEditor}
               onFormat={formatFlowJson}
               onJumpProblem={jumpToProblem}
-              onReload={() => { void reloadFlowDefinition(); }}
+              onReload={() => {
+                void reloadFlowDefinition();
+              }}
               onReorderAction={handleReorderAction}
-              onSave={() => { void saveDefinition(); }}
-              onSaveAnyway={() => { void saveDefinition(true); }}
+              onSave={() => {
+                void saveDefinition();
+              }}
+              onSaveAnyway={() => {
+                void saveDefinition(true);
+              }}
               onSelectOutline={selectOutlineItem}
               onShowDiff={() => setShowFlowDiff(true)}
               onToggleFullscreen={() => setFlowFullscreen((value) => !value)}
@@ -810,9 +830,15 @@ export function AutomateTab(props: {
               onActionStatusFilterChange={setActionStatusFilter}
               onRunFilterChange={setRunFilter}
               onRunStatusFilterChange={setRunStatusFilter}
-              onRefreshRuns={() => { void refreshRuns(); }}
-              onSelectAction={(action) => { void selectAction(action); }}
-              onSelectRun={(run) => { void selectRun(run); }}
+              onRefreshRuns={() => {
+                void refreshRuns();
+              }}
+              onSelectAction={(action) => {
+                void selectAction(action);
+              }}
+              onSelectRun={(run) => {
+                void selectRun(run);
+              }}
             />
 
             <FlowOutlinePanel
@@ -839,18 +865,16 @@ export function AutomateTab(props: {
               toast={toast}
               onBindReference={bindConnectionReference}
               onRemoveReference={removeConnectionReference}
-              onRefreshConnections={() => { void loadEnvironmentConnections(true); }}
+              onRefreshConnections={() => {
+                void loadEnvironmentConnections(true);
+              }}
               onInspect={(seed: FlowConnectionInspectSeed) => apiPreview.open(seed)}
             />
           </>
         ) : null}
       </div>
-      {detail.target && environment && (
-        <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
-      )}
-      {showFlowDiff ? (
-        <FlowDiffModal original={loadedFlowDocument} modified={flowDocument} onClose={() => setShowFlowDiff(false)} />
-      ) : null}
+      {detail.target && environment && <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />}
+      {showFlowDiff ? <FlowDiffModal original={loadedFlowDocument} modified={flowDocument} onClose={() => setShowFlowDiff(false)} /> : null}
       {showAddAction && currentFlow ? (
         <AddFlowActionModal
           kind="action"
@@ -860,7 +884,11 @@ export function AutomateTab(props: {
           connectionModel={connectionModel}
           initialRunAfter={addActionRunAfter}
           containerTarget={addActionContainer}
-          onClose={() => { setShowAddAction(false); setAddActionRunAfter(undefined); setAddActionContainer(null); }}
+          onClose={() => {
+            setShowAddAction(false);
+            setAddActionRunAfter(undefined);
+            setAddActionContainer(null);
+          }}
           onAdd={addActionToDocument}
           toast={toast}
         />
@@ -895,7 +923,10 @@ export function AutomateTab(props: {
           environment={environment}
           toast={toast}
           onClose={apiPreview.close}
-          onOpenInConsole={(seed) => { apiPreview.close(); openConsole(seed); }}
+          onOpenInConsole={(seed) => {
+            apiPreview.close();
+            openConsole(seed);
+          }}
         />
       ) : null}
     </div>

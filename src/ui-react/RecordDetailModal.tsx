@@ -31,7 +31,7 @@ export function getLookupInfo(row: any, column: string) {
   if (!LOOKUP_RE.test(column)) return null;
   return {
     targetEntity: row[`${column}@Microsoft.Dynamics.CRM.lookuplogicalname`] as string | undefined,
-    formattedValue: row[`${column}@OData.Community.Display.V1.FormattedValue`] as string | undefined,
+    formattedValue: row[`${column}@OData.Community.Display.V1.FormattedValue`] as string | undefined
   };
 }
 
@@ -59,8 +59,12 @@ export function useRecordDetail() {
   const [target, setTarget] = useState<RecordDetailTarget | null>(null);
   return {
     target,
-    open(entity: string, entitySetName: string, id: string) { setTarget({ entity, entitySetName, id }); },
-    close() { setTarget(null); },
+    open(entity: string, entitySetName: string, id: string) {
+      setTarget({ entity, entitySetName, id });
+    },
+    close() {
+      setTarget(null);
+    }
   };
 }
 
@@ -106,15 +110,18 @@ export function RecordDetailModal(props: {
         api: 'dv',
         method: 'GET',
         path: `/${target.entitySetName}(${target.id})`,
-        headers: { Prefer: 'odata.include-annotations="*"' },
-      }),
-    }).then((payload) => {
-      setRecord(payload.data?.response || payload.data);
-    }).catch((err) => {
-      setError(err instanceof Error ? err.message : String(err));
-    }).finally(() => {
-      setLoading(false);
-    });
+        headers: { Prefer: 'odata.include-annotations="*"' }
+      })
+    })
+      .then((payload) => {
+        setRecord(payload.data?.response || payload.data);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }
 
   useEffect(() => {
@@ -146,7 +153,10 @@ export function RecordDetailModal(props: {
   }
 
   async function saveEdits() {
-    if (!Object.keys(edits).length) { setEditing(false); return; }
+    if (!Object.keys(edits).length) {
+      setEditing(false);
+      return;
+    }
     setSaving(true);
     try {
       await api<any>('/api/request/execute', {
@@ -156,8 +166,8 @@ export function RecordDetailModal(props: {
           api: 'dv',
           method: 'PATCH',
           path: `/${current.entitySetName}(${current.id})`,
-          body: edits,
-        }),
+          body: edits
+        })
       });
       toast?.('Record updated');
       setEditing(false);
@@ -170,9 +180,7 @@ export function RecordDetailModal(props: {
     }
   }
 
-  const dynamicsUrl = environmentUrl
-    ? `${environmentUrl.replace(/\/+$/, '')}/main.aspx?etn=${encodeURIComponent(current.entity)}&id=${encodeURIComponent(current.id)}&pagetype=entityrecord`
-    : null;
+  const dynamicsUrl = environmentUrl ? `${environmentUrl.replace(/\/+$/, '')}/main.aspx?etn=${encodeURIComponent(current.entity)}&id=${encodeURIComponent(current.id)}&pagetype=entityrecord` : null;
 
   const fields = useMemo(() => {
     if (!record) return [];
@@ -182,13 +190,21 @@ export function RecordDetailModal(props: {
   const editedCount = Object.keys(edits).length;
 
   return (
-    <div className="rt-modal-backdrop" ref={backdropRef} onClick={(e) => { if (e.target === backdropRef.current) onClose(); }}>
+    <div
+      className="rt-modal-backdrop"
+      ref={backdropRef}
+      onClick={(e) => {
+        if (e.target === backdropRef.current) onClose();
+      }}
+    >
       <div className="rt-modal size-md">
         <div className="rt-modal-header">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {stack.length > 1 && (
-                <button className="btn btn-ghost" type="button" onClick={goBack} style={{ fontSize: '0.75rem', padding: '2px 8px' }} title="Go back">&larr;</button>
+                <button className="btn btn-ghost" type="button" onClick={goBack} style={{ fontSize: '0.75rem', padding: '2px 8px' }} title="Go back">
+                  &larr;
+                </button>
               )}
               <h3 className="rt-modal-title">{current.entity}</h3>
             </div>
@@ -198,17 +214,23 @@ export function RecordDetailModal(props: {
             {dynamicsUrl && <CopyButton value={dynamicsUrl} label="Copy URL" title="Copy Dynamics 365 record URL" toast={toast} />}
             <CopyButton value={record ? JSON.stringify(record, null, 2) : current.id} label="Copy JSON" title="Copy full record as JSON" toast={toast} />
             {!loading && !error && !editing && (
-              <button className="btn btn-ghost" type="button" onClick={startEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Edit</button>
+              <button className="btn btn-ghost" type="button" onClick={startEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                Edit
+              </button>
             )}
             {editing && (
               <>
-                <button className="btn btn-ghost" type="button" onClick={cancelEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Cancel</button>
+                <button className="btn btn-ghost" type="button" onClick={cancelEditing} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  Cancel
+                </button>
                 <button className="btn btn-primary" type="button" onClick={() => void saveEdits()} disabled={saving || !editedCount} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
                   {saving ? 'Saving...' : `Save${editedCount ? ` (${editedCount})` : ''}`}
                 </button>
               </>
             )}
-            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
+            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+              Close
+            </button>
           </div>
         </div>
         <div className="rt-modal-body body-flush">
@@ -234,11 +256,7 @@ export function RecordDetailModal(props: {
                         {editing && !readOnly ? (
                           inputType === 'checkbox' ? (
                             <label className="rt-edit-check">
-                              <input
-                                type="checkbox"
-                                checked={isEdited ? edits[key] as boolean : val as boolean}
-                                onChange={(e) => updateEdit(key, e.target.checked)}
-                              />
+                              <input type="checkbox" checked={isEdited ? (edits[key] as boolean) : (val as boolean)} onChange={(e) => updateEdit(key, e.target.checked)} />
                               {isEdited ? String(edits[key]) : display}
                             </label>
                           ) : (
@@ -247,7 +265,7 @@ export function RecordDetailModal(props: {
                               type={inputType}
                               defaultValue={isNull ? '' : display}
                               onChange={(e) => {
-                                const newVal = inputType === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : (e.target.value || null);
+                                const newVal = inputType === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value || null;
                                 updateEdit(key, newVal);
                               }}
                             />

@@ -34,9 +34,7 @@ export type LoginTarget = {
   resource?: string;
   label?: string;
   status?: string;
-  action?:
-    | { kind: 'browser-url'; url: string }
-    | { kind: 'device-code'; verificationUri: string; userCode: string; message: string };
+  action?: { kind: 'browser-url'; url: string } | { kind: 'device-code'; verificationUri: string; userCode: string; message: string };
   error?: string;
 };
 
@@ -55,17 +53,17 @@ export const API_SCOPE_OPTIONS = [
   { key: 'flow', label: 'Flow' },
   { key: 'powerapps', label: 'Power Apps' },
   { key: 'bap', label: 'Platform Admin' },
-  { key: 'graph', label: 'Graph' },
+  { key: 'graph', label: 'Graph' }
 ] as const;
 
 export const SETUP_SUB_TAB_LABELS: Record<SetupSubTab, string> = {
   accounts: 'Accounts',
   environments: 'Environments',
   access: 'My Access',
-  tools: 'Tools',
+  tools: 'Tools'
 };
 
 export const TOOLS_SUB_TAB_LABELS: Record<ToolsSubTab, string> = {
   sharepoint: 'SharePoint',
-  mcp: 'MCP',
+  mcp: 'MCP'
 };

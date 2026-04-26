@@ -42,18 +42,15 @@ type UiAudit = {
 };
 
 export const test = base.extend<{ electronApp: ElectronApplication; page: Page; audit: UiAudit }>({
-  electronApp: async ({}, use) => {
-    const args = process.platform === 'linux'
-      ? ['--no-sandbox', 'dist/desktop/main.cjs']
-      : ['dist/desktop/main.cjs'];
+  electronApp: async (_fixtures, use) => {
+    const args = process.platform === 'linux' ? ['--no-sandbox', 'dist/desktop/main.cjs'] : ['dist/desktop/main.cjs'];
     const app = await electron.launch({
       args,
       env: {
         ...process.env,
         PP_DESKTOP_E2E: '1',
-        PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE
-          ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden'),
-      },
+        PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden')
+      }
     });
     await use(app);
     await app.close();
@@ -84,7 +81,7 @@ export const test = base.extend<{ electronApp: ElectronApplication; page: Page; 
       if (!isAuditedApiUrl(request.url(), request.frame()?.url())) return;
       const record: RequestRecord = {
         method: request.method(),
-        url: request.url(),
+        url: request.url()
       };
       const postData = request.postData();
       if (postData) {
@@ -114,10 +111,12 @@ export const test = base.extend<{ electronApp: ElectronApplication; page: Page; 
         apiResponses.length = 0;
       },
       assertClean: async () => {
-        await expect.poll(() => pendingApiResponses(apiResponses), {
-          message: 'wait for API response audit to settle',
-          timeout: 2_000,
-        }).toBe(0);
+        await expect
+          .poll(() => pendingApiResponses(apiResponses), {
+            message: 'wait for API response audit to settle',
+            timeout: 2_000
+          })
+          .toBe(0);
         expect.soft(consoleErrors, 'browser console errors').toEqual([]);
         expect.soft(pageErrors, 'uncaught page errors').toEqual([]);
         expect.soft(failedRequests, 'failed network requests').toEqual([]);
@@ -135,9 +134,9 @@ export const test = base.extend<{ electronApp: ElectronApplication; page: Page; 
             expect.soft('data' in envelope || envelope.success === false, `${response.method} ${response.url} data envelope`).toBe(true);
           }
         }
-      },
+      }
     });
-  },
+  }
 });
 
 export { expect };
@@ -186,7 +185,7 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
         const call = {
           path: input.path,
           method: (input.method || 'GET').toUpperCase(),
-          body: input.body,
+          body: input.body
         };
         state.calls.push(call);
         const hasSavedRequestsMock = state.rules.some((rule) => rule.path === '/api/ui/saved-requests');
@@ -202,7 +201,7 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
             return { status: 200, body: { success: true, diagnostics: [], data: entries } };
           }
         }
-        const body = input.body && typeof input.body === 'object' ? input.body as Record<string, unknown> : {};
+        const body = input.body && typeof input.body === 'object' ? (input.body as Record<string, unknown>) : {};
         const match = state.rules.find((rule) => {
           if (rule.path !== input.path) return false;
           if ((rule.method || 'GET').toUpperCase() !== call.method) return false;
@@ -212,7 +211,7 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
         });
         if (!match) return undefined;
         return { status: match.status ?? 200, body: match.body };
-      },
+      }
     };
     window.ppDesktopTest = state;
   };
@@ -244,7 +243,7 @@ async function recordApiResponse(response: Response, records: NetworkRecord[]): 
     method: response.request().method(),
     url: response.url(),
     status: response.status(),
-    contentType: response.headers()['content-type'] ?? '',
+    contentType: response.headers()['content-type'] ?? ''
   };
   records.push(record);
   if (!record.contentType.includes('application/json')) return;

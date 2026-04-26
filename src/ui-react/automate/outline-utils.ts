@@ -8,7 +8,7 @@ export const KIND_DOT: Record<string, string> = {
   foreach: '#8b5cf6',
   switch: '#f97316',
   branch: '#14b8a6',
-  default: '#9ca3af',
+  default: '#9ca3af'
 };
 
 export const INPUT_LABELS: Record<string, string> = {
@@ -30,7 +30,7 @@ export const INPUT_LABELS: Record<string, string> = {
   limitCount: 'Loop limit',
   limitTimeout: 'Loop timeout',
   operationMetadataId: 'Metadata ID',
-  flowSystemMetadata: 'System metadata',
+  flowSystemMetadata: 'System metadata'
 };
 
 export function outlineKey(item: FlowAnalysisOutlineItem): string {
@@ -95,7 +95,7 @@ export function outlineMeta(item: FlowAnalysisOutlineItem) {
     item.type || (item.detail && !item.children?.length ? item.detail : undefined),
     item.connector,
     typeof operation === 'string' ? operation : undefined,
-    typeof expression === 'string' ? shorten(expression, 80) : undefined,
+    typeof expression === 'string' ? shorten(expression, 80) : undefined
   ].filter(Boolean);
   return parts.join(' · ');
 }

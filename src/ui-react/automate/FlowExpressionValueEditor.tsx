@@ -3,24 +3,14 @@ import { useEffect, useRef } from 'react';
 import { findFlowExpressionCompletionContext } from '../../flow-expression-completions.js';
 import { completeFlowExpression } from '../../flow-language.js';
 import { applyMonacoAppTheme } from '../monaco-support.js';
-import {
-  EMPTY_FLOW_EDITOR_SCHEMA_INDEX,
-  flowEditorExpressionSchemaCompletionItems,
-  type FlowEditorSchemaIndex,
-} from './flow-editor-schema-index.js';
+import { EMPTY_FLOW_EDITOR_SCHEMA_INDEX, flowEditorExpressionSchemaCompletionItems, type FlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 import { FLOW_EXPRESSION_TOKEN_RULES } from './flow-monaco-tokens.js';
 
 const FLOW_FIELD_LANGUAGE_ID = 'pp-flow-field-expression';
 let flowFieldLanguageRegistered = false;
 let flowFieldModelCounter = 0;
 
-export function FlowExpressionValueEditor(props: {
-  value: string;
-  source: string;
-  schemaIndex?: FlowEditorSchemaIndex;
-  mode: 'text' | 'json';
-  onChange: (value: string) => void;
-}) {
+export function FlowExpressionValueEditor(props: { value: string; source: string; schemaIndex?: FlowEditorSchemaIndex; mode: 'text' | 'json'; onChange: (value: string) => void }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
@@ -31,10 +21,18 @@ export function FlowExpressionValueEditor(props: {
   const suppressChangeRef = useRef(false);
   const modeRef = useRef(props.mode);
 
-  useEffect(() => { sourceRef.current = props.source; }, [props.source]);
-  useEffect(() => { schemaIndexRef.current = props.schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX; }, [props.schemaIndex]);
-  useEffect(() => { onChangeRef.current = props.onChange; }, [props.onChange]);
-  useEffect(() => { modeRef.current = props.mode; }, [props.mode]);
+  useEffect(() => {
+    sourceRef.current = props.source;
+  }, [props.source]);
+  useEffect(() => {
+    schemaIndexRef.current = props.schemaIndex || EMPTY_FLOW_EDITOR_SCHEMA_INDEX;
+  }, [props.schemaIndex]);
+  useEffect(() => {
+    onChangeRef.current = props.onChange;
+  }, [props.onChange]);
+  useEffect(() => {
+    modeRef.current = props.mode;
+  }, [props.mode]);
 
   useEffect(() => {
     valueRef.current = props.value;
@@ -52,11 +50,7 @@ export function FlowExpressionValueEditor(props: {
     applyMonacoAppTheme();
 
     const id = ++flowFieldModelCounter;
-    const model = monaco.editor.createModel(
-      valueRef.current || '',
-      FLOW_FIELD_LANGUAGE_ID,
-      monaco.Uri.parse(`inmemory://pp/flow-action-field-${id}.wdl`),
-    );
+    const model = monaco.editor.createModel(valueRef.current || '', FLOW_FIELD_LANGUAGE_ID, monaco.Uri.parse(`inmemory://pp/flow-action-field-${id}.wdl`));
     const editor = monaco.editor.create(mount, editorOptions(modeRef.current));
     editor.setModel(model);
 
@@ -79,7 +73,7 @@ export function FlowExpressionValueEditor(props: {
                 documentation: item.documentation,
                 insertText: item.insertText,
                 sortText: item.sortText,
-                range,
+                range
               })),
               ...completeFlowExpression(sourceRef.current, context.text, context.relativeCursor).map((item) => ({
                 label: item.label,
@@ -88,15 +82,15 @@ export function FlowExpressionValueEditor(props: {
                 documentation: item.info,
                 insertText: item.apply || item.label,
                 insertTextRules: item.snippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-                range,
-              })),
-            ],
+                range
+              }))
+            ]
           };
         } catch (error) {
           console.error('Flow expression completions failed', error);
           return { suggestions: [] };
         }
-      },
+      }
     });
 
     const contentSubscription = model.onDidChangeContent((event) => {
@@ -105,7 +99,7 @@ export function FlowExpressionValueEditor(props: {
       if (!suppressChangeRef.current) onChangeRef.current(next);
 
       const inserted = event.changes.map((change) => change.text).join('');
-      if (!/[A-Za-z_@'(),?\[]/.test(inserted)) return;
+      if (!/[A-Za-z_@'(),?[]/.test(inserted)) return;
       const position = editor.getPosition();
       if (!position) return;
       const offset = model.getOffsetAt(position);
@@ -134,12 +128,7 @@ export function FlowExpressionValueEditor(props: {
     };
   }, []);
 
-  return (
-    <div
-      ref={mountRef}
-      className={`flow-action-monaco-editor ${props.mode === 'json' ? 'json' : 'text'}`}
-    />
-  );
+  return <div ref={mountRef} className={`flow-action-monaco-editor ${props.mode === 'json' ? 'json' : 'text'}`} />;
 }
 
 function ensureFlowFieldLanguage() {
@@ -147,27 +136,31 @@ function ensureFlowFieldLanguage() {
   flowFieldLanguageRegistered = true;
   monaco.languages.register({ id: FLOW_FIELD_LANGUAGE_ID });
   monaco.languages.setLanguageConfiguration(FLOW_FIELD_LANGUAGE_ID, {
-    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    brackets: [
+      ['{', '}'],
+      ['[', ']'],
+      ['(', ')']
+    ],
     autoClosingPairs: [
       { open: '{', close: '}' },
       { open: '[', close: ']' },
       { open: '(', close: ')' },
       { open: '"', close: '"' },
-      { open: "'", close: "'" },
+      { open: "'", close: "'" }
     ],
     surroundingPairs: [
       { open: '{', close: '}' },
       { open: '[', close: ']' },
       { open: '(', close: ')' },
       { open: '"', close: '"' },
-      { open: "'", close: "'" },
-    ],
+      { open: "'", close: "'" }
+    ]
   });
   monaco.languages.setMonarchTokensProvider(FLOW_FIELD_LANGUAGE_ID, {
     defaultToken: '',
     tokenizer: {
-      root: FLOW_EXPRESSION_TOKEN_RULES,
-    },
+      root: FLOW_EXPRESSION_TOKEN_RULES
+    }
   });
 }
 
@@ -193,13 +186,13 @@ function editorOptions(mode: 'text' | 'json'): monaco.editor.IStandaloneEditorCo
     scrollbar: {
       vertical: mode === 'json' ? 'auto' : 'hidden',
       horizontal: 'hidden',
-      alwaysConsumeMouseWheel: false,
+      alwaysConsumeMouseWheel: false
     },
     scrollBeyondLastLine: false,
     suggestOnTriggerCharacters: true,
     tabSize: 2,
     theme: 'pp-app',
-    wordWrap: mode === 'json' ? 'on' : 'off',
+    wordWrap: mode === 'json' ? 'on' : 'off'
   };
 }
 
@@ -210,7 +203,7 @@ function rangeFromOffsets(model: monaco.editor.ITextModel, from: number, to: num
     startLineNumber: start.lineNumber,
     startColumn: start.column,
     endLineNumber: end.lineNumber,
-    endColumn: end.column,
+    endColumn: end.column
   };
 }
 

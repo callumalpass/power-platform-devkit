@@ -29,7 +29,10 @@ assert.ok(packed.files.some((file) => file.path === 'dist/cli.cjs'));
 assert.ok(packed.files.some((file) => file.path === 'docs/library.md'));
 assert.ok(packed.files.some((file) => file.path === 'docs/api-stability.md'));
 assert.ok(packed.files.some((file) => file.path === 'LICENSE'));
-assert.equal(packed.files.some((file) => file.path.startsWith('dist/desktop/')), false);
+assert.equal(
+  packed.files.some((file) => file.path.startsWith('dist/desktop/')),
+  false
+);
 assert.ok(packed.unpackedSize < 3_500_000, `packed package is unexpectedly large: ${packed.unpackedSize}`);
 
 const tar = await loadNpmTar();
@@ -38,13 +41,22 @@ await rename(join(consumerNodeModules, 'package'), join(consumerNodeModules, 'pp
 await linkDependencies(Object.keys(packageJson.dependencies ?? {}));
 await linkDependencies(['@types/node']);
 
-await writeFile(join(consumerDir, 'package.json'), JSON.stringify({
-  name: 'pp-consumer-smoke',
-  private: true,
-  type: 'module',
-}, null, 2) + '\n');
+await writeFile(
+  join(consumerDir, 'package.json'),
+  JSON.stringify(
+    {
+      name: 'pp-consumer-smoke',
+      private: true,
+      type: 'module'
+    },
+    null,
+    2
+  ) + '\n'
+);
 
-await writeFile(join(consumerDir, 'esm.mjs'), `
+await writeFile(
+  join(consumerDir, 'esm.mjs'),
+  `
 import assert from 'node:assert/strict';
 import { PpClient, ok } from 'pp';
 import { buildRequest } from 'pp/request';
@@ -61,9 +73,12 @@ assert.equal(request.data.path, '/v1.0/me');
 
 const analysis = analyzeFlow('{"definition":{"triggers":{},"actions":{}}}', 0);
 assert.equal(analysis.summary.actionCount, 0);
-`);
+`
+);
 
-await writeFile(join(consumerDir, 'cjs.cjs'), `
+await writeFile(
+  join(consumerDir, 'cjs.cjs'),
+  `
 const assert = require('node:assert/strict');
 const { PpClient, ok } = require('pp');
 const { buildRequest } = require('pp/request');
@@ -76,9 +91,12 @@ assert.equal(result.data, 'ready');
 const request = buildRequest(undefined, 'work', 'https://graph.microsoft.com/v1.0/me', 'graph');
 assert.equal(request.success, true);
 assert.equal(request.data.path, '/v1.0/me');
-`);
+`
+);
 
-await writeFile(join(consumerDir, 'types-esm.mts'), `
+await writeFile(
+  join(consumerDir, 'types-esm.mts'),
+  `
 import { PpClient, ok, type OperationResult } from 'pp';
 import { buildRequest, type RequestInput } from 'pp/request';
 import { analyzeFetchXml } from 'pp/fetchxml-language';
@@ -105,9 +123,12 @@ void pending;
 void requestInput;
 void prepared;
 void fetchXml;
-`);
+`
+);
 
-await writeFile(join(consumerDir, 'types-cjs.cts'), `
+await writeFile(
+  join(consumerDir, 'types-cjs.cts'),
+  `
 import pp = require('pp');
 import request = require('pp/request');
 
@@ -121,30 +142,38 @@ if (result.success) {
 const prepared = request.buildRequest(undefined, 'work', 'https://graph.microsoft.com/v1.0/me', 'graph');
 void client;
 void prepared;
-`);
+`
+);
 
-await writeFile(join(consumerDir, 'tsconfig.json'), JSON.stringify({
-  compilerOptions: {
-    target: 'ES2022',
-    module: 'NodeNext',
-    moduleResolution: 'NodeNext',
-    strict: true,
-    skipLibCheck: true,
-    noEmit: true,
-    types: ['node'],
-  },
-  include: ['types-esm.mts', 'types-cjs.cts'],
-}, null, 2) + '\n');
+await writeFile(
+  join(consumerDir, 'tsconfig.json'),
+  JSON.stringify(
+    {
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        strict: true,
+        skipLibCheck: true,
+        noEmit: true,
+        types: ['node']
+      },
+      include: ['types-esm.mts', 'types-cjs.cts']
+    },
+    null,
+    2
+  ) + '\n'
+);
 
 assert.deepEqual(await captureOutput(() => import(pathToFileURL(join(consumerDir, 'esm.mjs')).href)), {
   stdout: '',
-  stderr: '',
+  stderr: ''
 });
 
 const requireFromConsumer = createRequire(join(consumerDir, 'cjs.cjs'));
 assert.deepEqual(await captureOutput(() => Promise.resolve(requireFromConsumer('./cjs.cjs'))), {
   stdout: '',
-  stderr: '',
+  stderr: ''
 });
 
 await assertCliVersion();
@@ -164,7 +193,7 @@ async function assertCliVersion() {
     });
     assert.deepEqual(output, {
       stdout: `pp ${packageJson.version}\n`,
-      stderr: '',
+      stderr: ''
     });
   } finally {
     process.argv = oldArgv;
@@ -228,6 +257,6 @@ function formatHost(ts) {
   return {
     getCanonicalFileName: (fileName) => fileName,
     getCurrentDirectory: () => consumerDir,
-    getNewLine: () => ts.sys.newLine,
+    getNewLine: () => ts.sys.newLine
   };
 }

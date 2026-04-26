@@ -30,7 +30,7 @@ function readOptions(args: string[]): PpMcpServerOptions {
   return {
     configDir: readFlag(args, '--config-dir'),
     allowInteractiveAuth: args.includes('--allow-interactive-auth'),
-    toolNameStyle: readToolNameStyle(args),
+    toolNameStyle: readToolNameStyle(args)
   };
 }
 
@@ -47,6 +47,6 @@ function readToolNameStyle(args: string[]): PpMcpServerOptions['toolNameStyle'] 
 }
 
 void main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
   process.exit(1);
 });

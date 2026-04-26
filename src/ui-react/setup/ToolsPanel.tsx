@@ -18,18 +18,24 @@ function McpInfo(props: { shellData: any; toast: ToastFn }) {
       <p className="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
       {shellData?.mcp ? (
         <>
-          <div style={{ marginBottom: 12 }}><span className="field-label">Launch Command</span></div>
+          <div style={{ marginBottom: 12 }}>
+            <span className="field-label">Launch Command</span>
+          </div>
           <div className="mcp-cmd-wrap">
             <div className="mcp-cmd">{shellData.mcp.launchCommand}</div>
             <CopyButton value={shellData.mcp.launchCommand} label="Copy" title="Copy launch command" toast={toast} className="mcp-copy" />
           </div>
-          <div style={{ marginBottom: 8 }}><span className="field-label">Available Tools ({shellData.mcp.tools.length})</span></div>
-          <div className="tool-grid">{shellData.mcp.tools.map((tool: string) => (
-            <div key={tool} className="copy-inline">
-              <code>{tool}</code>
-              <CopyButton value={tool} label="copy" title="Copy tool name" toast={toast} />
-            </div>
-          ))}</div>
+          <div style={{ marginBottom: 8 }}>
+            <span className="field-label">Available Tools ({shellData.mcp.tools.length})</span>
+          </div>
+          <div className="tool-grid">
+            {shellData.mcp.tools.map((tool: string) => (
+              <div key={tool} className="copy-inline">
+                <code>{tool}</code>
+                <CopyButton value={tool} label="copy" title="Copy tool name" toast={toast} />
+              </div>
+            ))}
+          </div>
         </>
       ) : null}
     </div>
@@ -52,9 +58,7 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
   }, [accounts, account]);
 
   const requestUrl = normalizeSharePointWebUrl(siteUrl);
-  const cli = account && requestUrl
-    ? `pp sp ${shellQuote(requestUrl)} --account ${shellQuote(account)}`
-    : '';
+  const cli = account && requestUrl ? `pp sp ${shellQuote(requestUrl)} --account ${shellQuote(account)}` : '';
 
   async function checkAccess() {
     if (!account) {
@@ -75,9 +79,9 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
           api: 'sharepoint',
           method: 'GET',
           path: requestUrl,
-          softFail: true,
+          softFail: true
         }),
-        allowFailure: true,
+        allowFailure: true
       });
       setResult(payload);
       toast(payload.success === false ? 'SharePoint check failed' : 'SharePoint is reachable', payload.success === false);
@@ -105,9 +109,12 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
               aria-label="Account"
               value={account}
               onChange={setAccount}
-              options={optionList(accounts.map((a: any) => a.name), 'select account').map((option) => ({
+              options={optionList(
+                accounts.map((a: any) => a.name),
+                'select account'
+              ).map((option) => ({
                 value: option.value,
-                label: option.label,
+                label: option.label
               }))}
             />
           </div>
@@ -143,9 +150,7 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
       {result ? (
         <div className="card-item" style={{ marginTop: 16 }}>
           <div className="card-item-info">
-            <div className="card-item-title">
-              {result.success === false ? 'Access check failed' : 'Access check succeeded'}
-            </div>
+            <div className="card-item-title">{result.success === false ? 'Access check failed' : 'Access check succeeded'}</div>
             {result.success === false ? (
               <div className="card-item-sub">{diagnostic?.message || 'SharePoint request failed.'}</div>
             ) : (
@@ -174,12 +179,7 @@ export function ToolsPanel(props: { accounts: any[]; shellData: any; toast: Toas
     <div className="setup-tools">
       <nav className="setup-tools-rail" aria-label="Tools">
         {(Object.keys(TOOLS_SUB_TAB_LABELS) as ToolsSubTab[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            className={`setup-tools-rail-item ${activeTool === key ? 'active' : ''}`}
-            onClick={() => setActiveTool(key)}
-          >
+          <button key={key} type="button" className={`setup-tools-rail-item ${activeTool === key ? 'active' : ''}`} onClick={() => setActiveTool(key)}>
             {TOOLS_SUB_TAB_LABELS[key]}
           </button>
         ))}

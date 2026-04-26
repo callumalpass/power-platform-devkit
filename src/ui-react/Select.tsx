@@ -24,11 +24,7 @@ type Props = {
 };
 
 export function Select(props: Props) {
-  const {
-    value, onChange, options, placeholder, name, id,
-    className, triggerClassName, triggerStyle, triggerLabel,
-    disabled, required, 'aria-label': ariaLabel,
-  } = props;
+  const { value, onChange, options, placeholder, name, id, className, triggerClassName, triggerStyle, triggerLabel, disabled, required, 'aria-label': ariaLabel } = props;
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -38,10 +34,7 @@ export function Select(props: Props) {
   const listRef = useRef<HTMLUListElement>(null);
   const typeaheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: '', timer: null });
 
-  const selectedIndex = useMemo(
-    () => options.findIndex((opt) => opt.value === value),
-    [options, value],
-  );
+  const selectedIndex = useMemo(() => options.findIndex((opt) => opt.value === value), [options, value]);
   const displayOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
 
   function commit(index: number) {
@@ -70,10 +63,16 @@ export function Select(props: Props) {
     for (let i = 0; i < options.length; i++) {
       const idx = (startAt + i) % options.length;
       if (options[idx].disabled) continue;
-      if (options[idx].label.toLowerCase().startsWith(needle)) { found = idx; break; }
+      if (options[idx].label.toLowerCase().startsWith(needle)) {
+        found = idx;
+        break;
+      }
     }
     if (found >= 0) setActiveIndex(found);
-    record.timer = window.setTimeout(() => { record.buffer = ''; record.timer = null; }, 600);
+    record.timer = window.setTimeout(() => {
+      record.buffer = '';
+      record.timer = null;
+    }, 600);
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
@@ -131,7 +130,11 @@ export function Select(props: Props) {
     if (event.key === 'End') {
       event.preventDefault();
       let last = -1;
-      for (let i = options.length - 1; i >= 0; i--) if (!options[i].disabled) { last = i; break; }
+      for (let i = options.length - 1; i >= 0; i--)
+        if (!options[i].disabled) {
+          last = i;
+          break;
+        }
       if (last >= 0) setActiveIndex(last);
       return;
     }
@@ -173,15 +176,14 @@ export function Select(props: Props) {
     el?.scrollIntoView({ block: 'nearest' });
   }, [open, activeIndex]);
 
-  useEffect(() => () => {
-    if (typeaheadRef.current.timer) window.clearTimeout(typeaheadRef.current.timer);
-  }, []);
+  useEffect(
+    () => () => {
+      if (typeaheadRef.current.timer) window.clearTimeout(typeaheadRef.current.timer);
+    },
+    []
+  );
 
-  const triggerContent: ReactNode = triggerLabel !== undefined
-    ? triggerLabel
-    : displayOption
-      ? displayOption.label
-      : <span className="pp-select-placeholder">{placeholder ?? 'Select…'}</span>;
+  const triggerContent: ReactNode = triggerLabel !== undefined ? triggerLabel : displayOption ? displayOption.label : <span className="pp-select-placeholder">{placeholder ?? 'Select…'}</span>;
 
   return (
     <div className={`pp-select ${open ? 'open' : ''} placement-${placement} ${className ?? ''}`} ref={rootRef}>
@@ -221,7 +223,10 @@ export function Select(props: Props) {
                 data-index={index}
                 className={`pp-select-option ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''} ${opt.disabled ? 'disabled' : ''}`}
                 onMouseEnter={() => !opt.disabled && setActiveIndex(index)}
-                onMouseDown={(event) => { event.preventDefault(); commit(index); }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  commit(index);
+                }}
               >
                 <span className="pp-select-option-main">
                   <span className="pp-select-option-label">{opt.label}</span>
@@ -284,7 +289,9 @@ export function Combobox(props: ComboboxProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const skipBlurCommitRef = useRef(false);
 
-  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
 
   const filteredOptions = useMemo(() => {
     const query = draft.trim();
@@ -294,7 +301,10 @@ export function Combobox(props: ComboboxProps) {
 
   useEffect(() => {
     if (!open) return;
-    if (filteredOptions.length === 0) { setActiveIndex(-1); return; }
+    if (filteredOptions.length === 0) {
+      setActiveIndex(-1);
+      return;
+    }
     const exactIndex = filteredOptions.findIndex((opt) => opt.value === draft);
     setActiveIndex(exactIndex >= 0 ? exactIndex : 0);
   }, [open, filteredOptions, draft]);
@@ -335,14 +345,20 @@ export function Combobox(props: ComboboxProps) {
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      if (!open) { setOpen(true); return; }
+      if (!open) {
+        setOpen(true);
+        return;
+      }
       if (!filteredOptions.length) return;
       setActiveIndex((current) => (current + 1) % filteredOptions.length);
       return;
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault();
-      if (!open) { setOpen(true); return; }
+      if (!open) {
+        setOpen(true);
+        return;
+      }
       if (!filteredOptions.length) return;
       setActiveIndex((current) => (current - 1 + filteredOptions.length) % filteredOptions.length);
       return;
@@ -392,12 +408,22 @@ export function Combobox(props: ComboboxProps) {
         aria-autocomplete="list"
         aria-expanded={open}
         aria-haspopup="listbox"
-        onChange={(event) => { setDraft(event.target.value); if (!open) setOpen(true); }}
-        onFocus={() => { if (!disabled) setOpen(true); }}
-        onClick={() => { if (!disabled) setOpen(true); }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => {
+          if (!disabled) setOpen(true);
+        }}
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
         onKeyDown={handleKeyDown}
         onBlur={() => {
-          if (skipBlurCommitRef.current) { skipBlurCommitRef.current = false; return; }
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
+            return;
+          }
           if (draft !== value) onChange(draft);
           setOpen(false);
         }}

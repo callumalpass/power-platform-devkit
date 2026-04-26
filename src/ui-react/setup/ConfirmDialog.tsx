@@ -16,14 +16,11 @@ export function useConfirm() {
   return {
     request,
     open: (next: ConfirmRequest) => setRequest(next),
-    close: () => setRequest(null),
+    close: () => setRequest(null)
   };
 }
 
-export function ConfirmDialog(props: {
-  request: ConfirmRequest | null;
-  onClose: () => void;
-}) {
+export function ConfirmDialog(props: { request: ConfirmRequest | null; onClose: () => void }) {
   const { request, onClose } = props;
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,16 +61,19 @@ export function ConfirmDialog(props: {
     }
   }
 
-  const confirmClass = request.destructive
-    ? 'btn btn-destructive btn-sm'
-    : 'btn btn-primary btn-sm';
+  const confirmClass = request.destructive ? 'btn btn-destructive btn-sm' : 'btn btn-primary btn-sm';
 
   return (
-    <div className="confirm-backdrop" onMouseDown={(event) => {
-      if (event.target === event.currentTarget && !busy) onClose();
-    }}>
+    <div
+      className="confirm-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
       <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <div className="confirm-title" id="confirm-title">{request.title}</div>
+        <div className="confirm-title" id="confirm-title">
+          {request.title}
+        </div>
         <div className="confirm-body">{request.body}</div>
         {request.typedConfirmation ? (
           <>
@@ -97,13 +97,7 @@ export function ConfirmDialog(props: {
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} disabled={busy}>
             {request.cancelLabel || 'Cancel'}
           </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            className={confirmClass}
-            onClick={() => void handleConfirm()}
-            disabled={!typedOk || busy}
-          >
+          <button ref={confirmRef} type="button" className={confirmClass} onClick={() => void handleConfirm()} disabled={!typedOk || busy}>
             {busy ? 'Working…' : request.confirmLabel || (request.destructive ? 'Remove' : 'Confirm')}
           </button>
         </div>

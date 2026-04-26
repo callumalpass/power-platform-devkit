@@ -9,20 +9,31 @@ export function useFlowDynamicOptions(
   action: Record<string, unknown> | null,
   schema: FlowApiOperationSchema | null,
   operationRef: FlowActionOperationRef,
-  toast: ToastFn,
+  toast: ToastFn
 ): Record<string, FlowDynamicValueOption[]> {
   const [options, setOptions] = useState<Record<string, FlowDynamicValueOption[]>>({});
   const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicValues), [schema]);
   const parameters = useMemo(() => readConnectorParameters(action), [action]);
-  const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicValues), parameters), [fields, parameters]);
+  const dynamicParameters = useMemo(
+    () =>
+      pickDynamicParameters(
+        fields.map((field) => field.dynamicValues),
+        parameters
+      ),
+    [fields, parameters]
+  );
   const apiRef = dynamicApiRef(operationRef, schema);
-  const signature = useMemo(() => JSON.stringify({
-    environment,
-    apiRef,
-    connectionName: operationRef.connectionName,
-    fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicValues]),
-    parameters: dynamicParameters,
-  }), [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]);
+  const signature = useMemo(
+    () =>
+      JSON.stringify({
+        environment,
+        apiRef,
+        connectionName: operationRef.connectionName,
+        fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicValues]),
+        parameters: dynamicParameters
+      }),
+    [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -30,10 +41,12 @@ export function useFlowDynamicOptions(
       setOptions({});
       return;
     }
-    void Promise.all(fields.map(async (field) => {
-      const values = await loadFlowDynamicEnum(environment, apiRef, operationRef.connectionName, field.dynamicValues, dynamicParameters);
-      return [fieldSchemaKey(field), values] as const;
-    }))
+    void Promise.all(
+      fields.map(async (field) => {
+        const values = await loadFlowDynamicEnum(environment, apiRef, operationRef.connectionName, field.dynamicValues, dynamicParameters);
+        return [fieldSchemaKey(field), values] as const;
+      })
+    )
       .then((entries) => {
         if (cancelled) return;
         setOptions(Object.fromEntries(entries.filter(([, values]) => values.length)));
@@ -41,7 +54,9 @@ export function useFlowDynamicOptions(
       .catch((error) => {
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
 
   return options;
@@ -52,20 +67,31 @@ export function useFlowDynamicSchemaFields(
   action: Record<string, unknown> | null,
   schema: FlowApiOperationSchema | null,
   operationRef: FlowActionOperationRef,
-  toast: ToastFn,
+  toast: ToastFn
 ): Record<string, FlowApiOperationSchemaField[]> {
   const [fieldsByParent, setFieldsByParent] = useState<Record<string, FlowApiOperationSchemaField[]>>({});
   const fields = useMemo(() => visibleConnectorSchemaFields(schema?.fields || []).filter((field) => field.dynamicSchema), [schema]);
   const parameters = useMemo(() => readConnectorParameters(action), [action]);
-  const dynamicParameters = useMemo(() => pickDynamicParameters(fields.map((field) => field.dynamicSchema), parameters), [fields, parameters]);
+  const dynamicParameters = useMemo(
+    () =>
+      pickDynamicParameters(
+        fields.map((field) => field.dynamicSchema),
+        parameters
+      ),
+    [fields, parameters]
+  );
   const apiRef = dynamicApiRef(operationRef, schema);
-  const signature = useMemo(() => JSON.stringify({
-    environment,
-    apiRef,
-    connectionName: operationRef.connectionName,
-    fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicSchema]),
-    parameters: dynamicParameters,
-  }), [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]);
+  const signature = useMemo(
+    () =>
+      JSON.stringify({
+        environment,
+        apiRef,
+        connectionName: operationRef.connectionName,
+        fields: fields.map((field) => [fieldSchemaKey(field), field.dynamicSchema]),
+        parameters: dynamicParameters
+      }),
+    [apiRef, dynamicParameters, environment, fields, operationRef.connectionName]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -73,10 +99,12 @@ export function useFlowDynamicSchemaFields(
       setFieldsByParent({});
       return;
     }
-    void Promise.all(fields.map(async (field) => {
-      const values = await loadFlowDynamicProperties(environment, apiRef, operationRef.connectionName, field, dynamicParameters);
-      return [fieldSchemaKey(field), values] as const;
-    }))
+    void Promise.all(
+      fields.map(async (field) => {
+        const values = await loadFlowDynamicProperties(environment, apiRef, operationRef.connectionName, field, dynamicParameters);
+        return [fieldSchemaKey(field), values] as const;
+      })
+    )
       .then((entries) => {
         if (cancelled) return;
         setFieldsByParent(Object.fromEntries(entries.filter(([, values]) => values.length)));
@@ -84,7 +112,9 @@ export function useFlowDynamicSchemaFields(
       .catch((error) => {
         if (!cancelled) toast(error instanceof Error ? error.message : String(error), true);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
 
   return fieldsByParent;
@@ -157,7 +187,7 @@ export function connectorLocationLabel(location: string) {
     body: 'Body',
     header: 'Headers',
     parameter: 'Parameters',
-    internal: 'Internal',
+    internal: 'Internal'
   };
   return labels[location] || location;
 }

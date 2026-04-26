@@ -1,15 +1,7 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import YAML from 'yaml';
-import {
-  getConfigPath,
-  getDefaultConfigDir,
-  writeConfig,
-  type Account,
-  type ConfigStoreOptions,
-  type Environment,
-  type GlobalConfig,
-} from './config.js';
+import { getConfigPath, getDefaultConfigDir, writeConfig, type Account, type ConfigStoreOptions, type Environment, type GlobalConfig } from './config.js';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 
 interface LegacyGlobalConfig {
@@ -107,26 +99,21 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
     skippedEnvironments: Array<{ alias: string; reason: string }>;
   }>
 > {
-  const sourcePath = resolve(
-    options.sourceConfigPath ??
-      (options.sourceDir ? join(resolve(options.sourceDir), 'config.json') : getConfigPath({ configDir: getDefaultConfigDir() })),
-  );
+  const sourcePath = resolve(options.sourceConfigPath ?? (options.sourceDir ? join(resolve(options.sourceDir), 'config.json') : getConfigPath({ configDir: getDefaultConfigDir() })));
   const targetOptions = options.targetConfigOptions ?? {};
   const targetPath = getConfigPath(targetOptions);
 
   let legacy: LegacyGlobalConfig;
   try {
     const raw = await readFile(sourcePath, 'utf8');
-    legacy = sourcePath.endsWith('.yaml') || sourcePath.endsWith('.yml')
-      ? (YAML.parse(raw) as LegacyGlobalConfig)
-      : (JSON.parse(raw) as LegacyGlobalConfig);
+    legacy = sourcePath.endsWith('.yaml') || sourcePath.endsWith('.yml') ? (YAML.parse(raw) as LegacyGlobalConfig) : (JSON.parse(raw) as LegacyGlobalConfig);
   } catch (error) {
     return fail(
       createDiagnostic('error', 'LEGACY_CONFIG_READ_FAILED', `Failed to read legacy config from ${sourcePath}.`, {
         source: 'pp/migrate',
         path: sourcePath,
-        detail: error instanceof Error ? error.message : String(error),
-      }),
+        detail: error instanceof Error ? error.message : String(error)
+      })
     );
   }
 
@@ -143,8 +130,8 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
       diagnostics.push(
         createDiagnostic('warning', 'ACCOUNT_SKIPPED', `Skipped account ${key}.`, {
           source: 'pp/migrate',
-          detail: migrated.reason,
-        }),
+          detail: migrated.reason
+        })
       );
     }
   }
@@ -159,8 +146,8 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
     diagnostics.push(
       createDiagnostic('warning', 'ENVIRONMENT_SKIPPED', `Skipped environment ${key}.`, {
         source: 'pp/migrate',
-        detail: migrated.reason,
-      }),
+        detail: migrated.reason
+      })
     );
   }
 
@@ -186,11 +173,11 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
       summary: {
         accountsMigrated: Object.keys(accounts).length,
         environmentsMigrated: Object.keys(environments).length,
-        environmentsSkipped: skippedEnvironments.length,
+        environmentsSkipped: skippedEnvironments.length
       },
-      skippedEnvironments,
+      skippedEnvironments
     },
-    diagnostics,
+    diagnostics
   );
 }
 
@@ -200,7 +187,7 @@ function migrateAccount(name: string, account: LegacyAuthProfile): { success: tr
     description: account.description,
     tenantId: account.tenantId,
     clientId: account.clientId,
-    scopes: account.scopes,
+    scopes: account.scopes
   };
 
   switch (account.type) {
@@ -214,7 +201,7 @@ function migrateAccount(name: string, account: LegacyAuthProfile): { success: tr
       return account.tenantId && account.clientId && account.clientSecretEnv
         ? {
             success: true,
-            data: { ...base, kind: 'client-secret', tenantId: account.tenantId, clientId: account.clientId, clientSecretEnv: account.clientSecretEnv },
+            data: { ...base, kind: 'client-secret', tenantId: account.tenantId, clientId: account.clientId, clientSecretEnv: account.clientSecretEnv }
           }
         : { success: false, reason: 'Missing tenantId, clientId, or clientSecretEnv.' };
     case 'user':
@@ -229,8 +216,8 @@ function migrateAccount(name: string, account: LegacyAuthProfile): { success: tr
           homeAccountId: account.homeAccountId,
           localAccountId: account.localAccountId,
           prompt: account.prompt,
-          fallbackToDeviceCode: account.fallbackToDeviceCode,
-        },
+          fallbackToDeviceCode: account.fallbackToDeviceCode
+        }
       };
     case 'device-code':
       return {
@@ -242,8 +229,8 @@ function migrateAccount(name: string, account: LegacyAuthProfile): { success: tr
           loginHint: account.loginHint,
           accountUsername: account.accountUsername,
           homeAccountId: account.homeAccountId,
-          localAccountId: account.localAccountId,
-        },
+          localAccountId: account.localAccountId
+        }
       };
     default:
       return { success: false, reason: `Unsupported or missing auth profile type: ${(account as { type?: string }).type ?? 'unknown'}.` };
@@ -265,7 +252,7 @@ function migrateEnvironment(alias: string, environment: LegacyEnvironment): { su
       displayName: environment.displayName,
       makerEnvironmentId: environment.makerEnvironmentId,
       tenantId: environment.tenantId,
-      ...(environment.access?.mode ? { access: { mode: environment.access.mode } } : {}),
-    },
+      ...(environment.access?.mode ? { access: { mode: environment.access.mode } } : {})
+    }
   };
 }

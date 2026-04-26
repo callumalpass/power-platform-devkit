@@ -6,18 +6,7 @@ import type { ConfigStoreOptions } from './config.js';
 
 export type OutputFormat = 'json' | 'yaml' | 'text';
 
-const BOOLEAN_FLAGS = new Set([
-  '--apply',
-  '--allow-interactive-auth',
-  '--device-code',
-  '--force-prompt',
-  '--lan',
-  '--no-interactive-auth',
-  '--pair',
-  '--read',
-  '--raw',
-  '--with-signalr',
-]);
+const BOOLEAN_FLAGS = new Set(['--apply', '--allow-interactive-auth', '--device-code', '--force-prompt', '--lan', '--no-interactive-auth', '--pair', '--read', '--raw', '--with-signalr']);
 
 export function readFlag(args: string[], name: string): string | undefined {
   const aliases = name === '--environment' ? ['--env', '--environment'] : [name];
@@ -112,8 +101,8 @@ export async function readBody(args: string[]): Promise<OperationResult<{ body?:
     return fail(
       createDiagnostic('error', 'BODY_PARSE_FAILED', 'Failed to parse request body as JSON.', {
         source: 'pp/cli',
-        detail: error instanceof Error ? error.message : String(error),
-      }),
+        detail: error instanceof Error ? error.message : String(error)
+      })
     );
   }
 }

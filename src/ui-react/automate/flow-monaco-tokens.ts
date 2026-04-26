@@ -10,12 +10,12 @@ export const JSON_LIKE_TOKEN_RULES: Rule[] = [
   [/[{}]/, 'delimiter.bracket.json'],
   [/[[\]]/, 'delimiter.array.json'],
   [/:/, 'delimiter.colon.json'],
-  [/,/, 'delimiter.comma.json'],
+  [/,/, 'delimiter.comma.json']
 ];
 
 export const FLOW_EXPRESSION_TOKEN_RULES: Rule[] = [
   [/'([^'\\]|\\.)*'/, 'string.value.json'],
   [/@[A-Za-z_][A-Za-z0-9_]*/, 'keyword.json'],
   [/[()]/, 'delimiter.parenthesis.json'],
-  ...JSON_LIKE_TOKEN_RULES,
+  ...JSON_LIKE_TOKEN_RULES
 ];

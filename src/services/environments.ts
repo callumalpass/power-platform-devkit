@@ -19,7 +19,7 @@ export async function addConfiguredEnvironment(
     accessMode?: EnvironmentAccessMode;
   },
   configOptions: ConfigStoreOptions = {},
-  loginOptions: { allowInteractive?: boolean } = {},
+  loginOptions: { allowInteractive?: boolean } = {}
 ) {
   return addEnvironmentWithDiscovery(input, configOptions, loginOptions);
 }
@@ -27,7 +27,7 @@ export async function addConfiguredEnvironment(
 export async function discoverAccessibleEnvironments(
   accountName: string,
   configOptions: ConfigStoreOptions = {},
-  loginOptions: { allowInteractive?: boolean } = {},
+  loginOptions: { allowInteractive?: boolean } = {}
 ): Promise<OperationResult<DiscoveredEnvironment[]>> {
   return discoverEnvironments({ accountName }, configOptions, loginOptions);
 }

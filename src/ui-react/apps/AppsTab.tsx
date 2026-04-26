@@ -9,7 +9,14 @@ import type { PowerPlatformInventoryItem } from '../ui-types.js';
 
 export type AppsState = { loadedEnvironment: string; items: PowerPlatformInventoryItem[]; current: PowerPlatformInventoryItem | null; filter: string };
 
-export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAction<AppsState>>; environment: string; reload: () => Promise<void>; openConsole: (path: string) => void; toast: (message: string, isError?: boolean) => void }) {
+export function AppsTab(props: {
+  state: AppsState;
+  setState: Dispatch<SetStateAction<AppsState>>;
+  environment: string;
+  reload: () => Promise<void>;
+  openConsole: (path: string) => void;
+  toast: (message: string, isError?: boolean) => void;
+}) {
   const { state, setState, environment, reload, openConsole, toast } = props;
   const detail = useRecordDetail();
   const current = state.current;
@@ -30,13 +37,21 @@ export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAc
         isSelected={(item: PowerPlatformInventoryItem) => state.current?.name === item.name}
         itemKey={(item: PowerPlatformInventoryItem) => item.name}
         onSelect={(item: PowerPlatformInventoryItem) => setState((current) => ({ ...current, current: item }))}
-        onRefresh={() => void reload().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}
+        onRefresh={() =>
+          void reload()
+            .then(() => toast('Apps refreshed'))
+            .catch((error) => toast(error instanceof Error ? error.message : String(error), true))
+        }
         emptyHint="Select an environment to load apps."
         renderItem={(item: PowerPlatformInventoryItem) => (
           <>
             <div className="entity-item-name">{prop(item, 'properties.displayName') || item.name || 'Unnamed'}</div>
             <div className="entity-item-logical">{item.name}</div>
-            {prop(item, 'properties.appType') ? <div className="entity-item-badges"><span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span></div> : null}
+            {prop(item, 'properties.appType') ? (
+              <div className="entity-item-badges">
+                <span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span>
+              </div>
+            ) : null}
           </>
         )}
       />
@@ -51,9 +66,13 @@ export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAc
               <div className="toolbar-row">
                 <div>
                   <h2 id="app-title">{prop(current, 'properties.displayName') || current.name}</h2>
-                  <p className="desc no-mb" id="app-subtitle">{prop(current, 'properties.description') || current.name}</p>
+                  <p className="desc no-mb" id="app-subtitle">
+                    {prop(current, 'properties.description') || current.name}
+                  </p>
                 </div>
-                <button className="btn btn-ghost" id="app-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/apps/${current.name}`)}>Open in Console</button>
+                <button className="btn btn-ghost" id="app-open-console" type="button" style={{ fontSize: '0.75rem' }} onClick={() => openConsole(`/apps/${current.name}`)}>
+                  Open in Console
+                </button>
               </div>
               <div id="app-metrics" className="metrics">
                 {[
@@ -61,13 +80,15 @@ export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAc
                   ['Created', formatDate(prop(current, 'properties.createdTime'))],
                   ['Modified', formatDate(prop(current, 'properties.lastModifiedTime'))],
                   ['Published', formatDate(prop(current, 'properties.lastPublishTime'))],
-                  ['App ID', current.name],
+                  ['App ID', current.name]
                 ].map(([label, value]) => (
                   <div key={String(label)} className="metric">
                     <div className="metric-label">{label}</div>
                     <div className="metric-value copy-inline">
                       {label === 'App ID' ? (
-                        <span className="record-link" onClick={() => detail.open('canvasapp', 'canvasapps', String(value))}>{String(value).slice(0, 8)}...</span>
+                        <span className="record-link" onClick={() => detail.open('canvasapp', 'canvasapps', String(value))}>
+                          {String(value).slice(0, 8)}...
+                        </span>
                       ) : (
                         <span className="copy-inline-value">{String(value)}</span>
                       )}
@@ -78,7 +99,7 @@ export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAc
               </div>
               <div id="app-connections">
                 {Object.entries(prop(current, 'properties.connectionReferences') || {}).map(([key, value]) => {
-                  const connection = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+                  const connection = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
                   return (
                     <div key={key} className="card-item" style={{ padding: '8px 10px' }}>
                       <div className="card-item-info">
@@ -96,9 +117,7 @@ export function AppsTab(props: { state: AppsState; setState: Dispatch<SetStateAc
           )}
         </div>
       </div>
-      {detail.target && environment && (
-        <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />
-      )}
+      {detail.target && environment && <RecordDetailModal initial={detail.target} environment={environment} onClose={detail.close} toast={toast} />}
     </>
   );
 }

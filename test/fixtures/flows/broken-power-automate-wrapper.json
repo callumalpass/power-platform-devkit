@@ -45,9 +45,7 @@
           "type": "Compose",
           "inputs": "@body('DoesNotExist')",
           "runAfter": {
-            "NeverCreated": [
-              "Succeeded"
-            ]
+            "NeverCreated": ["Succeeded"]
           }
         },
         "LaterAction": {

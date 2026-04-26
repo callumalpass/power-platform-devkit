@@ -29,7 +29,6 @@ export function applyMonacoAppTheme() {
   const muted = cssColor(computed, '--muted', '#6b7280');
   const border = cssColor(computed, '--border', '#e5e7eb');
   const accent = cssColor(computed, '--accent', '#2563eb');
-  const accentSoft = cssColor(computed, '--accent-soft', '#eff6ff');
   const highlight = cssColor(computed, '--highlight', accent);
   const danger = cssColor(computed, '--danger', '#dc2626');
   const isDark = document.documentElement.classList.contains('dark');
@@ -47,7 +46,7 @@ export function applyMonacoAppTheme() {
       { token: 'delimiter.colon.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b') },
       { token: 'delimiter.comma.json', foreground: stripHash(isDark ? '#64748b' : '#94a3b8') },
       { token: 'comment.line.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
-      { token: 'comment.block.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' },
+      { token: 'comment.block.json', foreground: stripHash(isDark ? '#94a3b8' : '#64748b'), fontStyle: 'italic' }
     ],
     colors: {
       'editor.background': surface,
@@ -66,7 +65,7 @@ export function applyMonacoAppTheme() {
       'input.background': bg,
       'input.foreground': ink,
       'input.border': border,
-      'list.hoverBackground': rgbaHex(highlight, isDark ? 0.10 : 0.08),
+      'list.hoverBackground': rgbaHex(highlight, isDark ? 0.1 : 0.08),
       'list.hoverForeground': ink,
       'list.activeSelectionBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
       'list.activeSelectionForeground': ink,
@@ -74,7 +73,7 @@ export function applyMonacoAppTheme() {
       'list.focusBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
       'list.focusForeground': ink,
       'list.focusOutline': 'transparent',
-      'list.inactiveSelectionBackground': rgbaHex(highlight, isDark ? 0.14 : 0.10),
+      'list.inactiveSelectionBackground': rgbaHex(highlight, isDark ? 0.14 : 0.1),
       'list.inactiveSelectionForeground': ink,
       'list.highlightForeground': highlight,
       'list.focusHighlightForeground': highlight,
@@ -96,13 +95,13 @@ export function applyMonacoAppTheme() {
       'menu.selectionBackground': rgbaHex(highlight, isDark ? 0.22 : 0.18),
       'menu.selectionForeground': ink,
       'menu.separatorBackground': border,
-      'scrollbarSlider.background': rgbaHex(muted, isDark ? 0.30 : 0.20),
+      'scrollbarSlider.background': rgbaHex(muted, isDark ? 0.3 : 0.2),
       'scrollbarSlider.hoverBackground': rgbaHex(muted, isDark ? 0.42 : 0.32),
       'scrollbarSlider.activeBackground': rgbaHex(muted, isDark ? 0.52 : 0.42),
       'editorError.foreground': danger,
       'editorWarning.foreground': isDark ? '#fbbf24' : '#d97706',
-      'editorInfo.foreground': highlight,
-    },
+      'editorInfo.foreground': highlight
+    }
   });
   monaco.editor.setTheme('pp-app');
 }
@@ -121,12 +120,7 @@ export function useMonacoVimPreference(): [boolean, (enabled: boolean) => void] 
   return [enabled, setMonacoVimPreference];
 }
 
-export function MonacoVimToggle(props: {
-  enabled: boolean;
-  mode: string;
-  onToggle: (enabled: boolean) => void;
-  disabled?: boolean;
-}) {
+export function MonacoVimToggle(props: { enabled: boolean; mode: string; onToggle: (enabled: boolean) => void; disabled?: boolean }) {
   const { enabled, mode, onToggle, disabled } = props;
   const normalizedMode = normalizeVimMode(mode);
   const label = enabled ? `Vim ${normalizedMode.toUpperCase()}` : 'Vim Off';
@@ -144,11 +138,7 @@ export function MonacoVimToggle(props: {
   );
 }
 
-export function attachMonacoVim(
-  editor: monaco.editor.IStandaloneCodeEditor,
-  statusNode: HTMLElement | null,
-  options: { enabled: boolean; onModeChange?: MonacoVimModeChange },
-): MonacoVimAttachment {
+export function attachMonacoVim(editor: monaco.editor.IStandaloneCodeEditor, statusNode: HTMLElement | null, options: { enabled: boolean; onModeChange?: MonacoVimModeChange }): MonacoVimAttachment {
   let vim: MonacoVimAdapter | null = null;
   let disposed = false;
 
@@ -192,7 +182,7 @@ export function attachMonacoVim(
       }
       statusNode?.replaceChildren();
       options.onModeChange?.('off');
-    },
+    }
   };
 }
 
@@ -261,10 +251,17 @@ function stripHash(color: string) {
 
 function rgbaHex(color: string, alpha: number) {
   if (!color.startsWith('#')) return color;
-  const hex = color.length === 4
-    ? color.slice(1).split('').map((value) => value + value).join('')
-    : color.slice(1);
+  const hex =
+    color.length === 4
+      ? color
+          .slice(1)
+          .split('')
+          .map((value) => value + value)
+          .join('')
+      : color.slice(1);
   if (hex.length !== 6) return color;
-  const value = Math.round(alpha * 255).toString(16).padStart(2, '0');
+  const value = Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, '0');
   return `#${hex}${value}`;
 }

@@ -21,13 +21,7 @@ export type ActionContainerRef = {
   label?: string;
 };
 
-export function addActionToFlowDocument(
-  source: string,
-  actionName: string,
-  action: Record<string, unknown>,
-  insertAfter?: string,
-  container?: ActionContainerRef,
-): string {
+export function addActionToFlowDocument(source: string, actionName: string, action: Record<string, unknown>, insertAfter?: string, container?: ActionContainerRef): string {
   const root = JSON.parse(source) as unknown;
   if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
 
@@ -46,7 +40,9 @@ export function addActionToFlowDocument(
     const actions = isObject(definition.actions) ? definition.actions : {};
     definition.actions = actions;
     targetActions = actions;
-    assign = (next) => { definition.actions = next; };
+    assign = (next) => {
+      definition.actions = next;
+    };
   }
 
   if (Object.prototype.hasOwnProperty.call(targetActions, actionName)) {
@@ -65,11 +61,7 @@ export function addActionToFlowDocument(
   return JSON.stringify(root, null, 2);
 }
 
-export function addTriggerToFlowDocument(
-  source: string,
-  triggerName: string,
-  trigger: Record<string, unknown>,
-): string {
+export function addTriggerToFlowDocument(source: string, triggerName: string, trigger: Record<string, unknown>): string {
   const root = JSON.parse(source) as unknown;
   if (!isObject(root)) throw new Error('Flow definition JSON must be an object.');
   const definition = findMutableWorkflowDefinition(root);
@@ -161,7 +153,9 @@ function ensurePathActions(parent: Record<string, unknown>, branchPath: string[]
   const container = current[lastKey] as Record<string, unknown>;
   return {
     container,
-    assign: (next) => { current[lastKey] = next; },
+    assign: (next) => {
+      current[lastKey] = next;
+    }
   };
 }
 
@@ -232,29 +226,24 @@ export function resolveActionOperation(source: string, action: Record<string, un
     apiId: operation.apiId || reference.apiId,
     apiName: operation.apiName || reference.apiName,
     apiRef,
-    connectionName: operation.connectionName || reference.connectionName,
+    connectionName: operation.connectionName || reference.connectionName
   };
 }
 
 function readActionOperation(action: Record<string, unknown>): FlowActionOperationRef {
   const host = prop(action, 'inputs.host');
-  const connectionReferenceName = firstNonEmptyString(
-    prop(host, 'connectionReferenceName'),
-    prop(host, 'connection.referenceName'),
-    prop(host, 'connection.name'),
-    prop(host, 'connectionName'),
-  );
+  const connectionReferenceName = firstNonEmptyString(prop(host, 'connectionReferenceName'), prop(host, 'connection.referenceName'), prop(host, 'connection.name'), prop(host, 'connectionName'));
   return {
     connectionReferenceName,
     connectionName: firstNonEmptyString(
       prop(host, 'connectionName'),
       connectionNameFromId(prop(host, 'connection.id')),
       connectionNameFromId(prop(host, 'connection.name')),
-      prop(host, 'connection.name'),
+      prop(host, 'connection.name')
     ),
     apiId: firstNonEmptyString(prop(host, 'apiId'), prop(action, 'inputs.apiId')),
     apiName: firstNonEmptyString(prop(host, 'apiName'), prop(action, 'inputs.apiName')),
-    operationId: firstNonEmptyString(prop(host, 'operationId'), prop(action, 'inputs.operationId'), prop(action, 'operationId')),
+    operationId: firstNonEmptyString(prop(host, 'operationId'), prop(action, 'inputs.operationId'), prop(action, 'operationId'))
   };
 }
 
@@ -275,8 +264,8 @@ function readConnectionReference(source: string, name: string): { apiId?: string
         connectionNameFromId(prop(ref, 'connection.id')),
         connectionNameFromId(prop(ref, 'connection.name')),
         connectionNameFromId(prop(ref, 'id')),
-        prop(ref, 'connection.name'),
-      ),
+        prop(ref, 'connection.name')
+      )
     };
   } catch {
     return {};
@@ -422,9 +411,7 @@ export function reorderActionInFlowDocument(source: string, actionName: string, 
   // Build new order
   const newOrder = [...siblingNames];
   newOrder.splice(fromIdx, 1);
-  const insertAt = position === 'before'
-    ? newOrder.indexOf(targetName)
-    : newOrder.indexOf(targetName) + 1;
+  const insertAt = position === 'before' ? newOrder.indexOf(targetName) : newOrder.indexOf(targetName) + 1;
   newOrder.splice(insertAt, 0, actionName);
   if (newOrder.every((name, i) => name === siblingNames[i])) return source;
 
@@ -453,10 +440,16 @@ export function reorderActionInFlowDocument(source: string, actionName: string, 
   return JSON.stringify(root, null, 2);
 }
 
-export function buildApiOperationAction(source: string, operation: FlowApiOperation, runAfter: Record<string, string[]>, schema?: FlowApiOperationSchema, connectionReferenceNameOverride?: string): Record<string, unknown> {
+export function buildApiOperationAction(
+  source: string,
+  operation: FlowApiOperation,
+  runAfter: Record<string, string[]>,
+  schema?: FlowApiOperationSchema,
+  connectionReferenceNameOverride?: string
+): Record<string, unknown> {
   return {
     ...buildApiOperationNode(source, operation, schema, connectionReferenceNameOverride),
-    runAfter,
+    runAfter
   };
 }
 
@@ -468,15 +461,15 @@ function buildApiOperationNode(source: string, operation: FlowApiOperation, sche
   const connectionReferenceName = connectionReferenceNameOverride || findConnectionReferenceName(source, operation) || defaultConnectionReferenceName(operation);
   const host: Record<string, unknown> = {
     connectionReferenceName,
-    operationId: operation.name,
+    operationId: operation.name
   };
   if (operation.apiId) host.apiId = operation.apiId;
   const action = {
     type: operation.operationType || 'OpenApiConnection',
     inputs: {
       host,
-      parameters: {},
-    },
+      parameters: {}
+    }
   };
   if (schema?.fields.length) {
     for (const field of schema.fields) {
@@ -589,7 +582,12 @@ export function uniqueTriggerName(source: string, preferred: string): string {
 }
 
 export function sanitizeActionName(value: string): string {
-  return value.trim().replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'Action';
+  return (
+    value
+      .trim()
+      .replace(/[^A-Za-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'Action'
+  );
 }
 
 export function formatOutlineEditName(item: FlowAnalysisOutlineItem, value: string): string {

@@ -3,12 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  formatUpdateNotice,
-  getCachedUpdateCheck,
-  shouldRunBackgroundUpdateCheck,
-  type UpdateCheckResult,
-} from '../src/update.js';
+import { formatUpdateNotice, getCachedUpdateCheck, shouldRunBackgroundUpdateCheck, type UpdateCheckResult } from '../src/update.js';
 
 function tempConfigDir() {
   return mkdtemp(join(tmpdir(), 'pp-update-test-'));
@@ -20,7 +15,7 @@ async function writeCachedUpdate(configDir: string, checkedAt: string) {
     latest: '0.2.0',
     updateAvailable: true,
     releaseUrl: 'https://github.com/callumalpass/power-platform-devkit/releases/tag/v0.2.0',
-    checkedAt,
+    checkedAt
   };
   await writeFile(join(configDir, 'update-check.json'), JSON.stringify(cached), 'utf8');
   return cached;
@@ -53,7 +48,7 @@ test('shouldRunBackgroundUpdateCheck only runs for notice-eligible commands with
     latest: '0.1.0',
     updateAvailable: false,
     releaseUrl: '',
-    checkedAt: new Date().toISOString(),
+    checkedAt: new Date().toISOString()
   };
 
   try {
@@ -72,7 +67,7 @@ test('formatUpdateNotice points to the GitHub release', () => {
     latest: '0.2.0',
     updateAvailable: true,
     releaseUrl: 'https://github.com/callumalpass/power-platform-devkit/releases/tag/v0.2.0',
-    checkedAt: new Date().toISOString(),
+    checkedAt: new Date().toISOString()
   });
 
   assert.match(notice, /Update available: 0\.1\.0/);

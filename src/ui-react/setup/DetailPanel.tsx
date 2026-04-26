@@ -35,7 +35,9 @@ export function DetailPanel({ open, title, subtitle, onClose, children, footer }
           <h2>{title}</h2>
           {subtitle ? <div className="setup-detail-panel-subtitle">{subtitle}</div> : null}
         </div>
-        <button type="button" className="setup-detail-panel-close" onClick={onClose}>Close</button>
+        <button type="button" className="setup-detail-panel-close" onClick={onClose}>
+          Close
+        </button>
       </header>
       <div className="setup-detail-panel-body">{children}</div>
       {footer ? <div className="setup-detail-panel-footer">{footer}</div> : null}

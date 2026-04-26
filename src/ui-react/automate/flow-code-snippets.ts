@@ -34,8 +34,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
     defaultName: 'Compose',
     placeholders: [
       { path: ['inputs'], index: 2 },
-      { path: ['runAfter'], index: 3, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 3, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:condition action',
@@ -48,8 +48,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
       { path: ['expression', 'equals', 1], index: 3 },
       { path: ['actions'], index: 4, kind: 'object-content' },
       { path: ['else', 'actions'], index: 5, kind: 'object-content' },
-      { path: ['runAfter'], index: 6, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 6, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:scope action',
@@ -59,8 +59,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
     defaultName: 'Scope',
     placeholders: [
       { path: ['actions'], index: 2, kind: 'object-content' },
-      { path: ['runAfter'], index: 3, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 3, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:foreach action',
@@ -71,8 +71,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
     placeholders: [
       { path: ['foreach'], index: 2, defaultText: "@triggerBody()?['value']" },
       { path: ['actions'], index: 3, kind: 'object-content' },
-      { path: ['runAfter'], index: 4, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 4, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:http action',
@@ -83,8 +83,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
     placeholders: [
       { path: ['inputs', 'method'], index: 2, defaultText: 'GET' },
       { path: ['inputs', 'uri'], index: 3 },
-      { path: ['runAfter'], index: 4, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 4, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:initialize variable',
@@ -96,8 +96,8 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
       { path: ['inputs', 'variables', 0, 'name'], index: 2 },
       { path: ['inputs', 'variables', 0, 'type'], index: 3, defaultText: 'string' },
       { path: ['inputs', 'variables', 0, 'value'], index: 4 },
-      { path: ['runAfter'], index: 5, kind: 'object-content' },
-    ],
+      { path: ['runAfter'], index: 5, kind: 'object-content' }
+    ]
   },
   {
     label: 'pa:set variable',
@@ -108,9 +108,9 @@ const ACTION_SNIPPET_SPECS: BuiltInActionSnippetSpec[] = [
     placeholders: [
       { path: ['inputs', 'name'], index: 2 },
       { path: ['inputs', 'value'], index: 3 },
-      { path: ['runAfter'], index: 4, kind: 'object-content' },
-    ],
-  },
+      { path: ['runAfter'], index: 4, kind: 'object-content' }
+    ]
+  }
 ];
 
 export const FLOW_SNIPPETS = ACTION_SNIPPET_SPECS.map(buildBuiltInActionSnippet) as readonly FlowCodeSnippet[];
@@ -123,9 +123,7 @@ function buildBuiltInActionSnippet(spec: BuiltInActionSnippetSpec): FlowCodeSnip
     label: spec.label,
     detail: spec.detail,
     documentation: spec.documentation,
-    insertText: [
-      `"${snippetPlaceholder({ index: 1, defaultText: spec.defaultName })}": ${snippetJson(action, [], 0, placeholderMap(spec.placeholders))}`,
-    ].join('\n'),
+    insertText: [`"${snippetPlaceholder({ index: 1, defaultText: spec.defaultName })}": ${snippetJson(action, [], 0, placeholderMap(spec.placeholders))}`].join('\n')
   };
 }
 
@@ -139,10 +137,12 @@ function snippetJson(value: unknown, path: JsonPathSegment[], indent: number, pl
     return `{${snippetPlaceholder(placeholder)}}`;
   }
   if (placeholder?.kind !== 'object-content' && placeholder) {
-    return JSON.stringify(snippetPlaceholder({
-      ...placeholder,
-      defaultText: placeholder.defaultText ?? defaultPlaceholderText(value),
-    }));
+    return JSON.stringify(
+      snippetPlaceholder({
+        ...placeholder,
+        defaultText: placeholder.defaultText ?? defaultPlaceholderText(value)
+      })
+    );
   }
   if (Array.isArray(value)) {
     if (!value.length) return '[]';

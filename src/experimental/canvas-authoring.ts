@@ -20,12 +20,7 @@ export {
   type RequestCanvasAuthoringSessionResult,
   type RpcCanvasAuthoringResult,
   type StartCanvasAuthoringSessionInput,
-  type StartCanvasAuthoringSessionResult,
+  type StartCanvasAuthoringSessionResult
 } from '../services/canvas-authoring.js';
 
-export {
-  readCanvasYamlDirectory,
-  readCanvasYamlFetchFiles,
-  writeCanvasYamlFiles,
-  type CanvasYamlFile,
-} from '../canvas-yaml-files.js';
+export { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles, type CanvasYamlFile } from '../canvas-yaml-files.js';

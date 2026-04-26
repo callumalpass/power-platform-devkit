@@ -19,24 +19,25 @@ export async function applyJqTransform(input: unknown, transform: JqTransformInp
 
   try {
     const jsonInput = JSON.stringify(input) ?? 'null';
-    const result = await withTimeout(
-      jq.raw(jsonInput, options.data.expr, options.data.raw ? ['-r'] : ['-c']),
-      options.data.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    );
+    const result = await withTimeout(jq.raw(jsonInput, options.data.expr, options.data.raw ? ['-r'] : ['-c']), options.data.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     if (result.exitCode !== 0 || result.stderr.trim()) {
-      return fail(createDiagnostic('error', 'JQ_TRANSFORM_FAILED', 'jq transform failed.', {
-        source: 'pp/jq',
-        detail: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
-      }));
+      return fail(
+        createDiagnostic('error', 'JQ_TRANSFORM_FAILED', 'jq transform failed.', {
+          source: 'pp/jq',
+          detail: [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+        })
+      );
     }
 
     const maxOutputBytes = options.data.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
     const outputBytes = Buffer.byteLength(result.stdout, 'utf8');
     if (outputBytes > maxOutputBytes) {
-      return fail(createDiagnostic('error', 'JQ_OUTPUT_TOO_LARGE', `jq output was ${outputBytes} bytes, exceeding the ${maxOutputBytes} byte limit.`, {
-        source: 'pp/jq',
-        hint: 'Narrow the API query, add a jq limit/slice, or raise maxOutputBytes.',
-      }));
+      return fail(
+        createDiagnostic('error', 'JQ_OUTPUT_TOO_LARGE', `jq output was ${outputBytes} bytes, exceeding the ${maxOutputBytes} byte limit.`, {
+          source: 'pp/jq',
+          hint: 'Narrow the API query, add a jq limit/slice, or raise maxOutputBytes.'
+        })
+      );
     }
 
     if (options.data.raw) return ok(result.stdout);
@@ -67,10 +68,12 @@ function parseJsonLines(output: string): OperationResult<unknown> {
     if (lines.length === 1) return ok(JSON.parse(lines[0]));
     return ok(lines.map((line) => JSON.parse(line)));
   } catch (error) {
-    return fail(createDiagnostic('error', 'JQ_OUTPUT_PARSE_FAILED', 'jq output was not valid JSON. Use raw mode for text output.', {
-      source: 'pp/jq',
-      detail: error instanceof Error ? error.message : String(error),
-    }));
+    return fail(
+      createDiagnostic('error', 'JQ_OUTPUT_PARSE_FAILED', 'jq output was not valid JSON. Use raw mode for text output.', {
+        source: 'pp/jq',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    );
   }
 }
 
@@ -86,7 +89,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
       (error) => {
         clearTimeout(timeout);
         reject(error);
-      },
+      }
     );
   });
 }

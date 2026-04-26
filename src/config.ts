@@ -68,32 +68,32 @@ const accountBaseSchema = z.object({
   loginHint: z.string().optional(),
   accountUsername: z.string().optional(),
   homeAccountId: z.string().optional(),
-  localAccountId: z.string().optional(),
+  localAccountId: z.string().optional()
 });
 
 const accountSchema = z.discriminatedUnion('kind', [
   accountBaseSchema.extend({
     kind: z.literal('static-token'),
-    token: z.string(),
+    token: z.string()
   }),
   accountBaseSchema.extend({
     kind: z.literal('environment-token'),
-    environmentVariable: z.string(),
+    environmentVariable: z.string()
   }),
   accountBaseSchema.extend({
     kind: z.literal('client-secret'),
     tenantId: z.string(),
     clientId: z.string(),
-    clientSecretEnv: z.string(),
+    clientSecretEnv: z.string()
   }),
   accountBaseSchema.extend({
     kind: z.literal('user'),
     prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
-    fallbackToDeviceCode: z.boolean().optional(),
+    fallbackToDeviceCode: z.boolean().optional()
   }),
   accountBaseSchema.extend({
-    kind: z.literal('device-code'),
-  }),
+    kind: z.literal('device-code')
+  })
 ]);
 
 const environmentSchema = z.object({
@@ -103,7 +103,7 @@ const environmentSchema = z.object({
   displayName: z.string().optional(),
   makerEnvironmentId: z.string(),
   tenantId: z.string(),
-  access: z.object({ mode: z.enum(['read-write', 'read-only']).default('read-write') }).optional(),
+  access: z.object({ mode: z.enum(['read-write', 'read-only']).default('read-write') }).optional()
 });
 
 const browserProfileSchema = z.object({
@@ -113,13 +113,13 @@ const browserProfileSchema = z.object({
   createdAt: z.string().optional(),
   lastOpenedAt: z.string().optional(),
   lastVerifiedAt: z.string().optional(),
-  lastVerificationUrl: z.string().optional(),
+  lastVerificationUrl: z.string().optional()
 });
 
 const globalConfigSchema = z.object({
   accounts: z.record(z.string(), accountSchema).default({}),
   environments: z.record(z.string(), environmentSchema).default({}),
-  browserProfiles: z.record(z.string(), browserProfileSchema).default({}),
+  browserProfiles: z.record(z.string(), browserProfileSchema).default({})
 });
 
 export interface ConfigStoreOptions {
@@ -128,15 +128,9 @@ export interface ConfigStoreOptions {
 
 const configWriteQueue = new Map<string, Promise<void>>();
 
-export function getDefaultConfigDir(
-  platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-  homeDirectory: string = homedir(),
-): string {
+export function getDefaultConfigDir(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, homeDirectory: string = homedir()): string {
   if (platform === 'win32') {
-    return win32Path.resolve(
-      env.APPDATA ? win32Path.join(env.APPDATA, 'pp') : win32Path.join(homeDirectory, 'AppData', 'Roaming', 'pp'),
-    );
+    return win32Path.resolve(env.APPDATA ? win32Path.join(env.APPDATA, 'pp') : win32Path.join(homeDirectory, 'AppData', 'Roaming', 'pp'));
   }
   if (env.XDG_CONFIG_HOME) {
     return resolve(join(env.XDG_CONFIG_HOME, 'pp'));
@@ -180,8 +174,8 @@ export async function loadConfig(options: ConfigStoreOptions = {}): Promise<Oper
         createDiagnostic('error', 'CONFIG_READ_FAILED', `Failed to load config from ${path}.`, {
           source: 'pp/config',
           detail: error instanceof Error ? error.message : String(error),
-          path,
-        }),
+          path
+        })
       );
     }
     return ok(globalConfigSchema.parse({}));
@@ -205,8 +199,8 @@ export async function writeConfig(config: GlobalConfig, options: ConfigStoreOpti
       createDiagnostic('error', 'CONFIG_WRITE_FAILED', `Failed to write config ${path}.`, {
         source: 'pp/config',
         detail: error instanceof Error ? error.message : String(error),
-        path,
-      }),
+        path
+      })
     );
   }
 }
@@ -279,7 +273,7 @@ export async function ensureEnvironmentAccess(
   alias: string,
   method: string,
   readIntent: boolean,
-  options: ConfigStoreOptions = {},
+  options: ConfigStoreOptions = {}
 ): Promise<OperationResult<{ allowed: true; mode: EnvironmentAccessMode }>> {
   const environment = await getEnvironment(alias, options);
   if (!environment.success) return fail(...environment.diagnostics);
@@ -290,8 +284,8 @@ export async function ensureEnvironmentAccess(
     return fail(
       createDiagnostic('error', 'ENVIRONMENT_WRITE_BLOCKED', `Environment ${alias} is configured read-only and blocks ${upper}.`, {
         source: 'pp/config',
-        hint: 'Use a read-write environment or pass --read when a POST is known to be read-only.',
-      }),
+        hint: 'Use a read-write environment or pass --read when a POST is known to be read-only.'
+      })
     );
   }
   return ok({ allowed: true, mode });
@@ -312,7 +306,13 @@ async function enqueueConfigWrite(path: string, writer: () => Promise<void>): Pr
   const current = new Promise<void>((resolve) => {
     release = resolve;
   });
-  configWriteQueue.set(path, previous.then(() => current, () => current));
+  configWriteQueue.set(
+    path,
+    previous.then(
+      () => current,
+      () => current
+    )
+  );
   await previous;
   try {
     await writer();

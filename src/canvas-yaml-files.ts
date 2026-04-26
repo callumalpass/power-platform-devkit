@@ -7,15 +7,13 @@ export type CanvasYamlFile = {
 };
 
 export function readCanvasYamlFetchFiles(value: unknown): CanvasYamlFile[] | undefined {
-  const response = value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+  const response = value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
   const files = Array.isArray(response?.files) ? response.files : undefined;
   return files
     ?.filter((file): file is Record<string, unknown> => Boolean(file && typeof file === 'object'))
     .flatMap((file) => {
       const path = String(file.path ?? '');
-      return path && typeof file.content === 'string'
-        ? [{ path, content: file.content }]
-        : [];
+      return path && typeof file.content === 'string' ? [{ path, content: file.content }] : [];
     });
 }
 
@@ -38,7 +36,7 @@ export async function readCanvasYamlDirectory(rootDir: string): Promise<CanvasYa
       } else if (/\.pa\.ya?ml$/i.test(entry)) {
         out.push({
           path: relative(root, fullPath).replace(/\\/g, '/'),
-          content: await readFile(fullPath, 'utf8'),
+          content: await readFile(fullPath, 'utf8')
         });
       }
     }
@@ -58,8 +56,8 @@ export async function writeCanvasYamlFiles(rootDir: string, files: CanvasYamlFil
     const target = resolveCanvasYamlOutputTarget(root, file.path);
     if (!target) continue;
     await mkdir(dirname(target), { recursive: true });
-    if (!await isSafeExistingFileTarget(target)) continue;
-    if (!await isSafeRealParent(rootReal, dirname(target))) continue;
+    if (!(await isSafeExistingFileTarget(target))) continue;
+    if (!(await isSafeRealParent(rootReal, dirname(target)))) continue;
     await writeFile(target, file.content, 'utf8');
     written.push(file.path);
   }
@@ -68,13 +66,7 @@ export async function writeCanvasYamlFiles(rootDir: string, files: CanvasYamlFil
 }
 
 function resolveCanvasYamlOutputTarget(root: string, filePath: string): string | undefined {
-  if (
-    filePath.includes('\0') ||
-    filePath.includes('\\') ||
-    isAbsolute(filePath) ||
-    win32.isAbsolute(filePath) ||
-    filePath.split('/').some((part) => part === '..')
-  ) {
+  if (filePath.includes('\0') || filePath.includes('\\') || isAbsolute(filePath) || win32.isAbsolute(filePath) || filePath.split('/').some((part) => part === '..')) {
     return undefined;
   }
 

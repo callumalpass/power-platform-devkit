@@ -42,7 +42,10 @@ export function OverflowMenu({ items, label = 'More actions' }: Props) {
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={(event) => { event.stopPropagation(); setOpen((current) => !current); }}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
       >
         <span aria-hidden="true">⋮</span>
       </button>
@@ -55,7 +58,11 @@ export function OverflowMenu({ items, label = 'More actions' }: Props) {
               className={`setup-overflow-item ${item.destructive ? 'destructive' : ''}`}
               role="menuitem"
               disabled={item.disabled}
-              onClick={(event) => { event.stopPropagation(); setOpen(false); item.onClick(); }}
+              onClick={(event) => {
+                event.stopPropagation();
+                setOpen(false);
+                item.onClick();
+              }}
             >
               {item.label}
             </button>

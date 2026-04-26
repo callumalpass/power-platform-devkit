@@ -59,7 +59,7 @@ export function HeaderActions(props: Props) {
         } catch {
           // The app may exit before the confirmation request returns.
         }
-      },
+      }
     });
   }
 
@@ -81,17 +81,30 @@ export function HeaderActions(props: Props) {
             <div className="header-popover-header">
               <span>Recent</span>
               {props.toastLog.length ? (
-                <button className="header-popover-action" type="button" onClick={() => { props.clearToastLog(); props.setToastTrayOpen(false); }}>Clear</button>
+                <button
+                  className="header-popover-action"
+                  type="button"
+                  onClick={() => {
+                    props.clearToastLog();
+                    props.setToastTrayOpen(false);
+                  }}
+                >
+                  Clear
+                </button>
               ) : null}
             </div>
             <div className="toast-tray-list">
-              {props.toastLog.length ? props.toastLog.map((item) => (
-                <div key={item.id} className={`toast-tray-item ${item.isError ? 'error' : 'ok'}`}>
-                  <span className="toast-tray-dot" aria-hidden="true" />
-                  <span className="toast-tray-message">{item.message}</span>
-                  <span className="toast-tray-time">{relativeTime(item.timestamp)}</span>
-                </div>
-              )) : <div className="toast-tray-empty">No notifications yet.</div>}
+              {props.toastLog.length ? (
+                props.toastLog.map((item) => (
+                  <div key={item.id} className={`toast-tray-item ${item.isError ? 'error' : 'ok'}`}>
+                    <span className="toast-tray-dot" aria-hidden="true" />
+                    <span className="toast-tray-message">{item.message}</span>
+                    <span className="toast-tray-time">{relativeTime(item.timestamp)}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="toast-tray-empty">No notifications yet.</div>
+              )}
             </div>
           </div>
         ) : null}
@@ -109,13 +122,7 @@ export function HeaderActions(props: Props) {
       </button>
 
       <div className="header-action-group" ref={menuRef}>
-        <button
-          type="button"
-          className="header-icon-btn"
-          title="More actions"
-          aria-label="More actions"
-          onClick={() => props.setHeaderMenuOpen(!props.headerMenuOpen)}
-        >
+        <button type="button" className="header-icon-btn" title="More actions" aria-label="More actions" onClick={() => props.setHeaderMenuOpen(!props.headerMenuOpen)}>
           <Icon name="more" size={15} />
         </button>
         {props.headerMenuOpen ? (
@@ -123,15 +130,23 @@ export function HeaderActions(props: Props) {
             <button
               type="button"
               className="header-menu-item"
-              onClick={() => { props.setHeaderMenuOpen(false); props.openShortcutHelp(); }}
+              onClick={() => {
+                props.setHeaderMenuOpen(false);
+                props.openShortcutHelp();
+              }}
             >
-              <span className="header-menu-item-icon" aria-hidden="true"><kbd>?</kbd></span>
+              <span className="header-menu-item-icon" aria-hidden="true">
+                <kbd>?</kbd>
+              </span>
               <span>Keyboard shortcuts</span>
             </button>
             <button
               type="button"
               className="header-menu-item danger"
-              onClick={() => { props.setHeaderMenuOpen(false); requestShutdown(); }}
+              onClick={() => {
+                props.setHeaderMenuOpen(false);
+                requestShutdown();
+              }}
             >
               <Icon name="power" size={14} />
               <span>Quit {props.appName}</span>

@@ -11,7 +11,7 @@ import {
   flowValidationFromError,
   flowWorkflowId,
   normalizeDataverseFlow,
-  sameFlowIdentity,
+  sameFlowIdentity
 } from '../src/ui-react/automate-data.js';
 import { ApiRequestError } from '../src/ui-react/utils.js';
 
@@ -24,10 +24,10 @@ test('flow validation normalizes Power Automate checker descriptions', () => {
         markdownText: "Fix invalid expression(s) for the input parameter(s) of operation 'TEST'.",
         textTemplate: "Fix invalid expression(s) for the input parameter(s) of operation '{0}'.",
         messageId: 'message2',
-        messageArguments: ['TEST'],
+        messageArguments: ['TEST']
       },
-      ruleId: 'OperationExpression',
-    },
+      ruleId: 'OperationExpression'
+    }
   ];
 
   const result = flowValidationFromError('errors', new ApiRequestError('Request failed', raw, 400));
@@ -40,18 +40,9 @@ test('flow validation normalizes Power Automate checker descriptions', () => {
 });
 
 test('flow callback URL extraction supports connector and flow property envelopes', () => {
-  assert.equal(
-    extractFlowCallbackUrl({ response: { value: 'https://example.test/manual?sig=secret' } }),
-    'https://example.test/manual?sig=secret',
-  );
-  assert.equal(
-    extractFlowCallbackUrl({ value: 'https://example.test/value' }),
-    'https://example.test/value',
-  );
-  assert.equal(
-    extractFlowCallbackUrl({ properties: { flowTriggerUri: 'https://example.test/from-flow' } }),
-    'https://example.test/from-flow',
-  );
+  assert.equal(extractFlowCallbackUrl({ response: { value: 'https://example.test/manual?sig=secret' } }), 'https://example.test/manual?sig=secret');
+  assert.equal(extractFlowCallbackUrl({ value: 'https://example.test/value' }), 'https://example.test/value');
+  assert.equal(extractFlowCallbackUrl({ properties: { flowTriggerUri: 'https://example.test/from-flow' } }), 'https://example.test/from-flow');
 });
 
 test('flow callback trigger names prefer definition trigger keys with manual fallback', () => {
@@ -60,10 +51,10 @@ test('flow callback trigger names prefer definition trigger keys with manual fal
       definition: {
         triggers: {
           When_a_HTTP_request_is_received: { type: 'Request' },
-          manual: { type: 'Request' },
-        },
-      },
-    },
+          manual: { type: 'Request' }
+        }
+      }
+    }
   });
   const flow = {
     source: 'flow' as const,
@@ -71,9 +62,9 @@ test('flow callback trigger names prefer definition trigger keys with manual fal
     properties: {
       definitionSummary: {
         triggers: [{ name: 'summaryTrigger', type: 'Request' }],
-        actions: [],
-      },
-    },
+        actions: []
+      }
+    }
   };
 
   assert.deepEqual(flowCallbackTriggerNames(flow, source), ['When_a_HTTP_request_is_received', 'manual', 'summaryTrigger']);
@@ -88,10 +79,10 @@ test('flow run trigger names use recurrence trigger from definition', () => {
     properties: {
       definition: {
         triggers: {
-          Recurrence: { type: 'Recurrence' },
-        },
-      },
-    },
+          Recurrence: { type: 'Recurrence' }
+        }
+      }
+    }
   });
 
   assert.deepEqual(flowRunTriggerNames({ source: 'flow', name: 'flow-id' }, source), ['Recurrence']);
@@ -102,8 +93,8 @@ test('flow run trigger names use trigger URI when definition names are unavailab
     source: 'flow' as const,
     name: 'flow-id',
     properties: {
-      flowTriggerUri: 'https://example.test/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id/triggers/Recurrence/run?api-version=2016-11-01',
-    },
+      flowTriggerUri: 'https://example.test/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id/triggers/Recurrence/run?api-version=2016-11-01'
+    }
   };
 
   assert.deepEqual(flowRunTriggerNames(flow, ''), ['Recurrence']);
@@ -116,8 +107,8 @@ test('flow identity helpers separate workflow ids from runtime ids', () => {
     properties: {
       workflowEntityId: 'workflow-id',
       resourceId: '/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id',
-      flowTriggerUri: 'https://example.test/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id/triggers/Recurrence/run?api-version=2016-11-01',
-    },
+      flowTriggerUri: 'https://example.test/providers/Microsoft.ProcessSimple/environments/env/flows/runtime-id/triggers/Recurrence/run?api-version=2016-11-01'
+    }
   };
 
   assert.equal(flowIdentifier(flow), 'workflow-id');
@@ -127,24 +118,18 @@ test('flow identity helpers separate workflow ids from runtime ids', () => {
 });
 
 test('flow activation requests prefer Dataverse workflow state when workflow id is known', () => {
-  assert.deepEqual(
-    flowActivationRequest({ source: 'flow', name: 'runtime-id', properties: { workflowEntityId: 'workflow-id' } }, true),
-    {
-      api: 'dv',
-      method: 'PATCH',
-      path: '/workflows(workflow-id)',
-      body: { statecode: 1 },
-      responseType: 'void',
-    },
-  );
-  assert.deepEqual(
-    flowActivationRequest({ source: 'flow', name: 'runtime-id' }, false),
-    {
-      api: 'flow',
-      method: 'POST',
-      path: '/flows/runtime-id/stop',
-    },
-  );
+  assert.deepEqual(flowActivationRequest({ source: 'flow', name: 'runtime-id', properties: { workflowEntityId: 'workflow-id' } }, true), {
+    api: 'dv',
+    method: 'PATCH',
+    path: '/workflows(workflow-id)',
+    body: { statecode: 1 },
+    responseType: 'void'
+  });
+  assert.deepEqual(flowActivationRequest({ source: 'flow', name: 'runtime-id' }, false), {
+    api: 'flow',
+    method: 'POST',
+    path: '/flows/runtime-id/stop'
+  });
 });
 
 test('Dataverse flow fallback maps statecode 1 to Started and 0 to Stopped', () => {
@@ -157,12 +142,12 @@ test('flow operation catalog search body separates actions from triggers', () =>
     searchText: 'rows',
     visibleHideKeys: [],
     allTagsToInclude: ['Action', 'Important'],
-    anyTagsToExclude: ['Deprecated', 'Agentic', 'Trigger'],
+    anyTagsToExclude: ['Deprecated', 'Agentic', 'Trigger']
   });
   assert.deepEqual(buildFlowOperationSearchBody(' event ', 'trigger'), {
     searchText: 'event',
     visibleHideKeys: [],
     allTagsToInclude: ['Trigger'],
-    anyTagsToExclude: ['Deprecated', 'Agentic', 'Action'],
+    anyTagsToExclude: ['Deprecated', 'Agentic', 'Action']
   });
 });

@@ -22,12 +22,7 @@ export interface OperationFailure {
   diagnostics: Diagnostic[];
 }
 
-export function createDiagnostic(
-  level: Diagnostic['level'],
-  code: string,
-  message: string,
-  extra: Omit<Diagnostic, 'level' | 'code' | 'message'> = {},
-): Diagnostic {
+export function createDiagnostic(level: Diagnostic['level'], code: string, message: string, extra: Omit<Diagnostic, 'level' | 'code' | 'message'> = {}): Diagnostic {
   return { level, code, message, ...extra };
 }
 

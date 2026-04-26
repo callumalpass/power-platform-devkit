@@ -8,11 +8,7 @@ export type FlowExpressionNode =
   | FlowExpressionArrayNode
   | FlowExpressionUnknownNode;
 
-export type FlowExpressionAccessProperty =
-  | { kind: 'string'; value: string }
-  | { kind: 'identifier'; value: string }
-  | { kind: 'number'; value: number }
-  | { kind: 'unknown' };
+export type FlowExpressionAccessProperty = { kind: 'string'; value: string } | { kind: 'identifier'; value: string } | { kind: 'number'; value: number } | { kind: 'unknown' };
 
 type FlowExpressionBaseNode = {
   start: number;
@@ -129,7 +125,7 @@ class FlowExpressionParser {
       node = {
         kind: 'unknown',
         start,
-        end: right?.end ?? this.position,
+        end: right?.end ?? this.position
       };
     }
     return node;
@@ -154,7 +150,7 @@ class FlowExpressionParser {
         kind: 'literal',
         value: lowerName === 'null' ? null : lowerName === 'true',
         start,
-        end: this.position,
+        end: this.position
       };
     }
 
@@ -164,7 +160,7 @@ class FlowExpressionParser {
         kind: 'identifier',
         name,
         start,
-        end: this.position,
+        end: this.position
       };
     }
 
@@ -209,7 +205,7 @@ class FlowExpressionParser {
       openParen,
       closeParen,
       start,
-      end: this.position,
+      end: this.position
     };
   }
 
@@ -238,7 +234,7 @@ class FlowExpressionParser {
       value,
       closed,
       start,
-      end: this.position,
+      end: this.position
     };
   }
 
@@ -266,7 +262,7 @@ class FlowExpressionParser {
       kind: 'number',
       value: Number(raw),
       start,
-      end: this.position,
+      end: this.position
     };
   }
 
@@ -303,7 +299,7 @@ class FlowExpressionParser {
       elements,
       closed,
       start,
-      end: this.position,
+      end: this.position
     };
   }
 
@@ -362,16 +358,14 @@ class FlowExpressionParser {
       accessor: 'bracket',
       property,
       start: target.start,
-      end: this.position,
+      end: this.position
     };
   }
 
   private parseDotAccess(target: FlowExpressionNode, optional: boolean): FlowExpressionAccessNode {
     this.position += 1;
     this.skipWhitespace();
-    const property = isIdentifierStart(this.peek())
-      ? { kind: 'identifier' as const, value: this.readIdentifier() }
-      : { kind: 'unknown' as const };
+    const property = isIdentifierStart(this.peek()) ? { kind: 'identifier' as const, value: this.readIdentifier() } : { kind: 'unknown' as const };
     return {
       kind: 'access',
       target,
@@ -379,7 +373,7 @@ class FlowExpressionParser {
       accessor: 'dot',
       property,
       start: target.start,
-      end: this.position,
+      end: this.position
     };
   }
 
@@ -394,7 +388,7 @@ class FlowExpressionParser {
     return {
       kind: 'unknown',
       start,
-      end: this.position,
+      end: this.position
     };
   }
 

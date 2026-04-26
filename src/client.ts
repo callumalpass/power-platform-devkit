@@ -1,20 +1,8 @@
 import type { LoginAccountInput, PublicClientLoginOptions } from './auth.js';
 import type { ConfigStoreOptions } from './config.js';
 import type { EnvironmentTokenApi, RequestInput } from './request.js';
-import {
-  checkAccountTokenStatus,
-  inspectAccountSummary,
-  listAccountSummaries,
-  loginAccount,
-  removeAccountByName,
-} from './services/accounts.js';
-import {
-  type ApiRequestResult,
-  executeApiRequest,
-  getEnvironmentToken,
-  runConnectivityPing,
-  runWhoAmICheck,
-} from './services/api.js';
+import { checkAccountTokenStatus, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
+import { type ApiRequestResult, executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import {
   buildDataverseODataPath,
   buildFetchXml,
@@ -25,15 +13,9 @@ import {
   listDataverseRecords,
   type DataverseCreateRecordInput,
   type DataverseQuerySpec,
-  type FetchXmlSpec,
+  type FetchXmlSpec
 } from './services/dataverse.js';
-import {
-  addConfiguredEnvironment,
-  discoverAccessibleEnvironments,
-  inspectConfiguredEnvironment,
-  listConfiguredEnvironments,
-  removeConfiguredEnvironment,
-} from './services/environments.js';
+import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 import { createDiagnostic, fail, type OperationResult } from './diagnostics.js';
 
 export interface PpClientOptions extends ConfigStoreOptions {
@@ -49,41 +31,28 @@ export class PpClient {
   readonly accounts = {
     list: () => listAccountSummaries(this.configOptions),
     inspect: (name: string) => inspectAccountSummary(name, this.configOptions),
-    login: (input: LoginAccountInput, loginOptions?: PublicClientLoginOptions) =>
-      loginAccount(input, this.loginOptions(loginOptions), this.configOptions),
+    login: (input: LoginAccountInput, loginOptions?: PublicClientLoginOptions) => loginAccount(input, this.loginOptions(loginOptions), this.configOptions),
     tokenStatus: (name: string) => checkAccountTokenStatus(name, this.configOptions),
-    remove: (name: string) => removeAccountByName(name, this.configOptions),
+    remove: (name: string) => removeAccountByName(name, this.configOptions)
   };
 
   readonly environments = {
     list: () => listConfiguredEnvironments(this.configOptions),
     inspect: (alias: string) => inspectConfiguredEnvironment(alias, this.configOptions),
-    add: (
-      input: Parameters<typeof addConfiguredEnvironment>[0],
-      loginOptions?: { allowInteractive?: boolean },
-    ) => addConfiguredEnvironment(input, this.configOptions, loginOptions),
-    discover: (accountName: string, loginOptions?: { allowInteractive?: boolean }) =>
-      discoverAccessibleEnvironments(accountName, this.configOptions, loginOptions),
-    remove: (alias: string) => removeConfiguredEnvironment(alias, this.configOptions),
+    add: (input: Parameters<typeof addConfiguredEnvironment>[0], loginOptions?: { allowInteractive?: boolean }) => addConfiguredEnvironment(input, this.configOptions, loginOptions),
+    discover: (accountName: string, loginOptions?: { allowInteractive?: boolean }) => discoverAccessibleEnvironments(accountName, this.configOptions, loginOptions),
+    remove: (alias: string) => removeConfiguredEnvironment(alias, this.configOptions)
   };
 
   readonly dataverse = {
-    listEntities: (
-      input: Parameters<typeof listDataverseEntities>[0],
-      loginOptions?: PublicClientLoginOptions,
-    ) => listDataverseEntities(input, this.configOptions, this.loginOptions(loginOptions)),
-    getEntityDetail: (
-      input: Parameters<typeof getDataverseEntityDetail>[0],
-      loginOptions?: PublicClientLoginOptions,
-    ) => getDataverseEntityDetail(input, this.configOptions, this.loginOptions(loginOptions)),
-    listRecords: (input: DataverseQuerySpec, loginOptions?: PublicClientLoginOptions) =>
-      listDataverseRecords(input, this.configOptions, this.loginOptions(loginOptions)),
-    createRecord: (input: DataverseCreateRecordInput, loginOptions?: PublicClientLoginOptions) =>
-      createDataverseRecord(input, this.configOptions, this.loginOptions(loginOptions)),
-    executeFetchXml: (input: FetchXmlSpec, loginOptions?: PublicClientLoginOptions) =>
-      executeFetchXml(input, this.configOptions, this.loginOptions(loginOptions)),
+    listEntities: (input: Parameters<typeof listDataverseEntities>[0], loginOptions?: PublicClientLoginOptions) => listDataverseEntities(input, this.configOptions, this.loginOptions(loginOptions)),
+    getEntityDetail: (input: Parameters<typeof getDataverseEntityDetail>[0], loginOptions?: PublicClientLoginOptions) =>
+      getDataverseEntityDetail(input, this.configOptions, this.loginOptions(loginOptions)),
+    listRecords: (input: DataverseQuerySpec, loginOptions?: PublicClientLoginOptions) => listDataverseRecords(input, this.configOptions, this.loginOptions(loginOptions)),
+    createRecord: (input: DataverseCreateRecordInput, loginOptions?: PublicClientLoginOptions) => createDataverseRecord(input, this.configOptions, this.loginOptions(loginOptions)),
+    executeFetchXml: (input: FetchXmlSpec, loginOptions?: PublicClientLoginOptions) => executeFetchXml(input, this.configOptions, this.loginOptions(loginOptions)),
     buildODataPath: buildDataverseODataPath,
-    buildFetchXml,
+    buildFetchXml
   };
 
   constructor(private readonly options: PpClientOptions = {}) {}
@@ -95,34 +64,58 @@ export class PpClient {
   async whoami(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; allowInteractive?: boolean }): Promise<OperationResult<ApiRequestResult>> {
     const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'whoami');
     if (!environmentAlias.success) return environmentAlias;
-    return runWhoAmICheck({
-      environmentAlias: environmentAlias.data,
-      accountName: input.accountName ?? input.account,
-      allowInteractive: input.allowInteractive,
-    }, this.configOptions);
+    return runWhoAmICheck(
+      {
+        environmentAlias: environmentAlias.data,
+        accountName: input.accountName ?? input.account,
+        allowInteractive: input.allowInteractive
+      },
+      this.configOptions
+    );
   }
 
-  async ping(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; allowInteractive?: boolean }): Promise<OperationResult<{ ok: true; api: EnvironmentTokenApi; environment: string; account: string; status: number; request: unknown }>> {
+  async ping(input: {
+    environmentAlias?: string;
+    env?: string;
+    accountName?: string;
+    account?: string;
+    api?: EnvironmentTokenApi;
+    allowInteractive?: boolean;
+  }): Promise<OperationResult<{ ok: true; api: EnvironmentTokenApi; environment: string; account: string; status: number; request: unknown }>> {
     const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'ping');
     if (!environmentAlias.success) return environmentAlias;
-    return runConnectivityPing({
-      environmentAlias: environmentAlias.data,
-      accountName: input.accountName ?? input.account,
-      api: input.api,
-      allowInteractive: input.allowInteractive,
-    }, this.configOptions);
+    return runConnectivityPing(
+      {
+        environmentAlias: environmentAlias.data,
+        accountName: input.accountName ?? input.account,
+        api: input.api,
+        allowInteractive: input.allowInteractive
+      },
+      this.configOptions
+    );
   }
 
-  async token(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; api?: EnvironmentTokenApi; preferredFlow?: 'interactive' | 'device-code'; allowInteractive?: boolean }): Promise<OperationResult<string>> {
+  async token(input: {
+    environmentAlias?: string;
+    env?: string;
+    accountName?: string;
+    account?: string;
+    api?: EnvironmentTokenApi;
+    preferredFlow?: 'interactive' | 'device-code';
+    allowInteractive?: boolean;
+  }): Promise<OperationResult<string>> {
     const environmentAlias = requiredEnvironment(input.environmentAlias ?? input.env, 'token');
     if (!environmentAlias.success) return environmentAlias;
-    return getEnvironmentToken({
-      environmentAlias: environmentAlias.data,
-      accountName: input.accountName ?? input.account,
-      api: input.api,
-      preferredFlow: input.preferredFlow,
-      allowInteractive: input.allowInteractive,
-    }, this.configOptions);
+    return getEnvironmentToken(
+      {
+        environmentAlias: environmentAlias.data,
+        accountName: input.accountName ?? input.account,
+        api: input.api,
+        preferredFlow: input.preferredFlow,
+        allowInteractive: input.allowInteractive
+      },
+      this.configOptions
+    );
   }
 
   private get configOptions(): ConfigStoreOptions {
@@ -139,14 +132,16 @@ function normalizeRequestInput(input: PpRequestInput): RequestInput {
   return {
     ...rest,
     environmentAlias: rest.environmentAlias ?? env,
-    accountName: rest.accountName ?? account,
+    accountName: rest.accountName ?? account
   };
 }
 
 function requiredEnvironment(value: string | undefined, operation: string): OperationResult<string> {
   if (value) return { success: true, data: value, diagnostics: [] };
-  return fail(createDiagnostic('error', 'ENVIRONMENT_ALIAS_REQUIRED', `PpClient.${operation} requires environmentAlias or env.`, {
-    source: 'pp/client',
-    hint: 'Pass environmentAlias or env in the operation input.',
-  }));
+  return fail(
+    createDiagnostic('error', 'ENVIRONMENT_ALIAS_REQUIRED', `PpClient.${operation} requires environmentAlias or env.`, {
+      source: 'pp/client',
+      hint: 'Pass environmentAlias or env in the operation input.'
+    })
+  );
 }

@@ -32,11 +32,7 @@ export async function runSetupCli(args: string[], streams: SetupCliStreams = {})
     return 1;
   }
 
-  stdout.write([
-    `PP Setup Manager is running at ${running.url}`,
-    'Use the Quit action in the browser or press Ctrl+C to stop it.',
-    '',
-  ].join('\n'));
+  stdout.write([`PP Setup Manager is running at ${running.url}`, 'Use the Quit action in the browser or press Ctrl+C to stop it.', ''].join('\n'));
 
   const shutdown = () => {
     void running.close();
@@ -65,8 +61,8 @@ export function printSetupHelp(stream: NodeJS.WritableStream = process.stdout): 
       '  --no-open              Print the URL without opening a browser',
       '  --idle-timeout-ms MS   Stop after this many idle milliseconds (default: 1800000)',
       '',
-      'Setup Manager binds to 127.0.0.1 and requires a random per-run token for API requests.',
-    ].join('\n') + '\n',
+      'Setup Manager binds to 127.0.0.1 and requires a random per-run token for API requests.'
+    ].join('\n') + '\n'
   );
 }
 
@@ -77,7 +73,7 @@ function readSetupOptions(args: string[], stderr: NodeJS.WritableStream): SetupS
     idleTimeoutMs: readOptionalInteger(args, '--idle-timeout-ms'),
     assetsDir: readFlag(args, '--assets-dir'),
     openBrowser: !hasFlag(args, '--no-open'),
-    stderr,
+    stderr
   };
 }
 

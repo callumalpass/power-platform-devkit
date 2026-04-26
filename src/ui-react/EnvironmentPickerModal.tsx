@@ -54,15 +54,7 @@ function score(query: string, value: string): number {
 
 function rankEnvironment(env: EnvironmentEntry, account: AccountEntry | undefined, query: string): number {
   if (!query.trim()) return 0;
-  const candidates = [
-    env.alias,
-    env.displayName || '',
-    env.url || '',
-    env.account || '',
-    account?.accountUsername || '',
-    account?.loginHint || '',
-    env.tenantId || '',
-  ];
+  const candidates = [env.alias, env.displayName || '', env.url || '', env.account || '', account?.accountUsername || '', account?.loginHint || '', env.tenantId || ''];
   let best = -1;
   for (const candidate of candidates) {
     if (!candidate) continue;
@@ -103,7 +95,7 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
       env,
       account: accountsByName.get(env.account || ''),
       score: rankEnvironment(env, accountsByName.get(env.account || ''), q),
-      lastUsed: recency[env.alias] || 0,
+      lastUsed: recency[env.alias] || 0
     }));
     const filtered = q ? list.filter((entry) => entry.score >= 0) : list;
     filtered.sort((a, b) => {
@@ -176,9 +168,7 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
       if (event.key !== 'Tab') return;
       const modal = modalRef.current;
       if (!modal) return;
-      const focusables = modal.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
+      const focusables = modal.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])');
       if (!focusables.length) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
@@ -205,73 +195,62 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
       role="dialog"
       aria-modal="true"
       ref={backdropRef}
-      onClick={(event) => { if (event.target === backdropRef.current) onClose(); }}
+      onClick={(event) => {
+        if (event.target === backdropRef.current) onClose();
+      }}
     >
       <div className="rt-modal env-picker-modal" ref={modalRef}>
         <div className="env-picker-search">
-          <span className="env-picker-search-icon" aria-hidden="true"><Icon name="search" size={14} /></span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            placeholder="Search environments, accounts, URLs…"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onKeyDown}
-          />
-          <span className="env-picker-count">{ranked.length}/{environments?.length || 0}</span>
+          <span className="env-picker-search-icon" aria-hidden="true">
+            <Icon name="search" size={14} />
+          </span>
+          <input ref={inputRef} type="text" value={query} placeholder="Search environments, accounts, URLs…" onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} />
+          <span className="env-picker-count">
+            {ranked.length}/{environments?.length || 0}
+          </span>
         </div>
         <div className="env-picker-list" ref={listRef}>
           {ranked.length === 0 ? (
             <div className="env-picker-empty">No matching environments.</div>
-          ) : ranked.map((entry, index) => {
-            const env = entry.env;
-            const account = entry.account;
-            const isActive = index === activeIndex;
-            const isCurrent = env.alias === current;
-            const accountLabel = account?.accountUsername || account?.loginHint || env.account || 'no account';
-            const recentlyUsed = entry.lastUsed > 0 && !query.trim();
-            return (
-              <div
-                key={env.alias}
-                data-index={index}
-                className={`env-picker-item ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}
-                onMouseEnter={() => setActiveIndex(index)}
-              >
-                <button
-                  type="button"
-                  className="env-picker-item-select"
-                  aria-label={`Switch to ${env.alias}`}
-                  onClick={() => commit(index)}
-                >
-                  <div className="env-picker-item-main">
-                    <span className="env-picker-alias">{env.alias}</span>
-                    {env.displayName ? <span className="env-picker-display">{env.displayName}</span> : null}
-                    {env.access?.mode === 'read-only' ? <span className="env-picker-badge readonly">read-only</span> : null}
-                    {recentlyUsed && !isCurrent ? <span className="env-picker-badge recent">recent</span> : null}
-                  </div>
-                  <div className="env-picker-item-meta">
-                    <span className="env-picker-host">{hostFromUrl(env.url)}</span>
-                    <span className="env-picker-account">{accountLabel}</span>
-                  </div>
-                </button>
-                {env.url ? (
-                  <CopyButton
-                    value={env.url}
-                    label=""
-                    title="Copy environment URL"
-                    className="env-picker-item-copy"
-                    toast={toast}
-                    stopPropagation
-                  />
-                ) : null}
-              </div>
-            );
-          })}
+          ) : (
+            ranked.map((entry, index) => {
+              const env = entry.env;
+              const account = entry.account;
+              const isActive = index === activeIndex;
+              const isCurrent = env.alias === current;
+              const accountLabel = account?.accountUsername || account?.loginHint || env.account || 'no account';
+              const recentlyUsed = entry.lastUsed > 0 && !query.trim();
+              return (
+                <div key={env.alias} data-index={index} className={`env-picker-item ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`} onMouseEnter={() => setActiveIndex(index)}>
+                  <button type="button" className="env-picker-item-select" aria-label={`Switch to ${env.alias}`} onClick={() => commit(index)}>
+                    <div className="env-picker-item-main">
+                      <span className="env-picker-alias">{env.alias}</span>
+                      {env.displayName ? <span className="env-picker-display">{env.displayName}</span> : null}
+                      {env.access?.mode === 'read-only' ? <span className="env-picker-badge readonly">read-only</span> : null}
+                      {recentlyUsed && !isCurrent ? <span className="env-picker-badge recent">recent</span> : null}
+                    </div>
+                    <div className="env-picker-item-meta">
+                      <span className="env-picker-host">{hostFromUrl(env.url)}</span>
+                      <span className="env-picker-account">{accountLabel}</span>
+                    </div>
+                  </button>
+                  {env.url ? <CopyButton value={env.url} label="" title="Copy environment URL" className="env-picker-item-copy" toast={toast} stopPropagation /> : null}
+                </div>
+              );
+            })
+          )}
         </div>
         <div className="env-picker-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-          <span><kbd>↵</kbd> select</span>
-          <span><kbd>Esc</kbd> close</span>
+          <span>
+            <kbd>↑</kbd>
+            <kbd>↓</kbd> navigate
+          </span>
+          <span>
+            <kbd>↵</kbd> select
+          </span>
+          <span>
+            <kbd>Esc</kbd> close
+          </span>
         </div>
       </div>
     </div>

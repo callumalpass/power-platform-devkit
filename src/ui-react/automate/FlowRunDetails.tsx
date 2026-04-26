@@ -12,7 +12,7 @@ export {
   runActionRef,
   runActionRefForAction,
   shortId,
-  summarizeCounts,
+  summarizeCounts
 } from './flow-run-outline.js';
 
 export function SummaryCard(props: { label: string; value: string }) {
@@ -47,41 +47,75 @@ export function ActionIo(props: { detail: FlowAction | null; toast: ToastFn }) {
   const error = prop(detail, 'properties.error');
   const inlineInputs = prop(detail, 'properties.inputs');
   const inlineOutputs = prop(detail, 'properties.outputs');
-  const inputsLink = prop(detail, 'properties.inputsLink.uri');
-  const outputsLink = prop(detail, 'properties.outputsLink.uri');
+  const inputsLink = prop<string>(detail, 'properties.inputsLink.uri');
+  const outputsLink = prop<string>(detail, 'properties.outputsLink.uri');
 
   return (
     <>
-      {error ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Error</h3><CopyButton value={error} label="copy" title="Copy error" toast={toast} /></div><pre className="viewer" style={{ borderLeft: '3px solid var(--danger)' }} dangerouslySetInnerHTML={{ __html: highlightJson(error) }}></pre></div> : null}
-      {inlineInputs !== undefined ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Inputs</h3><CopyButton value={inlineInputs} label="copy" title="Copy inputs" toast={toast} /></div><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineInputs) }}></pre></div> : inputsLink ? (
+      {error ? (
+        <div className="action-io-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Error</h3>
+            <CopyButton value={error} label="copy" title="Copy error" toast={toast} />
+          </div>
+          <pre className="viewer" style={{ borderLeft: '3px solid var(--danger)' }} dangerouslySetInnerHTML={{ __html: highlightJson(error) }}></pre>
+        </div>
+      ) : null}
+      {inlineInputs !== undefined ? (
+        <div className="action-io-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Inputs</h3>
+            <CopyButton value={inlineInputs} label="copy" title="Copy inputs" toast={toast} />
+          </div>
+          <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineInputs) }}></pre>
+        </div>
+      ) : inputsLink ? (
         <div className="action-io-section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3>Inputs</h3>
             <CopyButton value={inputsLink} label="copy link" title="Copy inputs link" toast={toast} />
           </div>
-          <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('input', inputsLink)}>Fetch inputs</button>
+          <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('input', inputsLink)}>
+            Fetch inputs
+          </button>
           {remoteInputs !== undefined ? <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(remoteInputs) }}></pre> : null}
         </div>
       ) : null}
-      {inlineOutputs !== undefined ? <div className="action-io-section"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Outputs</h3><CopyButton value={inlineOutputs} label="copy" title="Copy outputs" toast={toast} /></div><pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineOutputs) }}></pre></div> : outputsLink ? (
+      {inlineOutputs !== undefined ? (
+        <div className="action-io-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Outputs</h3>
+            <CopyButton value={inlineOutputs} label="copy" title="Copy outputs" toast={toast} />
+          </div>
+          <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(inlineOutputs) }}></pre>
+        </div>
+      ) : outputsLink ? (
         <div className="action-io-section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3>Outputs</h3>
             <CopyButton value={outputsLink} label="copy link" title="Copy outputs link" toast={toast} />
           </div>
-          <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('output', outputsLink)}>Fetch outputs</button>
+          <button className="btn btn-secondary" type="button" style={{ fontSize: '0.75rem', padding: '5px 12px', marginBottom: 8 }} onClick={() => void fetchRemote('output', outputsLink)}>
+            Fetch outputs
+          </button>
           {remoteOutputs !== undefined ? <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(remoteOutputs) }}></pre> : null}
         </div>
       ) : null}
       {!error && inlineInputs === undefined && inlineOutputs === undefined && !inputsLink && !outputsLink ? (
         <div className="action-io-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Properties</h3><CopyButton value={prop(detail, 'properties') || detail} label="copy" title="Copy properties" toast={toast} /></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Properties</h3>
+            <CopyButton value={prop(detail, 'properties') || detail} label="copy" title="Copy properties" toast={toast} />
+          </div>
           <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(prop(detail, 'properties') || detail) }}></pre>
         </div>
       ) : null}
       {prop(detail, 'properties.trackedProperties') ? (
         <div className="action-io-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h3>Tracked Properties</h3><CopyButton value={prop(detail, 'properties.trackedProperties')} label="copy" title="Copy tracked properties" toast={toast} /></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Tracked Properties</h3>
+            <CopyButton value={prop(detail, 'properties.trackedProperties')} label="copy" title="Copy tracked properties" toast={toast} />
+          </div>
           <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(prop(detail, 'properties.trackedProperties')) }}></pre>
         </div>
       ) : null}
@@ -95,7 +129,9 @@ function RetryHistory(props: { retries?: Array<{ startTime?: string; endTime?: s
   if (!retries?.length) return null;
   return (
     <div className="action-io-section">
-      <h3>Retry History ({retries.length} {retries.length === 1 ? 'retry' : 'retries'})</h3>
+      <h3>
+        Retry History ({retries.length} {retries.length === 1 ? 'retry' : 'retries'})
+      </h3>
       {retries.map((retry, index) => {
         const start = retry.startTime ? formatDate(retry.startTime) : '-';
         const code = retry.code || '-';
@@ -106,7 +142,9 @@ function RetryHistory(props: { retries?: Array<{ startTime?: string; endTime?: s
               <span>Code: {code}</span>
               <span style={{ color: 'var(--muted)' }}>{start}</span>
             </div>
-            {retry.error ? <pre className="viewer" style={{ borderLeft: '3px solid var(--danger)', margin: '4px 0 0', fontSize: '11px' }} dangerouslySetInnerHTML={{ __html: highlightJson(retry.error) }}></pre> : null}
+            {retry.error ? (
+              <pre className="viewer" style={{ borderLeft: '3px solid var(--danger)', margin: '4px 0 0', fontSize: '11px' }} dangerouslySetInnerHTML={{ __html: highlightJson(retry.error) }}></pre>
+            ) : null}
           </div>
         );
       })}

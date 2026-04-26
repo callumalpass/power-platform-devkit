@@ -30,31 +30,38 @@ export function useResizableWidth(storageKey: string, options: Options) {
   widthRef.current = width;
 
   useEffect(() => {
-    try { localStorage.setItem(storageKey, String(width)); } catch { /* ignore quota */ }
+    try {
+      localStorage.setItem(storageKey, String(width));
+    } catch {
+      /* ignore quota */
+    }
   }, [storageKey, width]);
 
   const edge = options.edge ?? 'left';
-  const startDrag = useCallback((event: React.MouseEvent) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = widthRef.current;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    function onMove(ev: MouseEvent) {
-      // left-edge handle: dragging left grows the element; right-edge handle: dragging right grows it.
-      const delta = edge === 'left' ? startX - ev.clientX : ev.clientX - startX;
-      const next = clamp(startWidth + delta, options.min, options.max);
-      setWidth(next);
-    }
-    function onUp() {
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [options.min, options.max, edge]);
+  const startDrag = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = widthRef.current;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      function onMove(ev: MouseEvent) {
+        // left-edge handle: dragging left grows the element; right-edge handle: dragging right grows it.
+        const delta = edge === 'left' ? startX - ev.clientX : ev.clientX - startX;
+        const next = clamp(startWidth + delta, options.min, options.max);
+        setWidth(next);
+      }
+      function onUp() {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [options.min, options.max, edge]
+  );
 
   return { width, startDrag };
 }

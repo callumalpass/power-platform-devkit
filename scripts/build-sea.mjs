@@ -27,8 +27,8 @@ const entries = [
     main: path.join(repoRoot, 'src', 'setup.ts'),
     windowsSubsystem: 'gui',
     windowsIcon: windowsIconPath,
-    plugins: [setupRendererEmbedPlugin()],
-  },
+    plugins: [setupRendererEmbedPlugin()]
+  }
 ];
 
 await mkdir(seaDir, { recursive: true });
@@ -46,7 +46,7 @@ for (const entry of entries) {
     outfile: path.join(seaDir, `${entry.name}.cjs`),
     // Only keep true Node built-ins external.
     packages: 'bundle',
-    plugins: entry.plugins,
+    plugins: entry.plugins
   });
 }
 
@@ -56,19 +56,24 @@ for (const entry of entries) {
   const blobPath = path.join(outputDir, `${entry.name}.blob`);
   const exePath = path.join(outputDir, `${entry.name}${ext}`);
 
-  await writeFile(configPath, JSON.stringify({
-    main: bundledMain,
-    output: blobPath,
-    disableExperimentalSEAWarning: true,
-  }, null, 2) + '\n', 'utf8');
+  await writeFile(
+    configPath,
+    JSON.stringify(
+      {
+        main: bundledMain,
+        output: blobPath,
+        disableExperimentalSEAWarning: true
+      },
+      null,
+      2
+    ) + '\n',
+    'utf8'
+  );
 
   await run(process.execPath, ['--experimental-sea-config', configPath]);
   await copyFile(process.execPath, exePath);
 
-  const postjectArgs = [
-    postjectCliPath(), exePath, 'NODE_SEA_BLOB', blobPath,
-    '--sentinel-fuse', sentinelFuse,
-  ];
+  const postjectArgs = [postjectCliPath(), exePath, 'NODE_SEA_BLOB', blobPath, '--sentinel-fuse', sentinelFuse];
   if (platform === 'darwin') {
     postjectArgs.push('--macho-segment-name', 'NODE_SEA');
   }
@@ -95,7 +100,7 @@ function run(command, args) {
     const child = spawn(command, args, {
       cwd: repoRoot,
       stdio: 'inherit',
-      shell: false,
+      shell: false
     });
     child.once('error', reject);
     child.once('exit', (code) => {
@@ -147,12 +152,12 @@ function setupRendererEmbedPlugin() {
     setup(build) {
       build.onResolve({ filter: /setup-renderer\.js$/ }, () => ({
         path: 'pp-setup-renderer',
-        namespace: 'pp-setup-renderer',
+        namespace: 'pp-setup-renderer'
       }));
       build.onLoad({ filter: /.*/, namespace: 'pp-setup-renderer' }, async () => ({
         contents: `export const SETUP_RENDERER_JS = ${JSON.stringify(await readFile(rendererPath, 'utf8'))};\n`,
-        loader: 'js',
+        loader: 'js'
       }));
-    },
+    }
   };
 }

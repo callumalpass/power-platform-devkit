@@ -1,10 +1,4 @@
-import {
-  findDeepestFlowExpressionNodeEndingAt,
-  flowExpressionAccessSegments,
-  flowExpressionNodeText,
-  parseFlowExpression,
-  type FlowExpressionNode,
-} from './flow-expression-parser.js';
+import { findDeepestFlowExpressionNodeEndingAt, flowExpressionAccessSegments, flowExpressionNodeText, parseFlowExpression, type FlowExpressionNode } from './flow-expression-parser.js';
 
 export interface FlowCompletionItem {
   label: string;
@@ -78,31 +72,17 @@ export interface FlowExpressionSegmentCompletionContext {
   };
 }
 
-export function completeExpression(
-  text: string,
-  relativeCursor: number,
-  sources: FlowExpressionCompletionSources,
-): FlowCompletionItem[] {
+export function completeExpression(text: string, relativeCursor: number, sources: FlowExpressionCompletionSources): FlowCompletionItem[] {
   const context = findFlowExpressionSegmentCompletionContext(text, relativeCursor);
   if (!context) return [];
   if (context.kind === 'target-name' && context.targetName) {
-    return filterCompletionPrefix(
-      targetNameCompletions(context.targetName.functionName, sources.actions, sources.variables, sources.parameters),
-      context.targetName.prefix,
-    );
+    return filterCompletionPrefix(targetNameCompletions(context.targetName.functionName, sources.actions, sources.variables, sources.parameters), context.targetName.prefix);
   }
   if (context.kind === 'accessor') return [];
-  return filterCompletionPrefix(
-    expressionFunctionCompletions(sources.actions, sources.triggers, sources.variables, sources.parameters),
-    context.prefix,
-  );
+  return filterCompletionPrefix(expressionFunctionCompletions(sources.actions, sources.triggers, sources.variables, sources.parameters), context.prefix);
 }
 
-export function findFlowExpressionCompletionContext(
-  source: string,
-  cursor: number,
-  options: { windowSize?: number; stopAtDoubleQuote?: boolean } = {},
-): FlowExpressionCompletionContext | null {
+export function findFlowExpressionCompletionContext(source: string, cursor: number, options: { windowSize?: number; stopAtDoubleQuote?: boolean } = {}): FlowExpressionCompletionContext | null {
   const safeCursor = Math.min(source.length, Math.max(0, cursor));
   const windowStart = Math.max(0, safeCursor - (options.windowSize ?? 240));
   const before = source.slice(windowStart, safeCursor);
@@ -126,7 +106,7 @@ export function findFlowExpressionCompletionContext(
     expressionFrom,
     prefix: segment.prefix,
     targetName: segment.targetName,
-    accessor: segment.accessor,
+    accessor: segment.accessor
   };
 }
 
@@ -144,8 +124,8 @@ export function findFlowExpressionSegmentCompletionContext(text: string, relativ
         expression: accessorContext.expression,
         prefix: accessorContext.prefix,
         segments: accessorContext.segments,
-        optional: accessorContext.optional,
-      },
+        optional: accessorContext.optional
+      }
     };
   }
 
@@ -157,8 +137,8 @@ export function findFlowExpressionSegmentCompletionContext(text: string, relativ
       prefix: targetContext.prefix,
       targetName: {
         functionName: targetContext.functionName,
-        prefix: targetContext.prefix,
-      },
+        prefix: targetContext.prefix
+      }
     };
   }
 
@@ -168,18 +148,20 @@ export function findFlowExpressionSegmentCompletionContext(text: string, relativ
   return {
     kind: 'function',
     replaceFrom: before.length - functionPrefix.length,
-    prefix: functionPrefix,
+    prefix: functionPrefix
   };
 }
 
-function readAccessorCompletionContext(before: string): {
-  baseExpression: string;
-  expression?: FlowExpressionNode;
-  prefix: string;
-  quoteStart: number;
-  segments: string[];
-  optional: boolean;
-} | undefined {
+function readAccessorCompletionContext(before: string):
+  | {
+      baseExpression: string;
+      expression?: FlowExpressionNode;
+      prefix: string;
+      quoteStart: number;
+      segments: string[];
+      optional: boolean;
+    }
+  | undefined {
   const quoteStart = findCurrentWdlStringStart(before);
   if (quoteStart < 0) return undefined;
   const beforeQuote = before.slice(0, quoteStart);
@@ -198,7 +180,7 @@ function readAccessorCompletionContext(before: string): {
     prefix: before.slice(quoteStart + 1).replace(/''/g, "'"),
     quoteStart,
     segments: expression ? flowExpressionAccessSegments(expression) : readAccessorSegments(baseExpression),
-    optional: Boolean(bracketMatch[1]),
+    optional: Boolean(bracketMatch[1])
   };
 }
 
@@ -224,7 +206,7 @@ function readTargetNameCompletionContext(before: string): { functionName: string
   return {
     functionName,
     prefix: before.slice(quoteStart + 1).replace(/''/g, "'"),
-    quoteStart,
+    quoteStart
   };
 }
 
@@ -246,19 +228,14 @@ function findCurrentWdlStringStart(value: string): number {
   return -1;
 }
 
-function targetNameCompletions(
-  functionName: string | undefined,
-  actions: FlowExpressionAction[],
-  variables: FlowExpressionVariable[],
-  parameters: FlowExpressionParameter[],
-): FlowCompletionItem[] {
+function targetNameCompletions(functionName: string | undefined, actions: FlowExpressionAction[], variables: FlowExpressionVariable[], parameters: FlowExpressionParameter[]): FlowCompletionItem[] {
   if (functionName === 'variables') {
     return variables.map((item) => ({
       label: item.name,
       type: 'variable',
       detail: item.type,
       info: item.declaredBy ? `Declared by ${item.declaredBy}.` : undefined,
-      apply: escapeWdlStringValue(item.name),
+      apply: escapeWdlStringValue(item.name)
     }));
   }
   if (functionName === 'parameters') {
@@ -266,7 +243,7 @@ function targetNameCompletions(
       label: item.name,
       type: 'parameter',
       detail: item.type,
-      apply: escapeWdlStringValue(item.name),
+      apply: escapeWdlStringValue(item.name)
     }));
   }
   if (functionName === 'items') {
@@ -275,7 +252,7 @@ function targetNameCompletions(
       type: 'action',
       detail: item.type,
       info: 'Loop item source.',
-      apply: escapeWdlStringValue(item.name),
+      apply: escapeWdlStringValue(item.name)
     }));
   }
   if (functionName === 'result') {
@@ -284,14 +261,14 @@ function targetNameCompletions(
       type: 'action',
       detail: item.type,
       info: 'Scoped action result source.',
-      apply: escapeWdlStringValue(item.name),
+      apply: escapeWdlStringValue(item.name)
     }));
   }
   return actions.map((item) => ({
     label: item.name,
     type: 'action',
     detail: item.type,
-    apply: escapeWdlStringValue(item.name),
+    apply: escapeWdlStringValue(item.name)
   }));
 }
 
@@ -299,14 +276,32 @@ function expressionFunctionCompletions(
   actions: FlowExpressionAction[],
   triggers: FlowExpressionAction[],
   variables: FlowExpressionVariable[],
-  parameters: FlowExpressionParameter[],
+  parameters: FlowExpressionParameter[]
 ): FlowCompletionItem[] {
-  const actionChoice = expressionChoice(actions.map((item) => item.name), 'Action');
-  const loopChoice = expressionChoice(loopActions(actions).map((item) => item.name), 'Loop');
-  const scopedChoice = expressionChoice(scopedResultActions(actions).map((item) => item.name), 'Scope');
-  const variableChoice = expressionChoice(variables.map((item) => item.name), 'variableName');
-  const parameterChoice = expressionChoice(parameters.map((item) => item.name), 'parameterName');
-  const triggerChoice = expressionChoice(triggers.map((item) => item.name), 'triggerName');
+  const actionChoice = expressionChoice(
+    actions.map((item) => item.name),
+    'Action'
+  );
+  const loopChoice = expressionChoice(
+    loopActions(actions).map((item) => item.name),
+    'Loop'
+  );
+  const scopedChoice = expressionChoice(
+    scopedResultActions(actions).map((item) => item.name),
+    'Scope'
+  );
+  const variableChoice = expressionChoice(
+    variables.map((item) => item.name),
+    'variableName'
+  );
+  const parameterChoice = expressionChoice(
+    parameters.map((item) => item.name),
+    'parameterName'
+  );
+  const triggerChoice = expressionChoice(
+    triggers.map((item) => item.name),
+    'triggerName'
+  );
   return [
     ...dynamicContentCompletions(actions, variables, parameters),
     expressionSnippet('triggerBody()', 'triggerBody()', 'Trigger body', 'Return the trigger body.'),
@@ -364,24 +359,20 @@ function expressionFunctionCompletions(
     expressionSnippet('addDays()', 'addDays(${1:timestamp}, ${2:days})', 'Add days', 'Add days to a timestamp.'),
     expressionSnippet('addHours()', 'addHours(${1:timestamp}, ${2:hours})', 'Add hours', 'Add hours to a timestamp.'),
     expressionSnippet('addMinutes()', 'addMinutes(${1:timestamp}, ${2:minutes})', 'Add minutes', 'Add minutes to a timestamp.'),
-    expressionSnippet('formatNumber()', 'formatNumber(${1:number}, ${2:format})', 'Format number', 'Format a number.'),
+    expressionSnippet('formatNumber()', 'formatNumber(${1:number}, ${2:format})', 'Format number', 'Format a number.')
   ];
 }
 
-function dynamicContentCompletions(
-  actions: FlowExpressionAction[],
-  variables: FlowExpressionVariable[],
-  parameters: FlowExpressionParameter[],
-): FlowCompletionItem[] {
+function dynamicContentCompletions(actions: FlowExpressionAction[], variables: FlowExpressionVariable[], parameters: FlowExpressionParameter[]): FlowCompletionItem[] {
   return [
     ...actions.flatMap((action) => [
       expressionReferenceSnippet(`outputs('${action.name}')`, `outputs('${escapeWdlStringValue(action.name)}')`, 'Action outputs', action.type),
-      expressionReferenceSnippet(`body('${action.name}')`, `body('${escapeWdlStringValue(action.name)}')`, 'Action body', action.type),
+      expressionReferenceSnippet(`body('${action.name}')`, `body('${escapeWdlStringValue(action.name)}')`, 'Action body', action.type)
     ]),
     ...loopActions(actions).map((action) => expressionReferenceSnippet(`items('${action.name}')`, `items('${escapeWdlStringValue(action.name)}')`, 'Loop item', action.type)),
     ...scopedResultActions(actions).map((action) => expressionReferenceSnippet(`result('${action.name}')`, `result('${escapeWdlStringValue(action.name)}')`, 'Scoped result', action.type)),
     ...variables.map((variable) => expressionReferenceSnippet(`variables('${variable.name}')`, `variables('${escapeWdlStringValue(variable.name)}')`, 'Variable value', variable.type)),
-    ...parameters.map((parameter) => expressionReferenceSnippet(`parameters('${parameter.name}')`, `parameters('${escapeWdlStringValue(parameter.name)}')`, 'Parameter value', parameter.type)),
+    ...parameters.map((parameter) => expressionReferenceSnippet(`parameters('${parameter.name}')`, `parameters('${escapeWdlStringValue(parameter.name)}')`, 'Parameter value', parameter.type))
   ];
 }
 
@@ -393,7 +384,7 @@ function expressionReferenceSnippet(label: string, apply: string, detail: string
     info,
     apply,
     snippet: false,
-    boost: -1,
+    boost: -1
   };
 }
 
@@ -404,7 +395,7 @@ function expressionSnippet(label: string, apply: string, detail: string, info?: 
     detail,
     info,
     apply,
-    snippet: true,
+    snippet: true
   };
 }
 

@@ -54,16 +54,8 @@ export function FlowDefinitionPanel(props: {
   onVimToggle: (enabled: boolean) => void;
 }) {
   const { active } = props;
-  const { width: outlineWidth, startDrag: startOutlineResize } = useResizableWidth(
-    'pp-automate-outline-width',
-    { min: 220, max: 640, initial: 320, edge: 'right' },
-  );
-  const schemaIndex = useFlowEditorSchemaIndex(
-    active ? props.environment : '',
-    props.flowDocument,
-    props.analysis,
-    props.toast,
-  );
+  const { width: outlineWidth, startDrag: startOutlineResize } = useResizableWidth('pp-automate-outline-width', { min: 220, max: 640, initial: 320, edge: 'right' });
+  const schemaIndex = useFlowEditorSchemaIndex(active ? props.environment : '', props.flowDocument, props.analysis, props.toast);
 
   return (
     <div className={`dv-subpanel ${active ? 'active' : ''}`}>
@@ -71,34 +63,57 @@ export function FlowDefinitionPanel(props: {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h2>Definition</h2>
-            {props.isFlowDirty ? <span className="entity-item-flag" style={{ color: '#d97706', borderColor: '#d97706' }}>unsaved</span> : null}
+            {props.isFlowDirty ? (
+              <span className="entity-item-flag" style={{ color: '#d97706', borderColor: '#d97706' }}>
+                unsaved
+              </span>
+            ) : null}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{props.flowOperation ? 'Working…' : props.analyzing ? 'Analyzing…' : props.analysis ? 'Analysis updated' : 'Definition not loaded'}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+            {props.flowOperation ? 'Working…' : props.analyzing ? 'Analyzing…' : props.analysis ? 'Analysis updated' : 'Definition not loaded'}
+          </div>
         </div>
         <div className={`fetchxml-editor-shell ${props.flowFullscreen ? 'flow-editor-shell-fullscreen' : ''}`}>
           <div className="fetchxml-editor-toolbar">
             <div className="fetchxml-editor-toolbar-left">
-              <button className="btn btn-ghost" type="button" disabled={props.flowBusy} onClick={props.onReload}>{props.flowOperation === 'reload' ? 'Reloading…' : 'Reload'}</button>
-              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onFormat}>Format JSON</button>
-              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddTrigger}>Add Trigger</button>
-              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddAction}>Add Action</button>
-              <button className="btn btn-ghost" type="button" disabled={!props.isFlowDirty} onClick={props.onShowDiff}>View Changes</button>
-              <button className="btn btn-ghost" type="button" onClick={props.onToggleFullscreen}>{props.flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
+              <button className="btn btn-ghost" type="button" disabled={props.flowBusy} onClick={props.onReload}>
+                {props.flowOperation === 'reload' ? 'Reloading…' : 'Reload'}
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onFormat}>
+                Format JSON
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddTrigger}>
+                Add Trigger
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={!props.flowDocument.trim()} onClick={props.onAddAction}>
+                Add Action
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={!props.isFlowDirty} onClick={props.onShowDiff}>
+                View Changes
+              </button>
+              <button className="btn btn-ghost" type="button" onClick={props.onToggleFullscreen}>
+                {props.flowFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+              </button>
             </div>
             <div className="fetchxml-editor-toolbar-right">
               <MonacoVimToggle enabled={props.vimEnabled} mode={props.flowVimMode} onToggle={props.onVimToggle} />
-              <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy} onClick={props.onCheckErrors}>{props.flowOperation === 'check-errors' ? 'Checking…' : 'Check Errors'}</button>
-              <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy} onClick={props.onCheckWarnings}>{props.flowOperation === 'check-warnings' ? 'Checking…' : 'Check Warnings'}</button>
+              <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy} onClick={props.onCheckErrors}>
+                {props.flowOperation === 'check-errors' ? 'Checking…' : 'Check Errors'}
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy} onClick={props.onCheckWarnings}>
+                {props.flowOperation === 'check-warnings' ? 'Checking…' : 'Check Warnings'}
+              </button>
               {props.hasBlockingServiceErrors ? (
-                <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy || !props.isFlowDirty} onClick={props.onSaveAnyway}>Save Anyway</button>
+                <button className="btn btn-ghost" type="button" disabled={!props.isFlowEditable || props.flowBusy || !props.isFlowDirty} onClick={props.onSaveAnyway}>
+                  Save Anyway
+                </button>
               ) : null}
-              <button className="btn btn-primary" type="button" disabled={!props.isFlowEditable || props.flowBusy || !props.isFlowDirty} onClick={props.onSave}>{props.flowOperation === 'save' ? 'Checking…' : 'Check & Save'}</button>
+              <button className="btn btn-primary" type="button" disabled={!props.isFlowEditable || props.flowBusy || !props.isFlowDirty} onClick={props.onSave}>
+                {props.flowOperation === 'save' ? 'Checking…' : 'Check & Save'}
+              </button>
             </div>
           </div>
-          <div
-            className="flow-editor-layout"
-            style={{ ['--outline-width' as any]: `${outlineWidth}px` }}
-          >
+          <div className="flow-editor-layout" style={{ ['--outline-width' as any]: `${outlineWidth}px` }}>
             <aside className="flow-outline-rail">
               <FlowOutlineCanvas
                 items={props.analysis?.outline || []}
@@ -114,13 +129,7 @@ export function FlowDefinitionPanel(props: {
                 onRemove={props.onRemoveAction}
                 onReorder={props.onReorderAction}
               />
-              <div
-                className="flow-outline-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize outline"
-                onMouseDown={startOutlineResize}
-              />
+              <div className="flow-outline-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize outline" onMouseDown={startOutlineResize} />
             </aside>
             <div className="flow-editor-main">
               <FlowCodeEditor
@@ -146,9 +155,12 @@ export function FlowDefinitionPanel(props: {
             ['Actions', String(props.analysis?.summary?.actionCount || 0)],
             ['Variables', String(props.analysis?.summary?.variableCount || 0)],
             ['Parameters', String(props.analysis?.summary?.parameterCount || 0)],
-            ['Service check', props.flowValidation ? `${props.flowValidation.items.length} ${props.flowValidation.kind}` : 'not run'],
+            ['Service check', props.flowValidation ? `${props.flowValidation.items.length} ${props.flowValidation.kind}` : 'not run']
           ].map(([label, value]) => (
-            <div key={label} className="metric"><div className="metric-label">{label}</div><div className="metric-value">{value}</div></div>
+            <div key={label} className="metric">
+              <div className="metric-label">{label}</div>
+              <div className="metric-value">{value}</div>
+            </div>
           ))}
         </div>
         <FlowProblemsPanel problems={props.flowProblems} validation={props.flowValidation} onJump={props.onJumpProblem} toast={props.toast} />

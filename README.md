@@ -98,26 +98,26 @@ pp dv /accounts --env dev
 
 ## CLI reference
 
-| Command | Description |
-|---|---|
-| `pp auth login <account>` | Create or update an account and run a login flow |
-| `pp auth list` | List configured accounts |
-| `pp auth inspect <account>` | Show account details |
-| `pp auth remove <account>` | Remove an account |
-| `pp env list` | List configured environments |
-| `pp env inspect <alias>` | Show environment details |
-| `pp env discover <account>` | Discover environments accessible to an account |
-| `pp env add <alias>` | Add an environment (`--url URL --account ACCOUNT`) |
-| `pp env remove <alias>` | Remove an environment |
-| `pp request <path> --env ALIAS` | Send an authenticated API request |
-| `pp whoami --env ALIAS` | Run Dataverse WhoAmI |
-| `pp ping --env ALIAS` | Check API connectivity |
-| `pp token --env ALIAS` | Print a bearer token |
-| `pp mcp` | Start the MCP server |
-| `pp setup` | Open Setup Manager in a local browser |
-| `pp migrate-config` | Migrate legacy config |
-| `pp update [--check]` | Check GitHub releases for a newer version |
-| `pp completion [zsh\|bash\|powershell]` | Print shell completion script |
+| Command                                 | Description                                        |
+| --------------------------------------- | -------------------------------------------------- |
+| `pp auth login <account>`               | Create or update an account and run a login flow   |
+| `pp auth list`                          | List configured accounts                           |
+| `pp auth inspect <account>`             | Show account details                               |
+| `pp auth remove <account>`              | Remove an account                                  |
+| `pp env list`                           | List configured environments                       |
+| `pp env inspect <alias>`                | Show environment details                           |
+| `pp env discover <account>`             | Discover environments accessible to an account     |
+| `pp env add <alias>`                    | Add an environment (`--url URL --account ACCOUNT`) |
+| `pp env remove <alias>`                 | Remove an environment                              |
+| `pp request <path> --env ALIAS`         | Send an authenticated API request                  |
+| `pp whoami --env ALIAS`                 | Run Dataverse WhoAmI                               |
+| `pp ping --env ALIAS`                   | Check API connectivity                             |
+| `pp token --env ALIAS`                  | Print a bearer token                               |
+| `pp mcp`                                | Start the MCP server                               |
+| `pp setup`                              | Open Setup Manager in a local browser              |
+| `pp migrate-config`                     | Migrate legacy config                              |
+| `pp update [--check]`                   | Check GitHub releases for a newer version          |
+| `pp completion [zsh\|bash\|powershell]` | Print shell completion script                      |
 
 All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location and `--no-interactive-auth` to disable browser-based auth prompts.
 
@@ -307,8 +307,8 @@ const response = await pp.request({
   env: 'dev',
   api: 'dv',
   path: '/accounts',
-  query: { '$select': 'name,accountid', '$top': '5' },
-  readIntent: true,
+  query: { $select: 'name,accountid', $top: '5' },
+  readIntent: true
 });
 ```
 

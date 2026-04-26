@@ -46,14 +46,14 @@ export async function loadSavedRequests(options: ConfigStoreOptions = {}): Promi
   }
 }
 
-export async function replaceSavedRequests(
-  entries: unknown,
-  options: ConfigStoreOptions = {},
-): Promise<OperationResult<SavedRequestEntry[]>> {
+export async function replaceSavedRequests(entries: unknown, options: ConfigStoreOptions = {}): Promise<OperationResult<SavedRequestEntry[]>> {
   if (!Array.isArray(entries)) {
     return fail(createDiagnostic('error', 'SAVED_REQUESTS_INVALID', 'entries must be an array.', { source: 'pp/ui' }));
   }
-  const sanitized = entries.map(sanitizeEntry).filter((entry): entry is SavedRequestEntry => Boolean(entry)).slice(0, MAX_ENTRIES);
+  const sanitized = entries
+    .map(sanitizeEntry)
+    .filter((entry): entry is SavedRequestEntry => Boolean(entry))
+    .slice(0, MAX_ENTRIES);
   const filePath = getSavedRequestsPath(options);
   try {
     await mkdir(path.dirname(filePath), { recursive: true });

@@ -22,7 +22,7 @@ test('writeCanvasYamlFiles confines writes to the output directory', async () =>
     { path: '/absolute.pa.yaml', content: 'absolute' },
     { path: 'C:/absolute.pa.yaml', content: 'windows absolute' },
     { path: 'linked/escape.pa.yaml', content: 'symlink parent' },
-    { path: 'link-target.pa.yaml', content: 'symlink target' },
+    { path: 'link-target.pa.yaml', content: 'symlink target' }
   ]);
 
   assert.deepEqual(written, ['good/App.pa.yaml']);
@@ -50,21 +50,17 @@ test('readCanvasYamlDirectory ignores symlink loops while collecting YAML files'
     files.sort((a, b) => a.path.localeCompare(b.path)),
     [
       { path: 'App.pa.yaml', content: 'app' },
-      { path: 'nested/Screen1.pa.yaml', content: 'screen' },
-    ],
+      { path: 'nested/Screen1.pa.yaml', content: 'screen' }
+    ]
   );
 });
 
 test('readCanvasYamlFetchFiles returns only file entries with paths and string content', () => {
-  assert.deepEqual(readCanvasYamlFetchFiles({
-    files: [
-      { path: 'App.pa.yaml', content: 'app' },
-      { path: '', content: 'empty path' },
-      { path: 'MissingContent.pa.yaml' },
-      null,
-    ],
-  }), [
-    { path: 'App.pa.yaml', content: 'app' },
-  ]);
+  assert.deepEqual(
+    readCanvasYamlFetchFiles({
+      files: [{ path: 'App.pa.yaml', content: 'app' }, { path: '', content: 'empty path' }, { path: 'MissingContent.pa.yaml' }, null]
+    }),
+    [{ path: 'App.pa.yaml', content: 'app' }]
+  );
   assert.equal(readCanvasYamlFetchFiles({ value: [] }), undefined);
 });

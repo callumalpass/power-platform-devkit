@@ -1,13 +1,11 @@
 import { spawnSync } from 'node:child_process';
 
 const playwrightArgs = ['exec', 'playwright', 'test', '-c', 'playwright.ui.config.ts', ...process.argv.slice(2)];
-const shouldUseXvfb = process.platform === 'linux'
-  && process.env.PP_DESKTOP_E2E_SHOW_WINDOW !== '1'
-  && process.env.PP_DESKTOP_E2E_NO_XVFB !== '1';
+const shouldUseXvfb = process.platform === 'linux' && process.env.PP_DESKTOP_E2E_SHOW_WINDOW !== '1' && process.env.PP_DESKTOP_E2E_NO_XVFB !== '1';
 
 const env = {
   ...process.env,
-  PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE ?? 'visible',
+  PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE ?? 'visible'
 };
 
 let command = 'pnpm';
@@ -20,18 +18,12 @@ if (shouldUseXvfb) {
     process.exit(1);
   }
   command = 'xvfb-run';
-  args = [
-    '-a',
-    '-s',
-    '-screen 0 1440x960x24',
-    'pnpm',
-    ...playwrightArgs,
-  ];
+  args = ['-a', '-s', '-screen 0 1440x960x24', 'pnpm', ...playwrightArgs];
 }
 
 const result = spawnSync(command, args, {
   stdio: 'inherit',
-  env,
+  env
 });
 
 if (result.error) {

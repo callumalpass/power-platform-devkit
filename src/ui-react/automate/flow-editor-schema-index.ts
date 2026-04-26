@@ -4,21 +4,8 @@ import type { FlowAnalysis, FlowAnalysisOutlineItem, FlowApiOperationSchema, Flo
 import { analyzeFlow } from '../../flow-language.js';
 import { findFlowExpressionCompletionContext } from '../../flow-expression-completions.js';
 import type { FlowExpressionCallNode, FlowExpressionNode } from '../../flow-expression-parser.js';
-import {
-  connectorFieldPath,
-  isObject,
-  readOutlineEditTarget,
-  resolveActionOperation,
-  type FlowActionOperationRef,
-} from './flow-action-document.js';
-import {
-  dynamicApiRef,
-  expandDynamicSchemaFields,
-  fieldSchemaKey,
-  pickDynamicParameters,
-  readConnectorParameters,
-  visibleConnectorSchemaFields,
-} from './flow-dynamic-schema.js';
+import { connectorFieldPath, isObject, readOutlineEditTarget, resolveActionOperation, type FlowActionOperationRef } from './flow-action-document.js';
+import { dynamicApiRef, expandDynamicSchemaFields, fieldSchemaKey, pickDynamicParameters, readConnectorParameters, visibleConnectorSchemaFields } from './flow-dynamic-schema.js';
 import { isActionLikeOutlineItem } from './outline-utils.js';
 
 export type FlowEditorSchemaActionTarget = {
@@ -75,19 +62,14 @@ export const EMPTY_FLOW_EDITOR_SCHEMA_INDEX: FlowEditorSchemaIndex = {
   version: 0,
   loading: false,
   actions: [],
-  byActionName: {},
+  byActionName: {}
 };
 
 const operationSchemaCache = new Map<string, Promise<FlowApiOperationSchema | null>>();
 const dynamicSchemaCache = new Map<string, Promise<FlowApiOperationSchemaField[]>>();
 const dynamicOptionsCache = new Map<string, Promise<FlowDynamicValueOption[]>>();
 
-export function useFlowEditorSchemaIndex(
-  environment: string,
-  source: string,
-  analysis: FlowAnalysis | null,
-  toast: ToastFn,
-): FlowEditorSchemaIndex {
+export function useFlowEditorSchemaIndex(environment: string, source: string, analysis: FlowAnalysis | null, toast: ToastFn): FlowEditorSchemaIndex {
   const [index, setIndex] = useState<FlowEditorSchemaIndex>(EMPTY_FLOW_EDITOR_SCHEMA_INDEX);
 
   useEffect(() => {
@@ -99,11 +81,16 @@ export function useFlowEditorSchemaIndex(
       return;
     }
 
-    setIndex((previous) => buildFlowEditorSchemaIndex(targets.map((target) => {
-      const previousEntry = previous.byActionName[target.name];
-      if (previousEntry && actionTargetsMatch(previousEntry, target)) return previousEntry;
-      return loadingEntry(target);
-    }), true));
+    setIndex((previous) =>
+      buildFlowEditorSchemaIndex(
+        targets.map((target) => {
+          const previousEntry = previous.byActionName[target.name];
+          if (previousEntry && actionTargetsMatch(previousEntry, target)) return previousEntry;
+          return loadingEntry(target);
+        }),
+        true
+      )
+    );
 
     const timer = window.setTimeout(() => {
       void Promise.all(targets.map((target) => loadFlowEditorSchemaEntry(environment, target)))
@@ -147,7 +134,7 @@ export function collectFlowEditorSchemaTargets(source: string, analysis: FlowAna
       from: item.from,
       to: item.to,
       action,
-      operationRef,
+      operationRef
     });
   }
   return targets;
@@ -160,15 +147,11 @@ export function buildFlowEditorSchemaIndex(entries: FlowEditorSchemaActionEntry[
     version: Date.now(),
     loading,
     actions: entries,
-    byActionName,
+    byActionName
   };
 }
 
-export function flowEditorSchemaCompletionItems(
-  cursor: number,
-  analysis: FlowAnalysis | null,
-  index: FlowEditorSchemaIndex | null,
-): FlowEditorSchemaCompletionItem[] {
+export function flowEditorSchemaCompletionItems(cursor: number, analysis: FlowAnalysis | null, index: FlowEditorSchemaIndex | null): FlowEditorSchemaCompletionItem[] {
   const context = analysis?.context as FlowEditorCursorContext | undefined;
   if (!context || !index?.actions.length || !Array.isArray(context.path)) return [];
   if (context.kind !== 'property-key' && context.kind !== 'property-value') return [];
@@ -187,11 +170,7 @@ export function flowEditorSchemaCompletionItems(
   return fieldValueCompletions(entry, relativePath);
 }
 
-export function flowEditorExpressionSchemaCompletionItems(
-  source: string,
-  cursor: number,
-  index: FlowEditorSchemaIndex | null,
-): FlowEditorSchemaCompletionItem[] {
+export function flowEditorExpressionSchemaCompletionItems(source: string, cursor: number, index: FlowEditorSchemaIndex | null): FlowEditorSchemaCompletionItem[] {
   const context = findFlowExpressionCompletionContext(source, cursor);
   if (context?.kind !== 'accessor' || !context.accessor || !index?.actions.length) return [];
   const resolved = context.accessor.expression
@@ -215,7 +194,7 @@ async function loadFlowEditorSchemaEntry(environment: string, target: FlowEditor
       fields,
       options,
       outputFields,
-      status: 'ready',
+      status: 'ready'
     };
   } catch (error) {
     return {
@@ -225,7 +204,7 @@ async function loadFlowEditorSchemaEntry(environment: string, target: FlowEditor
       options: {},
       outputFields: {},
       status: 'error',
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -235,11 +214,10 @@ async function cachedOperationSchema(environment: string, apiRef: string | undef
   const key = `${environment}:${apiRef}:${operationId}`;
   let promise = operationSchemaCache.get(key);
   if (!promise) {
-    promise = loadFlowApiOperationSchema(environment, apiRef, operationId)
-      .catch((error) => {
-        operationSchemaCache.delete(key);
-        throw error;
-      });
+    promise = loadFlowApiOperationSchema(environment, apiRef, operationId).catch((error) => {
+      operationSchemaCache.delete(key);
+      throw error;
+    });
     operationSchemaCache.set(key, promise);
   }
   return promise;
@@ -249,18 +227,23 @@ async function loadDynamicSchemaFields(
   environment: string,
   target: FlowEditorSchemaActionTarget,
   schema: FlowApiOperationSchema | null,
-  fields: FlowApiOperationSchemaField[],
+  fields: FlowApiOperationSchemaField[]
 ): Promise<Record<string, FlowApiOperationSchemaField[]>> {
   const dynamicFields = fields.filter((field) => field.dynamicSchema);
   if (!dynamicFields.length) return {};
   const apiRef = dynamicApiRef(target.operationRef, schema);
   if (!apiRef) return {};
   const parameters = readConnectorParameters(target.action);
-  const dynamicParameters = pickDynamicParameters(dynamicFields.map((field) => field.dynamicSchema), parameters);
-  const entries = await Promise.all(dynamicFields.map(async (field) => {
-    const values = await cachedDynamicSchemaFields(environment, apiRef, target.operationRef.connectionName, field, dynamicParameters);
-    return [fieldSchemaKey(field), values] as const;
-  }));
+  const dynamicParameters = pickDynamicParameters(
+    dynamicFields.map((field) => field.dynamicSchema),
+    parameters
+  );
+  const entries = await Promise.all(
+    dynamicFields.map(async (field) => {
+      const values = await cachedDynamicSchemaFields(environment, apiRef, target.operationRef.connectionName, field, dynamicParameters);
+      return [fieldSchemaKey(field), values] as const;
+    })
+  );
   return Object.fromEntries(entries.filter(([, values]) => values.length));
 }
 
@@ -268,43 +251,49 @@ async function loadDynamicOptions(
   environment: string,
   target: FlowEditorSchemaActionTarget,
   schema: FlowApiOperationSchema | null,
-  fields: FlowApiOperationSchemaField[],
+  fields: FlowApiOperationSchemaField[]
 ): Promise<Record<string, FlowDynamicValueOption[]>> {
   const dynamicFields = fields.filter((field) => field.dynamicValues);
   if (!dynamicFields.length) return {};
   const apiRef = dynamicApiRef(target.operationRef, schema);
   if (!apiRef) return {};
   const parameters = readConnectorParameters(target.action);
-  const dynamicParameters = pickDynamicParameters(dynamicFields.map((field) => field.dynamicValues), parameters);
-  const entries = await Promise.all(dynamicFields.map(async (field) => {
-    const values = await cachedDynamicOptions(environment, apiRef, target.operationRef.connectionName, field.dynamicValues, dynamicParameters);
-    return [fieldSchemaKey(field), values] as const;
-  }));
+  const dynamicParameters = pickDynamicParameters(
+    dynamicFields.map((field) => field.dynamicValues),
+    parameters
+  );
+  const entries = await Promise.all(
+    dynamicFields.map(async (field) => {
+      const values = await cachedDynamicOptions(environment, apiRef, target.operationRef.connectionName, field.dynamicValues, dynamicParameters);
+      return [fieldSchemaKey(field), values] as const;
+    })
+  );
   return Object.fromEntries(entries.filter(([, values]) => values.length));
 }
 
-async function loadDynamicOutputSchemaFields(
-  environment: string,
-  target: FlowEditorSchemaActionTarget,
-  schema: FlowApiOperationSchema | null,
-): Promise<Record<string, FlowApiOperationSchemaField[]>> {
+async function loadDynamicOutputSchemaFields(environment: string, target: FlowEditorSchemaActionTarget, schema: FlowApiOperationSchema | null): Promise<Record<string, FlowApiOperationSchemaField[]>> {
   const dynamicFields = collectDynamicOutputFields(schema);
   if (!dynamicFields.length) return {};
   const apiRef = dynamicApiRef(target.operationRef, schema);
   if (!apiRef) return {};
   const parameters = readConnectorParameters(target.action);
-  const dynamicParameters = pickDynamicParameters(dynamicFields.map((field) => field.dynamicSchema), parameters);
+  const dynamicParameters = pickDynamicParameters(
+    dynamicFields.map((field) => field.dynamicSchema),
+    parameters
+  );
   if (hasExpressionLikeParameter(dynamicParameters)) return {};
 
-  const entries = await Promise.all(dynamicFields.map(async (field) => {
-    try {
-      const key = outputPathKey(field.path || []);
-      const values = await cachedDynamicOutputSchemaFields(environment, apiRef, target.operationRef.connectionName, field, dynamicParameters);
-      return [key, values] as const;
-    } catch {
-      return [outputPathKey(field.path || []), []] as const;
-    }
-  }));
+  const entries = await Promise.all(
+    dynamicFields.map(async (field) => {
+      try {
+        const key = outputPathKey(field.path || []);
+        const values = await cachedDynamicOutputSchemaFields(environment, apiRef, target.operationRef.connectionName, field, dynamicParameters);
+        return [key, values] as const;
+      } catch {
+        return [outputPathKey(field.path || []), []] as const;
+      }
+    })
+  );
   return Object.fromEntries(entries.filter(([, values]) => values.length));
 }
 
@@ -313,16 +302,15 @@ function cachedDynamicSchemaFields(
   apiRef: string,
   connectionName: string | undefined,
   field: FlowApiOperationSchemaField,
-  parameters: Record<string, unknown>,
+  parameters: Record<string, unknown>
 ): Promise<FlowApiOperationSchemaField[]> {
   const key = stableCacheKey(['schema', environment, apiRef, connectionName || '', fieldSchemaKey(field), field.dynamicSchema, parameters]);
   let promise = dynamicSchemaCache.get(key);
   if (!promise) {
-    promise = loadFlowDynamicProperties(environment, apiRef, connectionName, field, parameters)
-      .catch((error) => {
-        dynamicSchemaCache.delete(key);
-        throw error;
-      });
+    promise = loadFlowDynamicProperties(environment, apiRef, connectionName, field, parameters).catch((error) => {
+      dynamicSchemaCache.delete(key);
+      throw error;
+    });
     dynamicSchemaCache.set(key, promise);
   }
   return promise;
@@ -333,7 +321,7 @@ function cachedDynamicOutputSchemaFields(
   apiRef: string,
   connectionName: string | undefined,
   field: FlowApiOperationSchemaField,
-  parameters: Record<string, unknown>,
+  parameters: Record<string, unknown>
 ): Promise<FlowApiOperationSchemaField[]> {
   const contextParameterAlias = outputPathKey(field.path || []);
   const key = stableCacheKey(['output-schema', environment, apiRef, connectionName || '', contextParameterAlias, field.dynamicSchema, parameters]);
@@ -341,32 +329,24 @@ function cachedDynamicOutputSchemaFields(
   if (!promise) {
     promise = loadFlowDynamicProperties(environment, apiRef, connectionName, field, parameters, {
       location: 'output',
-      contextParameterAlias,
-    })
-      .catch((error) => {
-        dynamicSchemaCache.delete(key);
-        throw error;
-      });
+      contextParameterAlias
+    }).catch((error) => {
+      dynamicSchemaCache.delete(key);
+      throw error;
+    });
     dynamicSchemaCache.set(key, promise);
   }
   return promise;
 }
 
-function cachedDynamicOptions(
-  environment: string,
-  apiRef: string,
-  connectionName: string | undefined,
-  dynamicValues: unknown,
-  parameters: Record<string, unknown>,
-): Promise<FlowDynamicValueOption[]> {
+function cachedDynamicOptions(environment: string, apiRef: string, connectionName: string | undefined, dynamicValues: unknown, parameters: Record<string, unknown>): Promise<FlowDynamicValueOption[]> {
   const key = stableCacheKey(['options', environment, apiRef, connectionName || '', dynamicValues, parameters]);
   let promise = dynamicOptionsCache.get(key);
   if (!promise) {
-    promise = loadFlowDynamicEnum(environment, apiRef, connectionName, dynamicValues, parameters)
-      .catch((error) => {
-        dynamicOptionsCache.delete(key);
-        throw error;
-      });
+    promise = loadFlowDynamicEnum(environment, apiRef, connectionName, dynamicValues, parameters).catch((error) => {
+      dynamicOptionsCache.delete(key);
+      throw error;
+    });
     dynamicOptionsCache.set(key, promise);
   }
   return promise;
@@ -384,7 +364,7 @@ function fieldKeyCompletions(entry: FlowEditorSchemaActionEntry, parentPath: str
       detail: fieldDetail(field),
       documentation: field.description || undefined,
       insertText: escapeJsonStringContent(field.name),
-      sortText: fieldSortKey(field),
+      sortText: fieldSortKey(field)
     }));
 }
 
@@ -392,10 +372,7 @@ function fieldValueCompletions(entry: FlowEditorSchemaActionEntry, valuePath: st
   const fields = entry.fields.filter((field) => pathsEqual(connectorFieldPath(field), valuePath));
   const completions: FlowEditorSchemaCompletionItem[] = [];
   for (const field of fields) {
-    const options = [
-      ...(field.enum || []).map((value) => ({ value, title: undefined as string | undefined })),
-      ...(entry.options[fieldSchemaKey(field)] || []),
-    ];
+    const options = [...(field.enum || []).map((value) => ({ value, title: undefined as string | undefined })), ...(entry.options[fieldSchemaKey(field)] || [])];
     for (const option of options) {
       completions.push({
         label: option.title ? `${option.title} (${option.value})` : option.value,
@@ -403,7 +380,7 @@ function fieldValueCompletions(entry: FlowEditorSchemaActionEntry, valuePath: st
         detail: fieldDetail(field),
         documentation: option.title || field.description || undefined,
         insertText: escapeJsonStringContent(option.value),
-        sortText: `${field.required ? '10' : '20'}_${field.name}_${String(option.title || option.value).toLowerCase()}`,
+        sortText: `${field.required ? '10' : '20'}_${field.name}_${String(option.title || option.value).toLowerCase()}`
       });
     }
     if (!options.length) {
@@ -416,14 +393,16 @@ function fieldValueCompletions(entry: FlowEditorSchemaActionEntry, valuePath: st
 function fallbackValueCompletions(field: FlowApiOperationSchemaField): FlowEditorSchemaCompletionItem[] {
   if (field.defaultValue !== undefined && field.defaultValue !== null) {
     const value = typeof field.defaultValue === 'string' ? field.defaultValue : JSON.stringify(field.defaultValue);
-    return [{
-      label: value,
-      kind: 'value',
-      detail: fieldDetail(field),
-      documentation: field.description || undefined,
-      insertText: escapeJsonStringContent(value),
-      sortText: `${field.required ? '30' : '40'}_${field.name}_default`,
-    }];
+    return [
+      {
+        label: value,
+        kind: 'value',
+        detail: fieldDetail(field),
+        documentation: field.description || undefined,
+        insertText: escapeJsonStringContent(value),
+        sortText: `${field.required ? '30' : '40'}_${field.name}_default`
+      }
+    ];
   }
   if (field.type === 'boolean') {
     return ['true', 'false'].map((value, index) => ({
@@ -432,7 +411,7 @@ function fallbackValueCompletions(field: FlowApiOperationSchemaField): FlowEdito
       detail: fieldDetail(field),
       documentation: field.description || undefined,
       insertText: value,
-      sortText: `${field.required ? '30' : '40'}_${field.name}_${index}`,
+      sortText: `${field.required ? '30' : '40'}_${field.name}_${index}`
     }));
   }
   return [];
@@ -456,7 +435,7 @@ function collectDynamicOutputFieldsFromSchema(schema: unknown, path: string[], f
       path,
       type: typeof schema.type === 'string' ? schema.type : undefined,
       schema,
-      dynamicSchema,
+      dynamicSchema
     });
   }
 
@@ -490,11 +469,7 @@ function readAccessorBase(value: string): AccessorBase | null {
   return { functionName, actionName };
 }
 
-function schemaNodeForLegacyAccessor(
-  index: FlowEditorSchemaIndex,
-  baseExpression: string,
-  segments: string[],
-): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
+function schemaNodeForLegacyAccessor(index: FlowEditorSchemaIndex, baseExpression: string, segments: string[]): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
   const base = readAccessorBase(baseExpression);
   if (!base) return null;
   const entry = index.byActionName[base.actionName];
@@ -505,10 +480,7 @@ function schemaNodeForLegacyAccessor(
   return resolved ? { entry, ...resolved } : null;
 }
 
-function schemaNodeForExpression(
-  index: FlowEditorSchemaIndex,
-  node: FlowExpressionNode,
-): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
+function schemaNodeForExpression(index: FlowEditorSchemaIndex, node: FlowExpressionNode): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
   if (node.kind === 'call') return schemaNodeForCallExpression(index, node);
   if (node.kind === 'access') {
     const target = schemaNodeForExpression(index, node.target);
@@ -524,16 +496,13 @@ function schemaNodeForExpression(
     return {
       ...target,
       schema: accessed.schema,
-      path: [...target.path, property.value],
+      path: [...target.path, property.value]
     };
   }
   return null;
 }
 
-function schemaNodeForCallExpression(
-  index: FlowEditorSchemaIndex,
-  node: FlowExpressionCallNode,
-): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
+function schemaNodeForCallExpression(index: FlowEditorSchemaIndex, node: FlowExpressionCallNode): { entry: FlowEditorSchemaActionEntry; schema: unknown; path: string[] } | null {
   const functionName = node.name.toLowerCase();
   if (functionName === 'body' || functionName === 'outputs') {
     const actionName = firstStringArgument(node);
@@ -579,7 +548,7 @@ function rootSchemaForAccessorBase(schema: FlowApiOperationSchema, functionName:
   if (functionName === 'body') {
     return {
       schema: response.bodySchema || schemaProperty(response.schema, 'body') || response.schema,
-      path: ['body'],
+      path: ['body']
     };
   }
   if (responseHasBodyEnvelope(response)) {
@@ -589,30 +558,23 @@ function rootSchemaForAccessorBase(schema: FlowApiOperationSchema, functionName:
     schema: {
       type: 'object',
       properties: {
-        body: response.bodySchema || response.schema,
-      },
+        body: response.bodySchema || response.schema
+      }
     },
-    path: [],
+    path: []
   };
 }
 
 function preferredResponse(schema: FlowApiOperationSchema | null): NonNullable<FlowApiOperationSchema['responses']>[number] | undefined {
   const responses = schema?.responses || [];
-  return responses.find((item) => item.statusCode === '200')
-    || responses.find((item) => /^2\d\d$/.test(item.statusCode))
-    || responses.find((item) => item.statusCode === 'default')
-    || responses[0];
+  return responses.find((item) => item.statusCode === '200') || responses.find((item) => /^2\d\d$/.test(item.statusCode)) || responses.find((item) => item.statusCode === 'default') || responses[0];
 }
 
 function responseHasBodyEnvelope(response: NonNullable<FlowApiOperationSchema['responses']>[number]): boolean {
   return schemaProperty(response.schema, 'body') !== undefined;
 }
 
-function schemaNodeForAccessorSegments(
-  root: unknown,
-  initialPath: string[],
-  segments: string[],
-): { schema: unknown; path: string[] } | null {
+function schemaNodeForAccessorSegments(root: unknown, initialPath: string[], segments: string[]): { schema: unknown; path: string[] } | null {
   let schema = root;
   let path = initialPath;
   for (const segment of segments) {
@@ -634,12 +596,7 @@ function arrayItemSchema(schema: unknown): unknown {
   return isObject(schema) && isObject(schema.items) ? schema.items : undefined;
 }
 
-function outputSchemaCompletions(
-  entry: FlowEditorSchemaActionEntry,
-  schema: unknown,
-  path: string[],
-  prefix: string,
-): FlowEditorSchemaCompletionItem[] {
+function outputSchemaCompletions(entry: FlowEditorSchemaActionEntry, schema: unknown, path: string[], prefix: string): FlowEditorSchemaCompletionItem[] {
   const container = propertyContainerSchema(schema);
   const dynamicFields = entry.outputFields?.[outputPathKey(path)] || [];
   const items = new Map<string, FlowEditorSchemaCompletionItem>();
@@ -665,7 +622,7 @@ function outputFieldCompletion(field: FlowApiOperationSchemaField, dynamic: bool
     detail: outputFieldDetail(field, dynamic),
     documentation: field.description || undefined,
     insertText: escapeWdlStringContent(field.name),
-    sortText: `${field.visibility === 'important' ? '10' : '20'}_${field.name.toLowerCase()}`,
+    sortText: `${field.visibility === 'important' ? '10' : '20'}_${field.name.toLowerCase()}`
   };
 }
 
@@ -677,26 +634,20 @@ function outputPropertyCompletion(name: string, schema: Record<string, unknown>)
     title: firstString(schema['x-ms-summary'], schema.title),
     description: typeof schema.description === 'string' ? schema.description : undefined,
     visibility: outputPropertyVisibility(schema),
-    schema,
+    schema
   };
   return outputFieldCompletion(field, false);
 }
 
 function outputFieldDetail(field: FlowApiOperationSchemaField, dynamic: boolean): string {
-  const parts = [
-    dynamic ? 'Dynamic output' : 'Output',
-    field.title,
-    field.type || schemaType(field.schema),
-  ].filter(Boolean);
+  const parts = [dynamic ? 'Dynamic output' : 'Output', field.title, field.type || schemaType(field.schema)].filter(Boolean);
   return parts.join(' · ');
 }
 
 function filterSchemaOutputCompletions(items: FlowEditorSchemaCompletionItem[], prefix: string): FlowEditorSchemaCompletionItem[] {
   const normalized = prefix.toLowerCase();
   const filtered = normalized ? items.filter((item) => item.label.toLowerCase().includes(normalized)) : items;
-  return filtered
-    .sort((left, right) => outputCompletionScore(left, normalized) - outputCompletionScore(right, normalized))
-    .slice(0, 80);
+  return filtered.sort((left, right) => outputCompletionScore(left, normalized) - outputCompletionScore(right, normalized)).slice(0, 80);
 }
 
 function outputCompletionScore(item: FlowEditorSchemaCompletionItem, prefix: string): number {
@@ -756,9 +707,7 @@ function fieldSortKey(field: FlowApiOperationSchemaField): string {
 
 function schemaEntryForContext(cursor: number, context: FlowEditorCursorContext, index: FlowEditorSchemaIndex): FlowEditorSchemaActionEntry | undefined {
   if (context.nearestAction && index.byActionName[context.nearestAction]) return index.byActionName[context.nearestAction];
-  return index.actions
-    .filter((entry) => cursor >= entry.from && cursor <= entry.to)
-    .sort((left, right) => (left.to - left.from) - (right.to - right.from))[0];
+  return index.actions.filter((entry) => cursor >= entry.from && cursor <= entry.to).sort((left, right) => left.to - left.from - (right.to - right.from))[0];
 }
 
 function actionRelativePath(path: string[], actionName: string): string[] {
@@ -776,12 +725,7 @@ function existingKeysAtPath(action: Record<string, unknown>, path: string[]): Se
 }
 
 function fieldDetail(field: FlowApiOperationSchemaField): string {
-  const parts = [
-    field.required ? 'Required' : undefined,
-    field.title,
-    field.type,
-    connectorFieldPath(field).join('.'),
-  ].filter(Boolean);
+  const parts = [field.required ? 'Required' : undefined, field.title, field.type, connectorFieldPath(field).join('.')].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -791,14 +735,16 @@ function loadingEntry(target: FlowEditorSchemaActionTarget): FlowEditorSchemaAct
     schema: null,
     fields: [],
     options: {},
-    status: 'loading',
+    status: 'loading'
   };
 }
 
 function actionTargetsMatch(entry: FlowEditorSchemaActionEntry, target: FlowEditorSchemaActionTarget): boolean {
-  return entry.operationRef.apiRef === target.operationRef.apiRef
-    && entry.operationRef.operationId === target.operationRef.operationId
-    && entry.operationRef.connectionName === target.operationRef.connectionName;
+  return (
+    entry.operationRef.apiRef === target.operationRef.apiRef &&
+    entry.operationRef.operationId === target.operationRef.operationId &&
+    entry.operationRef.connectionName === target.operationRef.connectionName
+  );
 }
 
 function analyzeFlowIfPossible(source: string): FlowAnalysis | null {

@@ -2,20 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeFlow, completeFlowExpression, type FlowCompletionItem } from '../src/flow-language.js';
 import { findFlowExpressionCompletionContext } from '../src/flow-expression-completions.js';
-import {
-  buildFlowOperationSearchBody,
-  normalizeFlowApiOperationSchema,
-} from '../src/ui-react/automate-data.js';
+import { buildFlowOperationSearchBody, normalizeFlowApiOperationSchema } from '../src/ui-react/automate-data.js';
 import { FLOW_SNIPPETS, type FlowCodeSnippet } from '../src/ui-react/automate/flow-code-snippets.js';
-import {
-  buildBuiltInAction,
-} from '../src/ui-react/automate/flow-built-in-templates.js';
+import { buildBuiltInAction } from '../src/ui-react/automate/flow-built-in-templates.js';
 import {
   buildFlowEditorSchemaIndex,
   collectFlowEditorSchemaTargets,
   flowEditorExpressionSchemaCompletionItems,
   flowEditorSchemaCompletionItems,
-  type FlowEditorSchemaActionEntry,
+  type FlowEditorSchemaActionEntry
 } from '../src/ui-react/automate/flow-editor-schema-index.js';
 import { flowEditorConnectionCompletionItems } from '../src/ui-react/automate/flow-editor-connection-completions.js';
 import { fieldSchemaKey, visibleConnectorSchemaFields } from '../src/ui-react/automate/flow-dynamic-schema.js';
@@ -36,101 +31,105 @@ const ACTION_SNIPPET_EXPECTATIONS: SnippetExpectation[] = [
   { label: 'pa:foreach action', defaultName: 'Apply_to_each', operationName: 'Foreach', operationType: 'Foreach' },
   { label: 'pa:http action', defaultName: 'HTTP', operationName: 'Http', operationType: 'Http' },
   { label: 'pa:initialize variable', defaultName: 'Initialize_variable', operationName: 'InitializeVariable', operationType: 'InitializeVariable' },
-  { label: 'pa:set variable', defaultName: 'Set_variable', operationName: 'SetVariable', operationType: 'SetVariable' },
+  { label: 'pa:set variable', defaultName: 'Set_variable', operationName: 'SetVariable', operationType: 'SetVariable' }
 ];
 
-const RICH_COMPLETION_FLOW = JSON.stringify({
-  definition: {
-    parameters: {
-      targetValue: { type: 'String' },
-      threshold: { type: 'Int' },
-    },
-    triggers: {
-      manual: {
-        type: 'Request',
-        inputs: {},
+const RICH_COMPLETION_FLOW = JSON.stringify(
+  {
+    definition: {
+      parameters: {
+        targetValue: { type: 'String' },
+        threshold: { type: 'Int' }
       },
-      Recurrence: {
-        type: 'Recurrence',
-        recurrence: {
-          frequency: 'Day',
-          interval: 1,
+      triggers: {
+        manual: {
+          type: 'Request',
+          inputs: {}
         },
+        Recurrence: {
+          type: 'Recurrence',
+          recurrence: {
+            frequency: 'Day',
+            interval: 1
+          }
+        }
       },
-    },
-    actions: {
-      InitCounter: {
-        type: 'InitializeVariable',
-        inputs: {
-          variables: [
-            {
-              name: 'counter',
-              type: 'integer',
-              value: 0,
-            },
-          ],
-        },
-        runAfter: {},
-      },
-      InitText: {
-        type: 'InitializeVariable',
-        inputs: {
-          variables: [
-            {
-              name: 'messageText',
-              type: 'string',
-              value: '',
-            },
-          ],
-        },
-        runAfter: {
-          InitCounter: ['Succeeded'],
-        },
-      },
-      PrepareValue: {
-        type: 'Compose',
-        inputs: 12,
-        runAfter: {
-          InitText: ['Succeeded'],
-        },
-      },
-      For_each_record: {
-        type: 'Foreach',
-        foreach: "@triggerBody()?['records']",
-        actions: {
-          Compose_inside_loop: {
-            type: 'Compose',
-            inputs: "@items('For_each_record')",
-            runAfter: {},
+      actions: {
+        InitCounter: {
+          type: 'InitializeVariable',
+          inputs: {
+            variables: [
+              {
+                name: 'counter',
+                type: 'integer',
+                value: 0
+              }
+            ]
           },
+          runAfter: {}
         },
-        runAfter: {
-          PrepareValue: ['Succeeded'],
-        },
-      },
-      Scope_Group: {
-        type: 'Scope',
-        actions: {
-          ScopedCompose: {
-            type: 'Compose',
-            inputs: "@body('PrepareValue')",
-            runAfter: {},
+        InitText: {
+          type: 'InitializeVariable',
+          inputs: {
+            variables: [
+              {
+                name: 'messageText',
+                type: 'string',
+                value: ''
+              }
+            ]
           },
+          runAfter: {
+            InitCounter: ['Succeeded']
+          }
         },
-        runAfter: {
-          For_each_record: ['Succeeded'],
+        PrepareValue: {
+          type: 'Compose',
+          inputs: 12,
+          runAfter: {
+            InitText: ['Succeeded']
+          }
         },
-      },
-      UseAction: {
-        type: 'Compose',
-        inputs: "@{concat(outputs('PrepareValue'), variables('counter'))}",
-        runAfter: {
-          Scope_Group: ['Succeeded'],
+        For_each_record: {
+          type: 'Foreach',
+          foreach: "@triggerBody()?['records']",
+          actions: {
+            Compose_inside_loop: {
+              type: 'Compose',
+              inputs: "@items('For_each_record')",
+              runAfter: {}
+            }
+          },
+          runAfter: {
+            PrepareValue: ['Succeeded']
+          }
         },
-      },
-    },
+        Scope_Group: {
+          type: 'Scope',
+          actions: {
+            ScopedCompose: {
+              type: 'Compose',
+              inputs: "@body('PrepareValue')",
+              runAfter: {}
+            }
+          },
+          runAfter: {
+            For_each_record: ['Succeeded']
+          }
+        },
+        UseAction: {
+          type: 'Compose',
+          inputs: "@{concat(outputs('PrepareValue'), variables('counter'))}",
+          runAfter: {
+            Scope_Group: ['Succeeded']
+          }
+        }
+      }
+    }
   },
-}, null, 2);
+  null,
+  2
+);
 
 const DATAVERSE_CONNECTION: FlowEnvironmentConnection = {
   name: 'shared-commondataser-da8725a8',
@@ -138,7 +137,7 @@ const DATAVERSE_CONNECTION: FlowEnvironmentConnection = {
   displayName: 'callum@example.test',
   apiName: 'shared_commondataserviceforapps',
   apiId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
-  status: 'Connected',
+  status: 'Connected'
 };
 
 function builtInOperation(name: string, operationType: string): FlowApiOperation {
@@ -146,7 +145,7 @@ function builtInOperation(name: string, operationType: string): FlowApiOperation
     name,
     operationType,
     isBuiltIn: true,
-    hasConnectorSchema: false,
+    hasConnectorSchema: false
   };
 }
 
@@ -157,9 +156,7 @@ function snippetByLabel(label: string): FlowCodeSnippet {
 }
 
 function normalizeSnippetPlaceholders(text: string): string {
-  return text
-    .replace(/\$\{\d+:([^}]*)\}/g, '$1')
-    .replace(/\$\{\d+\}/g, '');
+  return text.replace(/\$\{\d+:([^}]*)\}/g, '$1').replace(/\$\{\d+\}/g, '');
 }
 
 function parseSnippetDefaultJson(snippet: FlowCodeSnippet): Record<string, unknown> {
@@ -174,7 +171,11 @@ function expectCompletion(items: FlowCompletionItem[], label: string, type?: Flo
 }
 
 function rejectCompletion(items: FlowCompletionItem[], label: string): void {
-  assert.equal(items.some((item) => item.label === label), false, `did not expect completion ${label}`);
+  assert.equal(
+    items.some((item) => item.label === label),
+    false,
+    `did not expect completion ${label}`
+  );
 }
 
 function labels(items: FlowCompletionItem[]): string[] {
@@ -182,88 +183,90 @@ function labels(items: FlowCompletionItem[]): string[] {
 }
 
 function connectorFlow(parameters: Record<string, unknown>): string {
-  return JSON.stringify({
-    properties: {
-      connectionReferences: {
-        shared_sharepointonline: {
-          api: {
-            id: '/providers/Microsoft.PowerApps/apis/shared_sharepointonline',
-            name: 'shared_sharepointonline',
-          },
-          connection: {
-            name: '/providers/Microsoft.PowerApps/apis/shared-sharepointonline-1',
-          },
-        },
-      },
-      definition: {
-        triggers: {
-          manual: {
-            type: 'Request',
-            inputs: {},
-          },
-        },
-        actions: {
-          Get_items: {
-            type: 'OpenApiConnection',
-            inputs: {
-              host: {
-                connectionReferenceName: 'shared_sharepointonline',
-                operationId: 'GetItems',
-              },
-              parameters,
+  return JSON.stringify(
+    {
+      properties: {
+        connectionReferences: {
+          shared_sharepointonline: {
+            api: {
+              id: '/providers/Microsoft.PowerApps/apis/shared_sharepointonline',
+              name: 'shared_sharepointonline'
             },
-            runAfter: {},
-          },
+            connection: {
+              name: '/providers/Microsoft.PowerApps/apis/shared-sharepointonline-1'
+            }
+          }
         },
-      },
+        definition: {
+          triggers: {
+            manual: {
+              type: 'Request',
+              inputs: {}
+            }
+          },
+          actions: {
+            Get_items: {
+              type: 'OpenApiConnection',
+              inputs: {
+                host: {
+                  connectionReferenceName: 'shared_sharepointonline',
+                  operationId: 'GetItems'
+                },
+                parameters
+              },
+              runAfter: {}
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 }
 
-function liveConnectorFlow(input: {
-  apiName: string;
-  apiId: string;
-  connectionName: string;
-  operationId: string;
-  parameters: Record<string, unknown>;
-}): string {
-  return JSON.stringify({
-    properties: {
-      connectionReferences: {
-        [input.apiName]: {
-          connectionName: input.connectionName,
-          api: {
-            name: input.apiName,
-            id: input.apiId,
-          },
-          connection: {
-            name: input.connectionName,
-          },
-        },
-      },
-      definition: {
-        triggers: {
-          manual: {
-            type: 'Request',
-            inputs: {},
-          },
-        },
-        actions: {
-          List_rows: {
-            type: 'OpenApiConnection',
-            inputs: {
-              host: {
-                connectionReferenceName: input.apiName,
-                operationId: input.operationId,
-              },
-              parameters: input.parameters,
+function liveConnectorFlow(input: { apiName: string; apiId: string; connectionName: string; operationId: string; parameters: Record<string, unknown> }): string {
+  return JSON.stringify(
+    {
+      properties: {
+        connectionReferences: {
+          [input.apiName]: {
+            connectionName: input.connectionName,
+            api: {
+              name: input.apiName,
+              id: input.apiId
             },
-            runAfter: {},
-          },
+            connection: {
+              name: input.connectionName
+            }
+          }
         },
-      },
+        definition: {
+          triggers: {
+            manual: {
+              type: 'Request',
+              inputs: {}
+            }
+          },
+          actions: {
+            List_rows: {
+              type: 'OpenApiConnection',
+              inputs: {
+                host: {
+                  connectionReferenceName: input.apiName,
+                  operationId: input.operationId
+                },
+                parameters: input.parameters
+              },
+              runAfter: {}
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 }
 
 function schemaEntryFor(source: string, fields: FlowApiOperationSchemaField[], options: FlowEditorSchemaActionEntry['options']): FlowEditorSchemaActionEntry {
@@ -276,11 +279,11 @@ function schemaEntryFor(source: string, fields: FlowApiOperationSchemaField[], o
       apiId: '/providers/Microsoft.PowerApps/apis/shared_sharepointonline',
       apiName: 'shared_sharepointonline',
       operationId: 'GetItems',
-      fields,
+      fields
     },
     fields,
     options,
-    status: 'ready',
+    status: 'ready'
   };
 }
 
@@ -318,14 +321,16 @@ function outputFieldsFromSchema(schema: unknown): FlowApiOperationSchemaField[] 
   const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : {};
   return Object.entries(properties).flatMap(([name, property]) => {
     if (!isRecord(property)) return [];
-    return [{
-      name,
-      location: 'output' as const,
-      type: typeof property.type === 'string' ? property.type : undefined,
-      title: firstString(property['x-ms-summary'], property.title),
-      description: typeof property.description === 'string' ? property.description : undefined,
-      schema: property,
-    }];
+    return [
+      {
+        name,
+        location: 'output' as const,
+        type: typeof property.type === 'string' ? property.type : undefined,
+        title: firstString(property['x-ms-summary'], property.title),
+        description: typeof property.description === 'string' ? property.description : undefined,
+        schema: property
+      }
+    ];
   });
 }
 
@@ -346,7 +351,7 @@ function normalizeDynamicInvocationDefinitionForSmoke(source: Record<string, unk
 
   const result: Record<string, unknown> = {
     ...(operationId ? { operationId } : {}),
-    parameters,
+    parameters
   };
   const itemsPath = firstString(source.itemsPath, source['value-collection'], source.valueCollection, source.collection);
   const itemValuePath = firstString(source.itemValuePath, source['value-path'], source.valuePath, source.value);
@@ -375,29 +380,25 @@ function apiNameFromOperation(operation: unknown): string | undefined {
   return match?.[1] || id;
 }
 
-async function liveRequest<T>(
-  api: 'flow' | 'powerapps' | 'powerautomate',
-  path: string,
-  options: { method?: string; body?: unknown; query?: Record<string, string> } = {},
-): Promise<T> {
+async function liveRequest<T>(api: 'flow' | 'powerapps' | 'powerautomate', path: string, options: { method?: string; body?: unknown; query?: Record<string, string> } = {}): Promise<T> {
   const environmentAlias = process.env.PP_FLOW_COMPLETIONS_ENV || 'test-dev';
   const { executeApiRequest } = await import('../src/services/api.js');
-  const result = await executeApiRequest({
-    environmentAlias,
-    api,
-    path,
-    method: options.method || 'GET',
-    body: options.body,
-    query: options.query,
-    responseType: 'json',
-    readIntent: true,
-  }, {}, { allowInteractive: process.env.PP_FLOW_COMPLETIONS_NO_INTERACTIVE === '1' ? false : true });
-
-  assert.equal(
-    result.success,
-    true,
-    result.diagnostics.map((diagnostic) => `${diagnostic.code || diagnostic.level}: ${diagnostic.message}`).join('\n'),
+  const result = await executeApiRequest(
+    {
+      environmentAlias,
+      api,
+      path,
+      method: options.method || 'GET',
+      body: options.body,
+      query: options.query,
+      responseType: 'json',
+      readIntent: true
+    },
+    {},
+    { allowInteractive: process.env.PP_FLOW_COMPLETIONS_NO_INTERACTIVE === '1' ? false : true }
   );
+
+  assert.equal(result.success, true, result.diagnostics.map((diagnostic) => `${diagnostic.code || diagnostic.level}: ${diagnostic.message}`).join('\n'));
   assert.ok(result.data);
   return result.data.response as T;
 }
@@ -411,12 +412,16 @@ test('Power Automate action snippets parse as JSON and match Add Action built-in
     const builtIn = buildBuiltInAction(builtInOperation(expectation.operationName, expectation.operationType));
 
     assert.ok(builtIn, `${expectation.label} should map to a built-in template`);
-    assert.deepEqual(parsed, {
-      [expectation.defaultName]: {
-        ...builtIn,
-        runAfter: {},
+    assert.deepEqual(
+      parsed,
+      {
+        [expectation.defaultName]: {
+          ...builtIn,
+          runAfter: {}
+        }
       },
-    }, `${expectation.label} should normalize to the same action draft as Add Action`);
+      `${expectation.label} should normalize to the same action draft as Add Action`
+    );
   }
 });
 
@@ -458,7 +463,7 @@ test('expression completions expose the WDL functions used by flow and modal edi
     'length()',
     'json()',
     'utcNow()',
-    'formatDateTime()',
+    'formatDateTime()'
   ];
 
   for (const label of expectedFunctions) {
@@ -574,13 +579,10 @@ test('expression completion context parsing is shared across target names and ac
 });
 
 test('expression completions filter prefixes and stay quiet inside string literals', () => {
-  assert.deepEqual(labels(completeFlowExpression(RICH_COMPLETION_FLOW, 'trig')).sort(), [
-    'trigger()',
-    'triggerBody()',
-    'triggerFormDataMultiValues()',
-    'triggerFormDataValue()',
-    'triggerOutputs()',
-  ].sort());
+  assert.deepEqual(
+    labels(completeFlowExpression(RICH_COMPLETION_FLOW, 'trig')).sort(),
+    ['trigger()', 'triggerBody()', 'triggerFormDataMultiValues()', 'triggerFormDataValue()', 'triggerOutputs()'].sort()
+  );
 
   assert.deepEqual(labels(completeFlowExpression(RICH_COMPLETION_FLOW, 'utc')), ['utcNow()']);
   assert.deepEqual(completeFlowExpression(RICH_COMPLETION_FLOW, "concat('tri"), []);
@@ -589,48 +591,60 @@ test('expression completions filter prefixes and stay quiet inside string litera
 });
 
 test('flow JSON analysis completions cover root keys, action keys, runAfter targets, type values, and inline expressions', () => {
-  const rootKeySource = JSON.stringify({
-    trig: {},
-  }, null, 2);
+  const rootKeySource = JSON.stringify(
+    {
+      trig: {}
+    },
+    null,
+    2
+  );
   const rootCompletions = analyzeFlow(rootKeySource, rootKeySource.indexOf('"trig"') + 4).completions;
   for (const label of ['actions', 'triggers', 'parameters', 'outputs']) {
     expectCompletion(rootCompletions, label, 'property');
   }
 
-  const actionKeySource = JSON.stringify({
-    definition: {
-      actions: {
-        Compose: {
-          type: 'Compose',
-          inp: '',
-          runAfter: {},
-        },
-      },
+  const actionKeySource = JSON.stringify(
+    {
+      definition: {
+        actions: {
+          Compose: {
+            type: 'Compose',
+            inp: '',
+            runAfter: {}
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
   const actionKeyCompletions = analyzeFlow(actionKeySource, actionKeySource.indexOf('"inp"') + 3).completions;
   for (const label of ['type', 'inputs', 'runAfter', 'actions', 'else', 'expression', 'runtimeConfiguration']) {
     expectCompletion(actionKeyCompletions, label, 'property');
   }
 
-  const runAfterSource = JSON.stringify({
-    definition: {
-      actions: {
-        First: {
-          type: 'Compose',
-          inputs: '',
-          runAfter: {},
-        },
-        Second: {
-          type: 'Compose',
-          inputs: '',
-          runAfter: {
-            '': [],
+  const runAfterSource = JSON.stringify(
+    {
+      definition: {
+        actions: {
+          First: {
+            type: 'Compose',
+            inputs: '',
+            runAfter: {}
           },
-        },
-      },
+          Second: {
+            type: 'Compose',
+            inputs: '',
+            runAfter: {
+              '': []
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
   const runAfterCursor = runAfterSource.indexOf('"": []') + 1;
   const runAfterCompletions = analyzeFlow(runAfterSource, runAfterCursor).completions;
   expectCompletion(runAfterCompletions, 'First', 'action');
@@ -639,39 +653,47 @@ test('flow JSON analysis completions cover root keys, action keys, runAfter targ
     expectCompletion(runAfterCompletions, status, 'value');
   }
 
-  const runAfterStatusSource = JSON.stringify({
-    definition: {
-      actions: {
-        First: {
-          type: 'Compose',
-          inputs: '',
-          runAfter: {},
-        },
-        Second: {
-          type: 'Compose',
-          inputs: '',
-          runAfter: {
-            First: ['Suc'],
+  const runAfterStatusSource = JSON.stringify(
+    {
+      definition: {
+        actions: {
+          First: {
+            type: 'Compose',
+            inputs: '',
+            runAfter: {}
           },
-        },
-      },
+          Second: {
+            type: 'Compose',
+            inputs: '',
+            runAfter: {
+              First: ['Suc']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
   const runAfterStatusCompletions = analyzeFlow(runAfterStatusSource, runAfterStatusSource.indexOf('"Suc"') + 4).completions;
   expectCompletion(runAfterStatusCompletions, 'Succeeded', 'value');
   expectCompletion(runAfterStatusCompletions, 'Failed', 'value');
 
-  const typeValueSource = JSON.stringify({
-    definition: {
-      actions: {
-        Draft: {
-          type: 'Com',
-          inputs: '',
-          runAfter: {},
-        },
-      },
+  const typeValueSource = JSON.stringify(
+    {
+      definition: {
+        actions: {
+          Draft: {
+            type: 'Com',
+            inputs: '',
+            runAfter: {}
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
   const typeValueCompletions = analyzeFlow(typeValueSource, typeValueSource.indexOf('"Com"') + 4).completions;
   for (const label of ['Compose', 'OpenApiConnection', 'ApiConnection', 'Http', 'InitializeVariable', 'SetVariable']) {
     expectCompletion(typeValueCompletions, label, 'value');
@@ -691,7 +713,7 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
     required: true,
     type: 'string',
     title: 'Site Address',
-    description: 'SharePoint site URL.',
+    description: 'SharePoint site URL.'
   };
   const tableField: FlowApiOperationSchemaField = {
     name: 'table',
@@ -700,14 +722,14 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
     required: true,
     type: 'string',
     title: 'List Name',
-    enum: ['Plain', 'List "A"', 'Folder\\Archive'],
+    enum: ['Plain', 'List "A"', 'Folder\\Archive']
   };
   const queryField: FlowApiOperationSchemaField = {
     name: '$filter',
     location: 'parameter',
     path: ['inputs', 'parameters', '$filter'],
     type: 'string',
-    title: 'Filter Query',
+    title: 'Filter Query'
   };
 
   const source = connectorFlow({ dataset: 'https://contoso.sharepoint.com/sites/Team', tab: '' });
@@ -715,13 +737,13 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
     [fieldSchemaKey(datasetField)]: [
       {
         value: 'https://contoso.sharepoint.com/sites/Team',
-        title: 'Team Site',
+        title: 'Team Site'
       },
       {
         value: 'https://contoso.sharepoint.com/sites/"Quoted"\\Archive',
-        title: 'Quoted Archive',
-      },
-    ],
+        title: 'Quoted Archive'
+      }
+    ]
   });
   const index = buildFlowEditorSchemaIndex([entry], false);
 
@@ -729,7 +751,11 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
   const keyCompletions = flowEditorSchemaCompletionItems(source.indexOf('"tab"') + 4, keyAnalysis, index);
   assert.ok(keyCompletions.some((item) => item.label === 'table' && item.kind === 'property'));
   assert.ok(keyCompletions.some((item) => item.label === '$filter' && item.kind === 'property'));
-  assert.equal(keyCompletions.some((item) => item.label === 'dataset'), false, 'already-filled fields should not be suggested again');
+  assert.equal(
+    keyCompletions.some((item) => item.label === 'dataset'),
+    false,
+    'already-filled fields should not be suggested again'
+  );
   assert.equal(keyCompletions[0]?.label, 'table', 'required schema fields should rank before optional fields');
 
   const tableValueSource = connectorFlow({ dataset: 'https://contoso.sharepoint.com/sites/Team', table: 'Lis' });
@@ -747,47 +773,42 @@ test('connector schema completions use loaded modal-style fields and dynamic opt
 });
 
 test('connector operation normalization preserves output response schemas for expression accessors', () => {
-  const schema = normalizeFlowApiOperationSchema(
-    'shared_commondataserviceforapps',
-    '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
-    'ListRecords',
-    {
-      name: 'ListRecords',
-      properties: {
-        summary: 'List rows',
-        inputsDefinition: {
-          parameters: {
-            entityName: { type: 'string', required: true },
-          },
-        },
-        responsesDefinition: {
-          200: {
-            type: 'object',
-            properties: {
-              body: {
-                type: 'object',
-                properties: {
-                  value: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      'x-ms-dynamic-properties': {
-                        operationId: 'GetMetadataForGetEntity',
-                        parameters: {
-                          entityName: { parameterReference: 'entityName', required: true },
-                        },
-                        itemValuePath: 'schema',
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+  const schema = normalizeFlowApiOperationSchema('shared_commondataserviceforapps', '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps', 'ListRecords', {
+    name: 'ListRecords',
+    properties: {
+      summary: 'List rows',
+      inputsDefinition: {
+        parameters: {
+          entityName: { type: 'string', required: true }
+        }
       },
-    },
-  );
+      responsesDefinition: {
+        200: {
+          type: 'object',
+          properties: {
+            body: {
+              type: 'object',
+              properties: {
+                value: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    'x-ms-dynamic-properties': {
+                      operationId: 'GetMetadataForGetEntity',
+                      parameters: {
+                        entityName: { parameterReference: 'entityName', required: true }
+                      },
+                      itemValuePath: 'schema'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
 
   assert.ok(schema);
   assert.equal(schema.responses?.[0]?.statusCode, '200');
@@ -796,38 +817,42 @@ test('connector operation normalization preserves output response schemas for ex
 });
 
 test('connection-aware completions suggest connector host keys and values from the flow connection model', () => {
-  const source = JSON.stringify({
-    properties: {
-      connectionReferences: {
-        shared_commondataserviceforapps: {
-          connectionName: DATAVERSE_CONNECTION.name,
-          api: {
-            name: 'shared_commondataserviceforapps',
-            id: DATAVERSE_CONNECTION.apiId,
-            displayName: 'Microsoft Dataverse',
-          },
+  const source = JSON.stringify(
+    {
+      properties: {
+        connectionReferences: {
+          shared_commondataserviceforapps: {
+            connectionName: DATAVERSE_CONNECTION.name,
+            api: {
+              name: 'shared_commondataserviceforapps',
+              id: DATAVERSE_CONNECTION.apiId,
+              displayName: 'Microsoft Dataverse'
+            }
+          }
         },
-      },
-      definition: {
-        actions: {
-          List_rows: {
-            type: 'OpenApiConnection',
-            inputs: {
-              host: {
-                connectionReferenceName: 'shared_commondataserviceforapps',
-                operationId: 'ListRecords',
-                con: '',
+        definition: {
+          actions: {
+            List_rows: {
+              type: 'OpenApiConnection',
+              inputs: {
+                host: {
+                  connectionReferenceName: 'shared_commondataserviceforapps',
+                  operationId: 'ListRecords',
+                  con: ''
+                },
+                parameters: {
+                  entityName: 'accounts'
+                }
               },
-              parameters: {
-                entityName: 'accounts',
-              },
-            },
-            runAfter: {},
-          },
-        },
-      },
+              runAfter: {}
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
   const model = buildFlowConnectionModel(source, [DATAVERSE_CONNECTION]);
 
   const keyCursor = source.indexOf('"con"') + 4;
@@ -847,212 +872,235 @@ test('connection-aware completions suggest connector host keys and values from t
   assert.ok(operationCompletions.some((item) => item.label === 'ListRecords' && item.detail?.includes('Operation id')));
 });
 
-test('live flow API metadata drives the same completions as the editor schema index', {
-  skip: process.env.PP_FLOW_COMPLETIONS_LIVE === '1'
-    ? false
-    : 'set PP_FLOW_COMPLETIONS_LIVE=1 to run against a configured Power Platform environment',
-}, async () => {
-  const composeCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
-    method: 'POST',
-    query: { '$top': '25' },
-    body: buildFlowOperationSearchBody('Compose', 'action'),
-  });
-  const composeOperation = valueArray(composeCatalog).find((operation) => firstString(readPath(operation, 'name')) === 'Compose');
-  assert.ok(composeOperation, 'the live operation catalog should expose the built-in Compose action');
-  const composeOperationType = firstString(readPath(composeOperation, 'properties.operationType'));
-  assert.ok(composeOperationType);
-  assert.notEqual(composeOperationType, 'OpenApiConnection');
-  assert.notEqual(composeOperationType, 'ApiConnection');
-  assert.deepEqual(parseSnippetDefaultJson(snippetByLabel('pa:compose action')), {
-    Compose: {
-      ...buildBuiltInAction(builtInOperation('Compose', composeOperationType)),
-      runAfter: {},
-    },
-  });
+test(
+  'live flow API metadata drives the same completions as the editor schema index',
+  {
+    skip: process.env.PP_FLOW_COMPLETIONS_LIVE === '1' ? false : 'set PP_FLOW_COMPLETIONS_LIVE=1 to run against a configured Power Platform environment'
+  },
+  async () => {
+    const composeCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
+      method: 'POST',
+      query: { $top: '25' },
+      body: buildFlowOperationSearchBody('Compose', 'action')
+    });
+    const composeOperation = valueArray(composeCatalog).find((operation) => firstString(readPath(operation, 'name')) === 'Compose');
+    assert.ok(composeOperation, 'the live operation catalog should expose the built-in Compose action');
+    const composeOperationType = firstString(readPath(composeOperation, 'properties.operationType'));
+    assert.ok(composeOperationType);
+    assert.notEqual(composeOperationType, 'OpenApiConnection');
+    assert.notEqual(composeOperationType, 'ApiConnection');
+    assert.deepEqual(parseSnippetDefaultJson(snippetByLabel('pa:compose action')), {
+      Compose: {
+        ...buildBuiltInAction(builtInOperation('Compose', composeOperationType)),
+        runAfter: {}
+      }
+    });
 
-  const dataverseCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
-    method: 'POST',
-    query: { '$top': '25' },
-    body: buildFlowOperationSearchBody('Dataverse List rows', 'action'),
-  });
-  const listRowsOperation = valueArray(dataverseCatalog).find((operation) => {
-    return firstString(readPath(operation, 'name')) === 'ListRecords'
-      && firstString(readPath(operation, 'properties.operationType')) === 'OpenApiConnection';
-  });
-  assert.ok(listRowsOperation, 'the live operation catalog should expose Dataverse List rows');
+    const dataverseCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
+      method: 'POST',
+      query: { $top: '25' },
+      body: buildFlowOperationSearchBody('Dataverse List rows', 'action')
+    });
+    const listRowsOperation = valueArray(dataverseCatalog).find((operation) => {
+      return firstString(readPath(operation, 'name')) === 'ListRecords' && firstString(readPath(operation, 'properties.operationType')) === 'OpenApiConnection';
+    });
+    assert.ok(listRowsOperation, 'the live operation catalog should expose Dataverse List rows');
 
-  const operationId = firstString(readPath(listRowsOperation, 'name'));
-  const apiName = apiNameFromOperation(listRowsOperation);
-  assert.equal(operationId, 'ListRecords');
-  assert.ok(apiName);
-  const apiId = `/providers/Microsoft.PowerApps/apis/${apiName}`;
+    const operationId = firstString(readPath(listRowsOperation, 'name'));
+    const apiName = apiNameFromOperation(listRowsOperation);
+    assert.equal(operationId, 'ListRecords');
+    assert.ok(apiName);
+    const apiId = `/providers/Microsoft.PowerApps/apis/${apiName}`;
 
-  const rawConnector = await liveRequest<unknown>('flow', `/apis/${apiName}`);
-  const schema = normalizeFlowApiOperationSchema(apiName, apiId, operationId, rawConnector);
-  assert.ok(schema, 'the live connector swagger should normalize to an operation schema');
-  const fields = visibleConnectorSchemaFields(schema.fields);
-  const apiFieldNames = new Set(fields.map((field) => field.name));
-  for (const fieldName of ['entityName', '$select', '$filter', '$top']) {
-    assert.equal(apiFieldNames.has(fieldName), true, `live ListRows schema should include ${fieldName}`);
-  }
+    const rawConnector = await liveRequest<unknown>('flow', `/apis/${apiName}`);
+    const schema = normalizeFlowApiOperationSchema(apiName, apiId, operationId, rawConnector);
+    assert.ok(schema, 'the live connector swagger should normalize to an operation schema');
+    const fields = visibleConnectorSchemaFields(schema.fields);
+    const apiFieldNames = new Set(fields.map((field) => field.name));
+    for (const fieldName of ['entityName', '$select', '$filter', '$top']) {
+      assert.equal(apiFieldNames.has(fieldName), true, `live ListRows schema should include ${fieldName}`);
+    }
 
-  const connections = await liveRequest<{ value?: unknown[] }>('powerapps', '/connections?$filter=environment%20eq%20%27{environment}%27', {
-    query: { '$top': '100' },
-  });
-  const matchingConnection = valueArray(connections).find((connection) => {
-    const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';
-    return id.includes(`/apis/${apiName}/`) || id.endsWith(`/apis/${apiName}`);
-  });
-  assert.ok(matchingConnection, `the live environment should have a connection for ${apiName}`);
-  const connectionName = firstString(readPath(matchingConnection, 'name')) || '';
-  assert.ok(connectionName);
+    const connections = await liveRequest<{ value?: unknown[] }>('powerapps', '/connections?$filter=environment%20eq%20%27{environment}%27', {
+      query: { $top: '100' }
+    });
+    const matchingConnection = valueArray(connections).find((connection) => {
+      const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';
+      return id.includes(`/apis/${apiName}/`) || id.endsWith(`/apis/${apiName}`);
+    });
+    assert.ok(matchingConnection, `the live environment should have a connection for ${apiName}`);
+    const connectionName = firstString(readPath(matchingConnection, 'name')) || '';
+    assert.ok(connectionName);
 
-  const source = liveConnectorFlow({
-    apiName,
-    apiId,
-    connectionName,
-    operationId,
-    parameters: {
-      enti: '',
-      '$select': '',
-    },
-  });
-  const cursor = source.indexOf('"enti"') + 5;
-  const analysis = analyzeFlow(source, cursor);
-  const target = collectFlowEditorSchemaTargets(source, analysis)[0];
-  assert.ok(target);
-  assert.equal(target.operationRef.apiName, apiName);
-  assert.equal(target.operationRef.operationId, operationId);
-  assert.equal(target.operationRef.connectionName, connectionName);
+    const source = liveConnectorFlow({
+      apiName,
+      apiId,
+      connectionName,
+      operationId,
+      parameters: {
+        enti: '',
+        $select: ''
+      }
+    });
+    const cursor = source.indexOf('"enti"') + 5;
+    const analysis = analyzeFlow(source, cursor);
+    const target = collectFlowEditorSchemaTargets(source, analysis)[0];
+    assert.ok(target);
+    assert.equal(target.operationRef.apiName, apiName);
+    assert.equal(target.operationRef.operationId, operationId);
+    assert.equal(target.operationRef.connectionName, connectionName);
 
-  const index = buildFlowEditorSchemaIndex([{
-    ...target,
-    schema,
-    fields,
-    options: {},
-    status: 'ready',
-  }], false);
-  const completions = flowEditorSchemaCompletionItems(cursor, analysis, index);
-  assert.ok(completions.some((item) => item.label === 'entityName' && item.kind === 'property'));
-  assert.ok(completions.some((item) => item.label === '$filter' && item.kind === 'property'));
-  assert.ok(completions.some((item) => item.label === '$top' && item.kind === 'property'));
-  assert.equal(completions.some((item) => item.label === '$select'), false, 'existing live API fields should not be suggested again');
+    const index = buildFlowEditorSchemaIndex(
+      [
+        {
+          ...target,
+          schema,
+          fields,
+          options: {},
+          status: 'ready'
+        }
+      ],
+      false
+    );
+    const completions = flowEditorSchemaCompletionItems(cursor, analysis, index);
+    assert.ok(completions.some((item) => item.label === 'entityName' && item.kind === 'property'));
+    assert.ok(completions.some((item) => item.label === '$filter' && item.kind === 'property'));
+    assert.ok(completions.some((item) => item.label === '$top' && item.kind === 'property'));
+    assert.equal(
+      completions.some((item) => item.label === '$select'),
+      false,
+      'existing live API fields should not be suggested again'
+    );
 
-  const dynamicOutputSchema = firstRecord(
-    readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items.x-ms-dynamic-properties'),
-    readPath(schema.responses?.[0]?.schema, 'properties.value.items.x-ms-dynamic-properties'),
-  );
-  const outputItemSchema = firstRecord(
-    readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items'),
-    readPath(schema.responses?.[0]?.schema, 'properties.value.items'),
-  );
-  assert.ok(isRecord(dynamicOutputSchema), 'live ListRows response should expose dynamic row output metadata');
-  assert.ok(isRecord(outputItemSchema), 'live ListRows response should expose a row item schema');
-  const dynamicInvocationDefinition = normalizeDynamicInvocationDefinitionForSmoke(dynamicOutputSchema);
-  const dynamicInvocationSourceParameters = {
-    entityName: 'accounts',
-    '$select': 'accountid,name',
-  };
-  const liveOutputSchema = await liveRequest<unknown>(
-    'powerautomate',
-    `/apis/${apiName}/connections/${encodeURIComponent(connectionName)}/listDynamicProperties`,
-    {
+    const dynamicOutputSchema = firstRecord(
+      readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items.x-ms-dynamic-properties'),
+      readPath(schema.responses?.[0]?.schema, 'properties.value.items.x-ms-dynamic-properties')
+    );
+    const outputItemSchema = firstRecord(readPath(schema.responses?.[0]?.schema, 'properties.body.properties.value.items'), readPath(schema.responses?.[0]?.schema, 'properties.value.items'));
+    assert.ok(isRecord(dynamicOutputSchema), 'live ListRows response should expose dynamic row output metadata');
+    assert.ok(isRecord(outputItemSchema), 'live ListRows response should expose a row item schema');
+    const dynamicInvocationDefinition = normalizeDynamicInvocationDefinitionForSmoke(dynamicOutputSchema);
+    const dynamicInvocationSourceParameters = {
+      entityName: 'accounts',
+      $select: 'accountid,name'
+    };
+    const liveOutputSchema = await liveRequest<unknown>('powerautomate', `/apis/${apiName}/connections/${encodeURIComponent(connectionName)}/listDynamicProperties`, {
       method: 'POST',
       body: {
         parameters: dynamicInvocationParametersForSmoke(dynamicInvocationDefinition, dynamicInvocationSourceParameters),
         contextParameterAlias: 'body/value',
         dynamicInvocationDefinition,
-        location: 'output',
-      },
-    },
-  );
-  const dynamicOutputFields = outputFieldsFromSchema(liveOutputSchema);
-  const dynamicOutputNames = fieldNames(dynamicOutputFields);
-  assert.equal(dynamicOutputNames.has('accountid'), true, 'live dynamic ListRows output schema should include accountid');
-  assert.equal(dynamicOutputNames.has('name'), true, 'live dynamic ListRows output schema should include name');
-
-  const outputSource = liveConnectorFlow({
-    apiName,
-    apiId,
-    connectionName,
-    operationId,
-    parameters: {
-      entityName: 'accounts',
-      '$select': 'accountid,name',
-    },
-  });
-  const outputAnalysis = analyzeFlow(outputSource, outputSource.indexOf('"entityName"') + 5);
-  const outputTarget = collectFlowEditorSchemaTargets(outputSource, outputAnalysis)[0];
-  assert.ok(outputTarget);
-  const outputIndex = buildFlowEditorSchemaIndex([{
-    ...outputTarget,
-    schema,
-    fields,
-    options: {},
-    outputFields: {
-      'body/value': dynamicOutputFields,
-    },
-    status: 'ready',
-  }], false);
-  const bodyAccessor = "@body('List_rows')?['value']?['";
-  const bodyAccessorCompletions = flowEditorExpressionSchemaCompletionItems(bodyAccessor, bodyAccessor.length, outputIndex);
-  assert.equal(bodyAccessorCompletions.some((item) => item.label === 'accountid'), true, 'body() accessor completions should include live dynamic accountid');
-  assert.equal(bodyAccessorCompletions.some((item) => item.label === 'name'), true, 'body() accessor completions should include live dynamic name');
-
-  const outputsAccessor = "@outputs('List_rows')?['body']?['value']?['";
-  const outputsAccessorCompletions = flowEditorExpressionSchemaCompletionItems(outputsAccessor, outputsAccessor.length, outputIndex);
-  assert.equal(outputsAccessorCompletions.some((item) => item.label === 'accountid'), true, 'outputs() accessor completions should include live dynamic accountid');
-  assert.equal(outputsAccessorCompletions.some((item) => item.label === 'name'), true, 'outputs() accessor completions should include live dynamic name');
-
-  const officeConnection = valueArray(connections).find((connection) => {
-    const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';
-    return id.includes('/apis/shared_office365users/');
-  });
-  if (officeConnection) {
-    const officeCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
-      method: 'POST',
-      query: { '$top': '25' },
-      body: buildFlowOperationSearchBody('Office 365 Users', 'action'),
+        location: 'output'
+      }
     });
-    const officeOperation = valueArray(officeCatalog).find((operation) => {
-      return apiNameFromOperation(operation) === 'shared_office365users'
-        && firstString(readPath(operation, 'properties.operationType')) === 'OpenApiConnection';
-    });
-    assert.ok(officeOperation, 'the live operation catalog should expose at least one Office 365 Users action');
-    const officeOperationId = firstString(readPath(officeOperation, 'name'));
-    assert.ok(officeOperationId);
-    const officeRawConnector = await liveRequest<unknown>('flow', '/apis/shared_office365users');
-    const officeSchema = normalizeFlowApiOperationSchema(
-      'shared_office365users',
-      '/providers/Microsoft.PowerApps/apis/shared_office365users',
-      officeOperationId,
-      officeRawConnector,
-    );
-    assert.ok(officeSchema, 'the Office 365 Users connector swagger should normalize to an operation schema');
-    const officeFields = visibleConnectorSchemaFields(officeSchema.fields);
-    assert.ok(officeFields.length > 0, 'Office 365 Users operation should expose editable schema fields');
-    const firstOfficeField = officeFields[0]!;
-    const officeSource = liveConnectorFlow({
-      apiName: 'shared_office365users',
-      apiId: '/providers/Microsoft.PowerApps/apis/shared_office365users',
-      connectionName: firstString(readPath(officeConnection, 'name')) || '',
-      operationId: officeOperationId,
+    const dynamicOutputFields = outputFieldsFromSchema(liveOutputSchema);
+    const dynamicOutputNames = fieldNames(dynamicOutputFields);
+    assert.equal(dynamicOutputNames.has('accountid'), true, 'live dynamic ListRows output schema should include accountid');
+    assert.equal(dynamicOutputNames.has('name'), true, 'live dynamic ListRows output schema should include name');
+
+    const outputSource = liveConnectorFlow({
+      apiName,
+      apiId,
+      connectionName,
+      operationId,
       parameters: {
-        [firstOfficeField.name.slice(0, 1) || 'x']: '',
-      },
+        entityName: 'accounts',
+        $select: 'accountid,name'
+      }
     });
-    const officeCursor = officeSource.indexOf(Object.keys(JSON.parse(officeSource).properties.definition.actions.List_rows.inputs.parameters)[0]) + 2;
-    const officeAnalysis = analyzeFlow(officeSource, officeCursor);
-    const officeTarget = collectFlowEditorSchemaTargets(officeSource, officeAnalysis)[0];
-    assert.ok(officeTarget);
-    const officeIndex = buildFlowEditorSchemaIndex([{
-      ...officeTarget,
-      schema: officeSchema,
-      fields: officeFields,
-      options: {},
-      status: 'ready',
-    }], false);
-    const officeCompletions = flowEditorSchemaCompletionItems(officeCursor, officeAnalysis, officeIndex);
-    assert.ok(officeCompletions.some((item) => item.label === firstOfficeField.name && item.kind === 'property'));
+    const outputAnalysis = analyzeFlow(outputSource, outputSource.indexOf('"entityName"') + 5);
+    const outputTarget = collectFlowEditorSchemaTargets(outputSource, outputAnalysis)[0];
+    assert.ok(outputTarget);
+    const outputIndex = buildFlowEditorSchemaIndex(
+      [
+        {
+          ...outputTarget,
+          schema,
+          fields,
+          options: {},
+          outputFields: {
+            'body/value': dynamicOutputFields
+          },
+          status: 'ready'
+        }
+      ],
+      false
+    );
+    const bodyAccessor = "@body('List_rows')?['value']?['";
+    const bodyAccessorCompletions = flowEditorExpressionSchemaCompletionItems(bodyAccessor, bodyAccessor.length, outputIndex);
+    assert.equal(
+      bodyAccessorCompletions.some((item) => item.label === 'accountid'),
+      true,
+      'body() accessor completions should include live dynamic accountid'
+    );
+    assert.equal(
+      bodyAccessorCompletions.some((item) => item.label === 'name'),
+      true,
+      'body() accessor completions should include live dynamic name'
+    );
+
+    const outputsAccessor = "@outputs('List_rows')?['body']?['value']?['";
+    const outputsAccessorCompletions = flowEditorExpressionSchemaCompletionItems(outputsAccessor, outputsAccessor.length, outputIndex);
+    assert.equal(
+      outputsAccessorCompletions.some((item) => item.label === 'accountid'),
+      true,
+      'outputs() accessor completions should include live dynamic accountid'
+    );
+    assert.equal(
+      outputsAccessorCompletions.some((item) => item.label === 'name'),
+      true,
+      'outputs() accessor completions should include live dynamic name'
+    );
+
+    const officeConnection = valueArray(connections).find((connection) => {
+      const id = firstString(readPath(connection, 'id'), readPath(connection, 'properties.api.id')) || '';
+      return id.includes('/apis/shared_office365users/');
+    });
+    if (officeConnection) {
+      const officeCatalog = await liveRequest<{ value?: unknown[] }>('flow', '/operations', {
+        method: 'POST',
+        query: { $top: '25' },
+        body: buildFlowOperationSearchBody('Office 365 Users', 'action')
+      });
+      const officeOperation = valueArray(officeCatalog).find((operation) => {
+        return apiNameFromOperation(operation) === 'shared_office365users' && firstString(readPath(operation, 'properties.operationType')) === 'OpenApiConnection';
+      });
+      assert.ok(officeOperation, 'the live operation catalog should expose at least one Office 365 Users action');
+      const officeOperationId = firstString(readPath(officeOperation, 'name'));
+      assert.ok(officeOperationId);
+      const officeRawConnector = await liveRequest<unknown>('flow', '/apis/shared_office365users');
+      const officeSchema = normalizeFlowApiOperationSchema('shared_office365users', '/providers/Microsoft.PowerApps/apis/shared_office365users', officeOperationId, officeRawConnector);
+      assert.ok(officeSchema, 'the Office 365 Users connector swagger should normalize to an operation schema');
+      const officeFields = visibleConnectorSchemaFields(officeSchema.fields);
+      assert.ok(officeFields.length > 0, 'Office 365 Users operation should expose editable schema fields');
+      const firstOfficeField = officeFields[0]!;
+      const officeSource = liveConnectorFlow({
+        apiName: 'shared_office365users',
+        apiId: '/providers/Microsoft.PowerApps/apis/shared_office365users',
+        connectionName: firstString(readPath(officeConnection, 'name')) || '',
+        operationId: officeOperationId,
+        parameters: {
+          [firstOfficeField.name.slice(0, 1) || 'x']: ''
+        }
+      });
+      const officeCursor = officeSource.indexOf(Object.keys(JSON.parse(officeSource).properties.definition.actions.List_rows.inputs.parameters)[0]) + 2;
+      const officeAnalysis = analyzeFlow(officeSource, officeCursor);
+      const officeTarget = collectFlowEditorSchemaTargets(officeSource, officeAnalysis)[0];
+      assert.ok(officeTarget);
+      const officeIndex = buildFlowEditorSchemaIndex(
+        [
+          {
+            ...officeTarget,
+            schema: officeSchema,
+            fields: officeFields,
+            options: {},
+            status: 'ready'
+          }
+        ],
+        false
+      );
+      const officeCompletions = flowEditorSchemaCompletionItems(officeCursor, officeAnalysis, officeIndex);
+      assert.ok(officeCompletions.some((item) => item.label === firstOfficeField.name && item.kind === 'property'));
+    }
   }
-});
+);

@@ -10,10 +10,7 @@ import { useResizableWidth } from './use-resizable-width.js';
 import { Select } from '../Select.js';
 import { CopyButton } from '../CopyButton.js';
 
-type DrawerState =
-  | { mode: 'closed' }
-  | { mode: 'new' }
-  | { mode: 'edit'; alias: string };
+type DrawerState = { mode: 'closed' } | { mode: 'new' } | { mode: 'edit'; alias: string };
 
 type SortKey = 'alias' | 'account' | 'health';
 type SortDir = 'asc' | 'desc';
@@ -36,7 +33,10 @@ function worstHealth(statuses: Record<string, HealthEntry> | undefined): 'pendin
   let anyPending = false;
   for (const apiName of HEALTH_APIS) {
     const entry = statuses[apiName];
-    if (!entry || entry.status === 'pending') { anyPending = true; continue; }
+    if (!entry || entry.status === 'pending') {
+      anyPending = true;
+      continue;
+    }
     if (entry.status === 'error') return 'error';
   }
   return anyPending ? 'pending' : 'ok';
@@ -62,7 +62,7 @@ function EditEnvironmentBody(props: {
     displayName: environment.displayName || '',
     account: environment.account || '',
     url: environment.url || '',
-    accessMode: environment.access?.mode === 'read-only' ? 'read-only' : '',
+    accessMode: environment.access?.mode === 'read-only' ? 'read-only' : ''
   });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -70,7 +70,7 @@ function EditEnvironmentBody(props: {
     try {
       await api(`/api/environments/${encodeURIComponent(environment.alias)}`, {
         method: 'PUT',
-        body: JSON.stringify(formDataObject(event.currentTarget)),
+        body: JSON.stringify(formDataObject(event.currentTarget))
       });
       toast('Environment updated');
       await refreshState(true);
@@ -82,7 +82,11 @@ function EditEnvironmentBody(props: {
   function handleRemove() {
     confirm.open({
       title: `Remove environment "${environment.alias}"?`,
-      body: <>This removes the environment configuration from <code>pp</code>. The Dataverse organisation itself is unaffected; you can re-add this environment later.</>,
+      body: (
+        <>
+          This removes the environment configuration from <code>pp</code>. The Dataverse organisation itself is unaffected; you can re-add this environment later.
+        </>
+      ),
       confirmLabel: 'Remove environment',
       destructive: true,
       typedConfirmation: environment.alias,
@@ -95,7 +99,7 @@ function EditEnvironmentBody(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
@@ -117,7 +121,11 @@ function EditEnvironmentBody(props: {
           <span className="drawer-meta-label">Account</span>
           <span className="drawer-meta-value">
             <span className={`health-dot ${tokenClass}`} /> {environment.account || '—'}
-            {tokenExpiry ? <span className={`token-expiry ${tokenExpiry.cls || ''}`} style={{ marginLeft: 8 }}>{tokenExpiry.text}</span> : null}
+            {tokenExpiry ? (
+              <span className={`token-expiry ${tokenExpiry.cls || ''}`} style={{ marginLeft: 8 }}>
+                {tokenExpiry.text}
+              </span>
+            ) : null}
           </span>
         </div>
       </div>
@@ -126,7 +134,12 @@ function EditEnvironmentBody(props: {
         <input type="hidden" name="alias" value={environment.alias} />
         <div className="form-row">
           <div className="field">
-            <span className="field-label">Account<span className="field-required" aria-label="required">*</span></span>
+            <span className="field-label">
+              Account
+              <span className="field-required" aria-label="required">
+                *
+              </span>
+            </span>
             <Select
               name="account"
               value={draft.account}
@@ -142,7 +155,12 @@ function EditEnvironmentBody(props: {
         </div>
         <div className="form-row">
           <div className="field">
-            <span className="field-label">URL<span className="field-required" aria-label="required">*</span></span>
+            <span className="field-label">
+              URL
+              <span className="field-required" aria-label="required">
+                *
+              </span>
+            </span>
             <input name="url" required placeholder="https://org.crm.dynamics.com" value={draft.url} onChange={(e) => setDraft((c) => ({ ...c, url: e.target.value }))} />
           </div>
           <div className="field">
@@ -153,12 +171,16 @@ function EditEnvironmentBody(props: {
               onChange={(next) => setDraft((c) => ({ ...c, accessMode: next }))}
               options={[
                 { value: '', label: 'read-write (default)' },
-                { value: 'read-only', label: 'read-only' },
+                { value: 'read-only', label: 'read-only' }
               ]}
             />
           </div>
         </div>
-        <div className="btn-group"><button type="submit" className="btn btn-primary btn-sm">Save changes</button></div>
+        <div className="btn-group">
+          <button type="submit" className="btn btn-primary btn-sm">
+            Save changes
+          </button>
+        </div>
       </form>
 
       <section className="drawer-section">
@@ -167,7 +189,9 @@ function EditEnvironmentBody(props: {
             <h3>Health</h3>
             <p className="desc">Click any API to see the diagnosis and re-check just that one.</p>
           </div>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => recheckApi(environment.alias)}>Re-check all</button>
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => recheckApi(environment.alias)}>
+            Re-check all
+          </button>
         </div>
         <div className="drawer-health-list">
           {HEALTH_APIS.map((apiName) => {
@@ -180,11 +204,11 @@ function EditEnvironmentBody(props: {
                   <span className={`health-dot ${cls}`} />
                   <span className="drawer-health-label">{apiName}</span>
                   <span className="drawer-health-summary">{entry?.summary || 'Checking…'}</span>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => recheckApi(environment.alias, apiName)}>Re-check</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => recheckApi(environment.alias, apiName)}>
+                    Re-check
+                  </button>
                 </div>
-                {entry?.status === 'error' && hint ? (
-                  <div className="drawer-health-hint">{hint}</div>
-                ) : null}
+                {entry?.status === 'error' && hint ? <div className="drawer-health-hint">{hint}</div> : null}
               </div>
             );
           })}
@@ -192,7 +216,9 @@ function EditEnvironmentBody(props: {
       </section>
 
       <div className="drawer-bottom-actions">
-        <button className="btn btn-danger btn-sm" type="button" onClick={handleRemove}>Remove environment</button>
+        <button className="btn btn-danger btn-sm" type="button" onClick={handleRemove}>
+          Remove environment
+        </button>
       </div>
     </>
   );
@@ -202,12 +228,7 @@ function EditEnvironmentBody(props: {
 // AddEnvironmentForm (still exported for OnboardingFlow; used by drawer)
 // ---------------------------------------------------------------------------
 
-export function AddEnvironmentForm(props: {
-  accounts: any[];
-  refreshState: (silent?: boolean) => Promise<void>;
-  toast: ToastFn;
-  onSaved?: () => void;
-}) {
+export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (silent?: boolean) => Promise<void>; toast: ToastFn; onSaved?: () => void }) {
   const { accounts, refreshState, toast, onSaved } = props;
   const [discoveries, setDiscoveries] = useState<any[]>([]);
   const [discovering, setDiscovering] = useState(false);
@@ -217,7 +238,7 @@ export function AddEnvironmentForm(props: {
     account: accounts[0]?.name || '',
     url: '',
     displayName: '',
-    accessMode: '',
+    accessMode: ''
   });
   const aliasTouchedRef = useRef(false);
   const environmentFormRef = useRef<HTMLFormElement | null>(null);
@@ -240,7 +261,7 @@ export function AddEnvironmentForm(props: {
     try {
       const payload = await api<any>('/api/environments/discover', {
         method: 'POST',
-        body: JSON.stringify({ account: selectedDiscoveryAccount }),
+        body: JSON.stringify({ account: selectedDiscoveryAccount })
       });
       setDiscoveries(payload.data || []);
       toast(`${(payload.data || []).length} environment${(payload.data || []).length === 1 ? '' : 's'} found`);
@@ -253,7 +274,10 @@ export function AddEnvironmentForm(props: {
 
   function applyDiscovery(item: any) {
     const alias = item.displayName
-      ? item.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      ? item.displayName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
       : item.makerEnvironmentId || '';
     aliasTouchedRef.current = false;
     setDraft({
@@ -261,7 +285,7 @@ export function AddEnvironmentForm(props: {
       account: item.accountName || selectedDiscoveryAccount || accounts[0]?.name || '',
       url: item.environmentApiUrl || item.environmentUrl || '',
       displayName: item.displayName || '',
-      accessMode: '',
+      accessMode: ''
     });
   }
 
@@ -270,7 +294,7 @@ export function AddEnvironmentForm(props: {
     try {
       await api<any>('/api/environments', {
         method: 'POST',
-        body: JSON.stringify(formDataObject(event.currentTarget)),
+        body: JSON.stringify(formDataObject(event.currentTarget))
       });
       toast('Environment saved');
       await refreshState(true);
@@ -295,9 +319,12 @@ export function AddEnvironmentForm(props: {
               aria-label="Account"
               value={selectedDiscoveryAccount}
               onChange={setSelectedDiscoveryAccount}
-              options={optionList(accounts.map((a: any) => a.name), 'select account').map((option) => ({
+              options={optionList(
+                accounts.map((a: any) => a.name),
+                'select account'
+              ).map((option) => ({
                 value: option.value,
-                label: option.label,
+                label: option.label
               }))}
             />
           </div>
@@ -310,12 +337,7 @@ export function AddEnvironmentForm(props: {
         {discoveries.length ? (
           <div className="drawer-discovery-list">
             {discoveries.map((item, index) => (
-              <button
-                key={index}
-                type="button"
-                className="drawer-discovery-item"
-                onClick={() => applyDiscovery(item)}
-              >
+              <button key={index} type="button" className="drawer-discovery-item" onClick={() => applyDiscovery(item)}>
                 <div className="drawer-discovery-title">{item.displayName || item.makerEnvironmentId || 'environment'}</div>
                 <div className="drawer-discovery-sub">{item.environmentApiUrl || item.environmentUrl || ''}</div>
               </button>
@@ -330,17 +352,30 @@ export function AddEnvironmentForm(props: {
         <form ref={environmentFormRef} onSubmit={handleEnvironmentSubmit}>
           <div className="form-row">
             <div className="field">
-              <span className="field-label">Alias<span className="field-required" aria-label="required">*</span></span>
+              <span className="field-label">
+                Alias
+                <span className="field-required" aria-label="required">
+                  *
+                </span>
+              </span>
               <input
                 name="alias"
                 required
                 placeholder="dev, prod"
                 value={draft.alias}
-                onChange={(e) => { aliasTouchedRef.current = true; setDraft((c) => ({ ...c, alias: e.target.value })); }}
+                onChange={(e) => {
+                  aliasTouchedRef.current = true;
+                  setDraft((c) => ({ ...c, alias: e.target.value }));
+                }}
               />
             </div>
             <div className="field">
-              <span className="field-label">Account<span className="field-required" aria-label="required">*</span></span>
+              <span className="field-label">
+                Account
+                <span className="field-required" aria-label="required">
+                  *
+                </span>
+              </span>
               <Select
                 name="account"
                 value={draft.account}
@@ -352,7 +387,12 @@ export function AddEnvironmentForm(props: {
           </div>
           <div className="form-row">
             <div className="field">
-              <span className="field-label">URL<span className="field-required" aria-label="required">*</span></span>
+              <span className="field-label">
+                URL
+                <span className="field-required" aria-label="required">
+                  *
+                </span>
+              </span>
               <input name="url" required placeholder="https://org.crm.dynamics.com" value={draft.url} onChange={(e) => setDraft((c) => ({ ...c, url: e.target.value }))} />
             </div>
             <div className="field">
@@ -368,11 +408,15 @@ export function AddEnvironmentForm(props: {
               onChange={(next) => setDraft((c) => ({ ...c, accessMode: next }))}
               options={[
                 { value: '', label: 'read-write (default)' },
-                { value: 'read-only', label: 'read-only' },
+                { value: 'read-only', label: 'read-only' }
               ]}
             />
           </div>
-          <div className="btn-group"><button type="submit" className="btn btn-primary btn-sm">Save environment</button></div>
+          <div className="btn-group">
+            <button type="submit" className="btn btn-primary btn-sm">
+              Save environment
+            </button>
+          </div>
         </form>
       </section>
     </div>
@@ -436,7 +480,11 @@ export function EnvironmentsPanel(props: {
   function handleRemove(env: any) {
     confirm.open({
       title: `Remove environment "${env.alias}"?`,
-      body: <>This removes the environment configuration from <code>pp</code>. The Dataverse organisation itself is unaffected.</>,
+      body: (
+        <>
+          This removes the environment configuration from <code>pp</code>. The Dataverse organisation itself is unaffected.
+        </>
+      ),
       confirmLabel: 'Remove environment',
       destructive: true,
       typedConfirmation: env.alias,
@@ -448,29 +496,24 @@ export function EnvironmentsPanel(props: {
         } catch (error) {
           toast(error instanceof Error ? error.message : String(error), true);
         }
-      },
+      }
     });
   }
 
-  const editingEnv = drawer.mode === 'edit'
-    ? environments.find((env: any) => env.alias === drawer.alias)
-    : null;
+  const editingEnv = drawer.mode === 'edit' ? environments.find((env: any) => env.alias === drawer.alias) : null;
 
   return (
     <div className="panel setup-table-panel">
       <div className="setup-table-toolbar">
         <h2>Environments</h2>
         <div className="setup-table-toolbar-actions">
-          <input
-            type="search"
-            className="setup-table-filter"
-            placeholder="Filter environments…"
-            aria-label="Filter environments"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-          <button className="btn btn-ghost btn-sm" type="button" onClick={recheckHealth}>Re-check health</button>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })} disabled={!accounts.length}>+ Add environment</button>
+          <input type="search" className="setup-table-filter" placeholder="Filter environments…" aria-label="Filter environments" value={filter} onChange={(event) => setFilter(event.target.value)} />
+          <button className="btn btn-ghost btn-sm" type="button" onClick={recheckHealth}>
+            Re-check health
+          </button>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })} disabled={!accounts.length}>
+            + Add environment
+          </button>
         </div>
       </div>
 
@@ -484,23 +527,26 @@ export function EnvironmentsPanel(props: {
       ) : rows.length === 0 ? (
         <div className="setup-table-empty">No environments match “{filter}”.</div>
       ) : (
-        <div
-          className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`}
-          style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}
-        >
+        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}>
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
                 <tr>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'alias' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('alias')}>Environment{sort.key === 'alias' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('alias')}>
+                      Environment{sort.key === 'alias' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'account' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('account')}>Account{sort.key === 'account' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('account')}>
+                      Account{sort.key === 'account' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th>Host</th>
                   <th className="setup-table-sortable" aria-sort={sort.key === 'health' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                    <button type="button" onClick={() => toggleSort('health')}>Health{sort.key === 'health' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}</button>
+                    <button type="button" onClick={() => toggleSort('health')}>
+                      Health{sort.key === 'health' ? <span className="setup-table-sort-arrow">{sort.dir === 'asc' ? '↑' : '↓'}</span> : null}
+                    </button>
                   </th>
                   <th>Mode</th>
                   <th className="setup-table-actions-col" aria-label="Actions" />
@@ -533,9 +579,7 @@ export function EnvironmentsPanel(props: {
                           <span className={`health-dot ${overall}`} aria-label={`Overall health: ${overall}`} />
                           <span className="setup-row-name">{env.alias}</span>
                         </span>
-                        {env.displayName && env.displayName !== env.alias ? (
-                          <div className="setup-row-sub">{env.displayName}</div>
-                        ) : null}
+                        {env.displayName && env.displayName !== env.alias ? <div className="setup-row-sub">{env.displayName}</div> : null}
                       </td>
                       <td>
                         <span className="setup-row-primary">
@@ -568,23 +612,14 @@ export function EnvironmentsPanel(props: {
                       <td>{readOnly ? <span className="badge badge-readonly">read-only</span> : <span className="setup-row-muted">rw</span>}</td>
                       <td className="setup-table-actions-col">
                         <div className="setup-row-actions" onClick={(event) => event.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            title="Re-check health for this environment"
-                            onClick={() => recheckApi(env.alias)}
-                          >Re-check</button>
-                          <CopyButton
-                            value={env.url || ''}
-                            label="Copy"
-                            title="Copy environment URL"
-                            toast={toast}
-                            stopPropagation
-                          />
+                          <button type="button" className="btn btn-ghost btn-sm" title="Re-check health for this environment" onClick={() => recheckApi(env.alias)}>
+                            Re-check
+                          </button>
+                          <CopyButton value={env.url || ''} label="Copy" title="Copy environment URL" toast={toast} stopPropagation />
                           <OverflowMenu
                             items={[
                               { label: 'Edit details', onClick: () => setDrawer({ mode: 'edit', alias: env.alias }) },
-                              { label: 'Remove environment', destructive: true, onClick: () => handleRemove(env) },
+                              { label: 'Remove environment', destructive: true, onClick: () => handleRemove(env) }
                             ]}
                           />
                         </div>
@@ -597,31 +632,21 @@ export function EnvironmentsPanel(props: {
           </div>
           {drawer.mode !== 'closed' ? (
             <div className="setup-split-detail">
-              <div
-                className="setup-detail-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize detail panel"
-                onMouseDown={startDetailResize}
-              />
-              <DetailPanel
-                open={drawer.mode === 'new'}
-                title="Add environment"
-                subtitle="Discover from an account or enter details manually."
-                onClose={() => setDrawer({ mode: 'closed' })}
-              >
-                <AddEnvironmentForm
-                  accounts={accounts}
-                  refreshState={refreshState}
-                  toast={toast}
-                  onSaved={() => setDrawer({ mode: 'closed' })}
-                />
+              <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
+              <DetailPanel open={drawer.mode === 'new'} title="Add environment" subtitle="Discover from an account or enter details manually." onClose={() => setDrawer({ mode: 'closed' })}>
+                <AddEnvironmentForm accounts={accounts} refreshState={refreshState} toast={toast} onSaved={() => setDrawer({ mode: 'closed' })} />
               </DetailPanel>
 
               <DetailPanel
                 open={drawer.mode === 'edit' && !!editingEnv}
                 title={editingEnv?.alias || 'Environment'}
-                subtitle={editingEnv ? <>{editingEnv.displayName || hostFromUrl(editingEnv.url)} · {editingEnv.account}</> : undefined}
+                subtitle={
+                  editingEnv ? (
+                    <>
+                      {editingEnv.displayName || hostFromUrl(editingEnv.url)} · {editingEnv.account}
+                    </>
+                  ) : undefined
+                }
                 onClose={() => setDrawer({ mode: 'closed' })}
               >
                 {editingEnv ? (
@@ -643,7 +668,6 @@ export function EnvironmentsPanel(props: {
           ) : null}
         </div>
       )}
-
     </div>
   );
 }

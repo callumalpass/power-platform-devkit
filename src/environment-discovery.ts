@@ -24,13 +24,11 @@ export async function addEnvironmentWithDiscovery(
     accessMode?: 'read-write' | 'read-only';
   },
   configOptions: ConfigStoreOptions = {},
-  loginOptions: PublicClientLoginOptions = {},
+  loginOptions: PublicClientLoginOptions = {}
 ): Promise<OperationResult<Environment>> {
   const account = await getAccount(input.account, configOptions);
   if (!account.success || !account.data) {
-    return account.success
-      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.account} was not found.`, { source: 'pp/request' }))
-      : fail(...account.diagnostics);
+    return account.success ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.account} was not found.`, { source: 'pp/request' })) : fail(...account.diagnostics);
   }
   const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
@@ -44,9 +42,7 @@ export async function addEnvironmentWithDiscovery(
 
   const tenantId = await discoverTenantId(input.url, tokenProvider.data);
   if (!tenantId.success || !tenantId.data) {
-    return tenantId.success
-      ? fail(createDiagnostic('error', 'TENANT_ID_DISCOVERY_FAILED', `Could not discover tenant id for ${input.url}.`, { source: 'pp/request' }))
-      : fail(...tenantId.diagnostics);
+    return tenantId.success ? fail(createDiagnostic('error', 'TENANT_ID_DISCOVERY_FAILED', `Could not discover tenant id for ${input.url}.`, { source: 'pp/request' })) : fail(...tenantId.diagnostics);
   }
 
   const environment: Environment = {
@@ -56,7 +52,7 @@ export async function addEnvironmentWithDiscovery(
     displayName: input.displayName,
     makerEnvironmentId: makerEnvironmentId.data,
     tenantId: tenantId.data,
-    ...(input.accessMode ? { access: { mode: input.accessMode } } : {}),
+    ...(input.accessMode ? { access: { mode: input.accessMode } } : {})
   };
   return saveEnvironment(environment, configOptions);
 }
@@ -66,13 +62,11 @@ export async function discoverEnvironments(
     accountName: string;
   },
   configOptions: ConfigStoreOptions = {},
-  loginOptions: PublicClientLoginOptions = {},
+  loginOptions: PublicClientLoginOptions = {}
 ): Promise<OperationResult<DiscoveredEnvironment[]>> {
   const account = await getAccount(input.accountName, configOptions);
   if (!account.success || !account.data) {
-    return account.success
-      ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.accountName} was not found.`, { source: 'pp/request' }))
-      : fail(...account.diagnostics);
+    return account.success ? fail(createDiagnostic('error', 'ACCOUNT_NOT_FOUND', `Account ${input.accountName} was not found.`, { source: 'pp/request' })) : fail(...account.diagnostics);
   }
   const tokenProvider = createTokenProvider(account.data, configOptions, loginOptions);
   if (!tokenProvider.success || !tokenProvider.data) return fail(...tokenProvider.diagnostics);
@@ -90,7 +84,7 @@ async function discoverMakerEnvironmentId(url: string, tokenProvider: TokenProvi
 async function listAccessibleEnvironments(tokenProvider: TokenProvider, accountName?: string): Promise<OperationResult<DiscoveredEnvironment[]>> {
   const client = new HttpClient({
     baseUrl: 'https://api.bap.microsoft.com',
-    tokenProvider,
+    tokenProvider
   });
   const response = await client.request<{
     value?: Array<{
@@ -106,7 +100,7 @@ async function listAccessibleEnvironments(tokenProvider: TokenProvider, accountN
     }>;
   }>({
     path: '/providers/Microsoft.BusinessAppPlatform/environments',
-    query: { 'api-version': POWER_PLATFORM_ENVIRONMENTS_API_VERSION },
+    query: { 'api-version': POWER_PLATFORM_ENVIRONMENTS_API_VERSION }
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
   return ok(
@@ -116,14 +110,10 @@ async function listAccessibleEnvironments(tokenProvider: TokenProvider, accountN
         accountName: accountName ?? '',
         makerEnvironmentId: candidate.name,
         displayName: candidate.properties?.displayName,
-        environmentApiUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceApiUrl
-          ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceApiUrl)
-          : undefined,
-        environmentUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceUrl
-          ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceUrl)
-          : undefined,
-        tenantId: candidate.properties?.azureTenantId,
-      })),
+        environmentApiUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceApiUrl ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceApiUrl) : undefined,
+        environmentUrl: candidate.properties?.linkedEnvironmentMetadata?.instanceUrl ? normalizeOrigin(candidate.properties.linkedEnvironmentMetadata.instanceUrl) : undefined,
+        tenantId: candidate.properties?.azureTenantId
+      }))
   );
 }
 
@@ -134,9 +124,11 @@ async function discoverTenantId(url: string, tokenProvider: TokenProvider): Prom
     const tid = claims?.tid;
     return ok(typeof tid === 'string' ? tid : undefined);
   } catch (error) {
-    return fail(createDiagnostic('error', 'TENANT_DISCOVERY_FAILED', 'Failed to acquire a token to determine tenant id.', {
-      source: 'pp/request',
-      detail: error instanceof Error ? error.message : String(error),
-    }));
+    return fail(
+      createDiagnostic('error', 'TENANT_DISCOVERY_FAILED', 'Failed to acquire a token to determine tenant id.', {
+        source: 'pp/request',
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    );
   }
 }

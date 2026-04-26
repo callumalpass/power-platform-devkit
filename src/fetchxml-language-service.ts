@@ -1,17 +1,7 @@
 import type { PublicClientLoginOptions } from './auth.js';
 import { type ConfigStoreOptions } from './config.js';
-import {
-  analyzeFetchXml,
-  type FetchXmlLanguageEntity,
-  type FetchXmlLanguageMetadata,
-  type FetchXmlLanguageResult,
-} from './fetchxml-language.js';
-import {
-  getDataverseEntityDetail,
-  listDataverseEntities,
-  type DataverseAttributeSummary,
-  type DataverseEntityDetail,
-} from './services/dataverse.js';
+import { analyzeFetchXml, type FetchXmlLanguageEntity, type FetchXmlLanguageMetadata, type FetchXmlLanguageResult } from './fetchxml-language.js';
+import { getDataverseEntityDetail, listDataverseEntities, type DataverseAttributeSummary, type DataverseEntityDetail } from './services/dataverse.js';
 
 export interface FetchXmlLanguageRequest {
   environmentAlias?: string;
@@ -29,11 +19,7 @@ export class FetchXmlMetadataCatalog {
     return analyzeFetchXml(request.source, request.cursor, metadata);
   }
 
-  private async buildMetadata(
-    request: FetchXmlLanguageRequest,
-    configOptions: ConfigStoreOptions,
-    loginOptions: PublicClientLoginOptions,
-  ): Promise<FetchXmlLanguageMetadata | undefined> {
+  private async buildMetadata(request: FetchXmlLanguageRequest, configOptions: ConfigStoreOptions, loginOptions: PublicClientLoginOptions): Promise<FetchXmlLanguageMetadata | undefined> {
     const environmentAlias = request.environmentAlias?.trim();
     if (!environmentAlias) return undefined;
     const entities = await this.getEntityIndex(environmentAlias, configOptions, loginOptions);
@@ -41,7 +27,7 @@ export class FetchXmlMetadataCatalog {
     await Promise.all(referencedNames.map((name) => this.ensureEntityDetail(environmentAlias, name, configOptions, loginOptions)));
     return {
       entities: entities.map((entity) => this.entityDetailCache.get(detailCacheKey(environmentAlias, entity.logicalName)) ?? entity),
-      rootEntityName: request.rootEntityName,
+      rootEntityName: request.rootEntityName
     };
   }
 
@@ -56,7 +42,7 @@ export class FetchXmlMetadataCatalog {
       entitySetName: entity.entitySetName,
       primaryIdAttribute: entity.primaryIdAttribute,
       primaryNameAttribute: entity.primaryNameAttribute,
-      attributes: [],
+      attributes: []
     }));
     this.entityListCache.set(environmentAlias, entities);
     return entities;
@@ -78,7 +64,7 @@ function mapEntityDetail(entity: DataverseEntityDetail): FetchXmlLanguageEntity 
     entitySetName: entity.entitySetName,
     primaryIdAttribute: entity.primaryIdAttribute,
     primaryNameAttribute: entity.primaryNameAttribute,
-    attributes: entity.attributes.map(mapAttribute),
+    attributes: entity.attributes.map(mapAttribute)
   };
 }
 
@@ -90,7 +76,7 @@ function mapAttribute(attribute: DataverseAttributeSummary) {
     attributeTypeName: attribute.attributeTypeName,
     isValidForRead: attribute.isValidForRead,
     isValidForSort: attribute.isValidForSort,
-    targets: attribute.targets,
+    targets: attribute.targets
   };
 }
 

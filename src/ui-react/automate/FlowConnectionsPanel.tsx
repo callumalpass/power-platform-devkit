@@ -13,7 +13,7 @@ import {
   type FlowConnectionModel,
   type FlowConnectionReference,
   type FlowConnectionUsage,
-  type FlowEnvironmentConnection,
+  type FlowEnvironmentConnection
 } from './flow-connections.js';
 
 export type FlowConnectionInspectSeed = {
@@ -60,26 +60,26 @@ export function FlowConnectionsPanel(props: {
           <SummaryMetric label="Problems" value={`${errorCount} errors, ${warningCount} warnings`} />
         </div>
 
-        <AddReferenceCard
-          source={props.source}
-          connections={model.connections}
-          onBindReference={props.onBindReference}
-        />
+        <AddReferenceCard source={props.source} connections={model.connections} onBindReference={props.onBindReference} />
 
         <div className="flow-connections-grid">
           <section className="flow-connections-section">
             <div className="flow-connections-section-title">References</div>
-            {model.references.length ? model.references.map((reference) => (
-              <ReferenceCard
-                key={reference.name}
-                reference={reference}
-                connections={model.connections}
-                toast={props.toast}
-                onBindReference={props.onBindReference}
-                onRemoveReference={props.onRemoveReference}
-                onInspect={props.onInspect}
-              />
-            )) : <div className="empty">No connection references in this flow.</div>}
+            {model.references.length ? (
+              model.references.map((reference) => (
+                <ReferenceCard
+                  key={reference.name}
+                  reference={reference}
+                  connections={model.connections}
+                  toast={props.toast}
+                  onBindReference={props.onBindReference}
+                  onRemoveReference={props.onRemoveReference}
+                  onInspect={props.onInspect}
+                />
+              ))
+            ) : (
+              <div className="empty">No connection references in this flow.</div>
+            )}
           </section>
 
           <section className="flow-connections-section">
@@ -105,17 +105,18 @@ export function FlowConnectionsPanel(props: {
                   </div>
                 ))}
               </div>
-            ) : <div className="empty">No connection problems found.</div>}
+            ) : (
+              <div className="empty">No connection problems found.</div>
+            )}
 
-            <div className="flow-connections-section-title" style={{ marginTop: 16 }}>Environment connections</div>
-            {model.connections.length ? model.connections.map((connection) => (
-              <EnvironmentConnectionRow
-                key={connection.name}
-                connection={connection}
-                toast={props.toast}
-                onInspect={props.onInspect}
-              />
-            )) : <div className="empty">{props.loading ? 'Loading connections...' : 'No environment connections found.'}</div>}
+            <div className="flow-connections-section-title" style={{ marginTop: 16 }}>
+              Environment connections
+            </div>
+            {model.connections.length ? (
+              model.connections.map((connection) => <EnvironmentConnectionRow key={connection.name} connection={connection} toast={props.toast} onInspect={props.onInspect} />)
+            ) : (
+              <div className="empty">{props.loading ? 'Loading connections...' : 'No environment connections found.'}</div>
+            )}
           </section>
         </div>
       </div>
@@ -123,11 +124,7 @@ export function FlowConnectionsPanel(props: {
   );
 }
 
-export function FlowActionConnectionCard(props: {
-  model: FlowConnectionModel;
-  actionName?: string;
-  toast: ToastFn;
-}) {
+export function FlowActionConnectionCard(props: { model: FlowConnectionModel; actionName?: string; toast: ToastFn }) {
   const usage = findUsageForAction(props.model, props.actionName);
   const reference = findReferenceForUsage(props.model, usage);
   const issue = props.model.issues.find((item) => item.actionName === props.actionName);
@@ -145,28 +142,24 @@ export function FlowActionConnectionCard(props: {
       ) : (
         <div className="empty">No connector wiring found for this action.</div>
       )}
-      {reference?.connection ? (
-        <div className="flow-action-connection-note">
-          Bound to {reference.connection.displayName || reference.connection.name}
+      {reference?.connection ? <div className="flow-action-connection-note">Bound to {reference.connection.displayName || reference.connection.name}</div> : null}
+      {issue ? (
+        <div className={`flow-connection-issue ${issue.level}`} style={{ marginTop: 8 }}>
+          {issue.message}
         </div>
       ) : null}
-      {issue ? <div className={`flow-connection-issue ${issue.level}`} style={{ marginTop: 8 }}>{issue.message}</div> : null}
     </div>
   );
 }
 
-function AddReferenceCard(props: {
-  source: string;
-  connections: FlowEnvironmentConnection[];
-  onBindReference: (referenceName: string, connection: FlowEnvironmentConnection) => void;
-}) {
+function AddReferenceCard(props: { source: string; connections: FlowEnvironmentConnection[]; onBindReference: (referenceName: string, connection: FlowEnvironmentConnection) => void }) {
   const [connectionName, setConnectionName] = useState('');
   const selectedConnection = props.connections.find((connection) => connection.name === connectionName);
   const [referenceName, setReferenceName] = useState('');
 
   useEffect(() => {
     const first = props.connections[0]?.name || '';
-    setConnectionName((current) => current && props.connections.some((connection) => connection.name === current) ? current : first);
+    setConnectionName((current) => (current && props.connections.some((connection) => connection.name === current) ? current : first));
   }, [props.connections]);
 
   useEffect(() => {
@@ -181,12 +174,7 @@ function AddReferenceCard(props: {
         <div className="flow-connection-muted">Create a connection reference bound to an existing authenticated connection.</div>
       </div>
       <div className="flow-connection-add-controls">
-        <input
-          type="text"
-          value={referenceName}
-          placeholder="Reference name"
-          onChange={(event) => setReferenceName(event.target.value)}
-        />
+        <input type="text" value={referenceName} placeholder="Reference name" onChange={(event) => setReferenceName(event.target.value)} />
         <Select
           aria-label="Environment connection"
           value={connectionName}
@@ -201,7 +189,9 @@ function AddReferenceCard(props: {
           className="btn btn-primary btn-sm"
           type="button"
           disabled={!selectedConnection || !referenceName.trim()}
-          onClick={() => { if (selectedConnection) props.onBindReference(referenceName, selectedConnection); }}
+          onClick={() => {
+            if (selectedConnection) props.onBindReference(referenceName, selectedConnection);
+          }}
         >
           Add reference
         </button>
@@ -225,7 +215,7 @@ function ReferenceCard(props: {
   const statusLevel = connectionStatusLevel(props.reference.status);
 
   useEffect(() => {
-    setSelectedConnectionName((current) => current && props.connections.some((connection) => connection.name === current) ? current : fallback);
+    setSelectedConnectionName((current) => (current && props.connections.some((connection) => connection.name === current) ? current : fallback));
   }, [fallback, props.connections]);
 
   return (
@@ -238,10 +228,16 @@ function ReferenceCard(props: {
           </div>
           <div className="flow-connection-meta">
             Reference <code>{props.reference.name}</code>
-            {props.reference.logicalName ? <> · logical <code>{props.reference.logicalName}</code></> : null}
+            {props.reference.logicalName ? (
+              <>
+                {' '}
+                · logical <code>{props.reference.logicalName}</code>
+              </>
+            ) : null}
           </div>
           <div className="flow-connection-meta">
-            Connection {props.reference.connection ? (
+            Connection{' '}
+            {props.reference.connection ? (
               <>{props.reference.connection.displayName || props.reference.connection.name}</>
             ) : props.reference.connectionName ? (
               <code>{props.reference.connectionName}</code>
@@ -256,13 +252,15 @@ function ReferenceCard(props: {
             <button
               className="btn btn-ghost btn-sm"
               type="button"
-              onClick={() => props.onInspect({
-                title: props.reference.connection!.displayName || props.reference.connection!.name,
-                subtitle: `Connection · ${connectorLabel(props.reference)}`,
-                api: 'powerapps',
-                method: 'GET',
-                path: `/connections/${encodeURIComponent(props.reference.connection!.name)}`,
-              })}
+              onClick={() =>
+                props.onInspect({
+                  title: props.reference.connection!.displayName || props.reference.connection!.name,
+                  subtitle: `Connection · ${connectorLabel(props.reference)}`,
+                  api: 'powerapps',
+                  method: 'GET',
+                  path: `/connections/${encodeURIComponent(props.reference.connection!.name)}`
+                })
+              }
             >
               View connection
             </button>
@@ -271,17 +269,24 @@ function ReferenceCard(props: {
       </div>
 
       <div className="flow-connection-usages">
-        {props.reference.usages.length ? props.reference.usages.map((usage) => (
-          <span key={`${usage.path}:${usage.name}`} className="flow-connection-usage">
-            {usage.name}{usage.operationId ? ` · ${usage.operationId}` : ''}
-          </span>
-        )) : <span className="flow-connection-muted">No action usage found.</span>}
+        {props.reference.usages.length ? (
+          props.reference.usages.map((usage) => (
+            <span key={`${usage.path}:${usage.name}`} className="flow-connection-usage">
+              {usage.name}
+              {usage.operationId ? ` · ${usage.operationId}` : ''}
+            </span>
+          ))
+        ) : (
+          <span className="flow-connection-muted">No action usage found.</span>
+        )}
       </div>
 
       {props.reference.issues.length ? (
         <div className="flow-connection-issues compact">
           {props.reference.issues.map((issue, index) => (
-            <div key={`${issue.code}:${index}`} className={`flow-connection-issue ${issue.level}`}>{issue.message}</div>
+            <div key={`${issue.code}:${index}`} className={`flow-connection-issue ${issue.level}`}>
+              {issue.message}
+            </div>
           ))}
         </div>
       ) : null}
@@ -293,14 +298,16 @@ function ReferenceCard(props: {
           onChange={setSelectedConnectionName}
           options={props.connections.map((connection) => ({
             value: connection.name,
-            label: connectionOptionLabel(connection, compatible.some((item) => item.name === connection.name) ? '' : 'other connector'),
+            label: connectionOptionLabel(connection, compatible.some((item) => item.name === connection.name) ? '' : 'other connector')
           }))}
         />
         <button
           className="btn btn-ghost btn-sm"
           type="button"
           disabled={!selectedConnection}
-          onClick={() => { if (selectedConnection) props.onBindReference(props.reference.name, selectedConnection); }}
+          onClick={() => {
+            if (selectedConnection) props.onBindReference(props.reference.name, selectedConnection);
+          }}
         >
           Rebind
         </button>
@@ -340,7 +347,9 @@ function MissingReferenceRepair(props: {
         className="btn btn-ghost btn-sm"
         type="button"
         disabled={!selected}
-        onClick={() => { if (selected) props.onBindReference(props.referenceName, selected); }}
+        onClick={() => {
+          if (selected) props.onBindReference(props.referenceName, selected);
+        }}
       >
         Create reference
       </button>
@@ -348,11 +357,7 @@ function MissingReferenceRepair(props: {
   );
 }
 
-function EnvironmentConnectionRow(props: {
-  connection: FlowEnvironmentConnection;
-  toast: ToastFn;
-  onInspect: (seed: FlowConnectionInspectSeed) => void;
-}) {
+function EnvironmentConnectionRow(props: { connection: FlowEnvironmentConnection; toast: ToastFn; onInspect: (seed: FlowConnectionInspectSeed) => void }) {
   const solutionRefs = (props.connection.solutionReferences || [])
     .map((reference) => reference.logicalName)
     .filter(Boolean)
@@ -372,13 +377,15 @@ function EnvironmentConnectionRow(props: {
         <button
           className="btn btn-ghost btn-sm"
           type="button"
-          onClick={() => props.onInspect({
-            title: props.connection.displayName || props.connection.name,
-            subtitle: `Connection · ${connectorLabel(props.connection)}`,
-            api: 'powerapps',
-            method: 'GET',
-            path: `/connections/${encodeURIComponent(props.connection.name)}`,
-          })}
+          onClick={() =>
+            props.onInspect({
+              title: props.connection.displayName || props.connection.name,
+              subtitle: `Connection · ${connectorLabel(props.connection)}`,
+              api: 'powerapps',
+              method: 'GET',
+              path: `/connections/${encodeURIComponent(props.connection.name)}`
+            })
+          }
         >
           View
         </button>

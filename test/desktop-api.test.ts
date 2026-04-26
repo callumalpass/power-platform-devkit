@@ -10,7 +10,7 @@ import { ok } from '../src/diagnostics.js';
 function createContext(overrides: Partial<DesktopApiContext> = {}): DesktopApiContext {
   return {
     ...createDesktopApiContext({ allowInteractiveAuth: false }),
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -34,8 +34,8 @@ test('handleDesktopApiRequest saves non-interactive accounts with POST /api/acco
     body: {
       name: 'token-account',
       kind: 'environment-token',
-      environmentVariable: 'PP_TEST_TOKEN',
-    },
+      environmentVariable: 'PP_TEST_TOKEN'
+    }
   });
 
   assert.equal(response.status, 201);
@@ -54,8 +54,8 @@ test('handleDesktopApiRequest saves interactive accounts without starting login'
     body: {
       name: 'work',
       kind: 'user',
-      loginHint: 'admin@example.com',
-    },
+      loginHint: 'admin@example.com'
+    }
   });
 
   assert.equal(response.status, 201);
@@ -76,14 +76,14 @@ test('handleDesktopApiRequest exposes browser profile status and reset routes pe
     body: {
       name: 'work@example.com',
       kind: 'user',
-      loginHint: 'work@example.com',
-    },
+      loginHint: 'work@example.com'
+    }
   });
   assert.equal(createResponse.status, 201);
 
   const statusResponse = await handleDesktopApiRequest(context, {
     method: 'GET',
-    path: '/api/accounts/work%40example.com/browser-profile',
+    path: '/api/accounts/work%40example.com/browser-profile'
   });
   assert.equal(statusResponse.status, 200);
   assert.equal((statusResponse.body as any).data.configured, false);
@@ -91,7 +91,7 @@ test('handleDesktopApiRequest exposes browser profile status and reset routes pe
 
   const resetResponse = await handleDesktopApiRequest(context, {
     method: 'DELETE',
-    path: '/api/accounts/work%40example.com/browser-profile',
+    path: '/api/accounts/work%40example.com/browser-profile'
   });
   assert.equal(resetResponse.status, 200);
   assert.equal((resetResponse.body as any).data.configured, false);
@@ -107,8 +107,8 @@ test('handleDesktopApiRequest validates Dataverse create route before execution'
     body: {
       environmentAlias: 'dev',
       entitySetName: 'accounts',
-      body: {},
-    },
+      body: {}
+    }
   });
   assert.equal(response.status, 400);
   assert.match(JSON.stringify(response.body), /DV_RECORD_BODY_REQUIRED/);
@@ -119,37 +119,41 @@ test('handleDesktopApiRequest serves flow language analysis over IPC-style routi
   const response = await handleDesktopApiRequest(createContext(), {
     method: 'POST',
     path: '/api/flow/language/analyze',
-    body: { source, cursor: 0 },
+    body: { source, cursor: 0 }
   });
   assert.equal(response.status, 200);
   assert.equal((response.body as any).success, true);
   assert.equal((response.body as any).data.summary.wrapperKind, 'resource-properties-definition');
-  assert.equal((response.body as any).data.diagnostics.some((item: any) => item.code === 'FLOW_REFERENCE_UNRESOLVED'), false);
+  assert.equal(
+    (response.body as any).data.diagnostics.some((item: any) => item.code === 'FLOW_REFERENCE_UNRESOLVED'),
+    false
+  );
 });
 
 test('CanvasSessionStore keeps the UI session id stable after service start returns a server session id', async () => {
   const store = new CanvasSessionStore(
-    async () => ok({
-      appId: 'app-1',
-      environmentId: 'env-1',
-      account: 'user@example.com',
-      sessionId: 'server-session-1',
-      startRequestId: 'request-1',
-      cluster: {},
-      authoringBaseUrl: 'https://authoring.example.test',
-      webAuthoringVersion: 'v1',
-      sessionState: 'state-1',
-      startPath: '/api/authoringsession/start',
-      startStatus: 200,
-      session: { sessionState: 'state-1', clientConfig: { webAuthoringVersion: 'v1' } },
-    }),
-    async () => undefined,
+    async () =>
+      ok({
+        appId: 'app-1',
+        environmentId: 'env-1',
+        account: 'user@example.com',
+        sessionId: 'server-session-1',
+        startRequestId: 'request-1',
+        cluster: {},
+        authoringBaseUrl: 'https://authoring.example.test',
+        webAuthoringVersion: 'v1',
+        sessionState: 'state-1',
+        startPath: '/api/authoringsession/start',
+        startStatus: 200,
+        session: { sessionState: 'state-1', clientConfig: { webAuthoringVersion: 'v1' } }
+      }),
+    async () => undefined
   );
 
   const created = await store.createSession({
     environmentAlias: 'dev',
     appId: 'app-1',
-    allowInteractive: false,
+    allowInteractive: false
   });
 
   await new Promise((resolve) => setTimeout(resolve, 0));

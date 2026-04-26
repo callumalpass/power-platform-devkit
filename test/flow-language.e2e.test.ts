@@ -18,7 +18,7 @@ async function readFixture(name: string): Promise<string> {
 
 test('analyzeFlow understands a workflow definition wrapper from a real sample', async () => {
   const source = await readFixture('ratings-workflow.json');
-  const result = analyzeFlow(source, source.indexOf("Get_records_that_haven"));
+  const result = analyzeFlow(source, source.indexOf('Get_records_that_haven'));
   assert.equal(result.summary.wrapperKind, 'definition-wrapper');
   assert.ok(result.summary.actionCount > 5);
   assert.ok(result.summary.variableCount >= 2);
@@ -40,36 +40,40 @@ test('analyzeFlow extracts definitions from ARM template resources', async () =>
 });
 
 test('analyzeFlow extracts definitions from serialized Dataverse clientdata', () => {
-  const source = JSON.stringify({
-    workflowid: '00000000-0000-0000-0000-000000000001',
-    name: 'Dataverse Row Flow',
-    clientdata: JSON.stringify({
-      properties: {
-        definition: {
-          actions: {
-            ComposeValue: {
-              type: 'Compose',
-              inputs: '@triggerBody()',
-              runAfter: {},
-            },
-            UseValue: {
-              type: 'Compose',
-              inputs: "@outputs('ComposeValue')",
-              runAfter: {
-                ComposeValue: ['Succeeded'],
+  const source = JSON.stringify(
+    {
+      workflowid: '00000000-0000-0000-0000-000000000001',
+      name: 'Dataverse Row Flow',
+      clientdata: JSON.stringify({
+        properties: {
+          definition: {
+            actions: {
+              ComposeValue: {
+                type: 'Compose',
+                inputs: '@triggerBody()',
+                runAfter: {}
               },
+              UseValue: {
+                type: 'Compose',
+                inputs: "@outputs('ComposeValue')",
+                runAfter: {
+                  ComposeValue: ['Succeeded']
+                }
+              }
             },
-          },
-          triggers: {
-            manual: {
-              type: 'Request',
-              inputs: {},
-            },
-          },
-        },
-      },
-    }),
-  }, null, 2);
+            triggers: {
+              manual: {
+                type: 'Request',
+                inputs: {}
+              }
+            }
+          }
+        }
+      })
+    },
+    null,
+    2
+  );
 
   const result = analyzeFlow(source, source.indexOf('UseValue'));
   assert.equal(result.summary.wrapperKind, 'clientdata-resource-properties-definition');
@@ -81,37 +85,37 @@ test('analyzeFlow extracts definitions from serialized Dataverse clientdata', ()
 });
 
 test('analyzeFlow does not approximate structured expression validation offline', () => {
-  const source = JSON.stringify({
-    definition: {
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+  const source = JSON.stringify(
+    {
+      definition: {
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        CheckValue: {
-          type: 'If',
-          expression: {
-            and: [
-              {
-                equals: [
-                  "@triggerBody()?['status']",
-                ],
-              },
-              {
-                madeUpOperator: [
-                  true,
-                ],
-              },
-            ],
-          },
-          actions: {},
-          runAfter: {},
-        },
-      },
+        actions: {
+          CheckValue: {
+            type: 'If',
+            expression: {
+              and: [
+                {
+                  equals: ["@triggerBody()?['status']"]
+                },
+                {
+                  madeUpOperator: [true]
+                }
+              ]
+            },
+            actions: {},
+            runAfter: {}
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const result = analyzeFlow(source, source.indexOf('madeUpOperator'));
   const codes = new Set(result.diagnostics.map((item) => item.code));
@@ -120,66 +124,64 @@ test('analyzeFlow does not approximate structured expression validation offline'
 });
 
 test('analyzeFlow keeps structured condition expressions out of offline reference analysis', () => {
-  const source = JSON.stringify({
-    definition: {
-      parameters: {
-        targetValue: {
-          type: 'String',
+  const source = JSON.stringify(
+    {
+      definition: {
+        parameters: {
+          targetValue: {
+            type: 'String'
+          }
         },
-      },
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        InitCounter: {
-          type: 'InitializeVariable',
-          inputs: {
-            variables: [
-              {
-                name: 'counter',
-                type: 'integer',
-                value: 0,
-              },
-            ],
+        actions: {
+          InitCounter: {
+            type: 'InitializeVariable',
+            inputs: {
+              variables: [
+                {
+                  name: 'counter',
+                  type: 'integer',
+                  value: 0
+                }
+              ]
+            },
+            runAfter: {}
           },
-          runAfter: {},
-        },
-        PrepareValue: {
-          type: 'Compose',
-          inputs: 12,
-          runAfter: {
-            InitCounter: ['Succeeded'],
+          PrepareValue: {
+            type: 'Compose',
+            inputs: 12,
+            runAfter: {
+              InitCounter: ['Succeeded']
+            }
           },
-        },
-        CheckValue: {
-          type: 'If',
-          expression: {
-            and: [
-              {
-                equals: [
-                  "@outputs('PrepareValue')",
-                  "@parameters('targetValue')",
-                ],
-              },
-              {
-                greaterOrEquals: [
-                  "@variables('counter')",
-                  0,
-                ],
-              },
-            ],
-          },
-          actions: {},
-          runAfter: {
-            PrepareValue: ['Succeeded'],
-          },
-        },
-      },
+          CheckValue: {
+            type: 'If',
+            expression: {
+              and: [
+                {
+                  equals: ["@outputs('PrepareValue')", "@parameters('targetValue')"]
+                },
+                {
+                  greaterOrEquals: ["@variables('counter')", 0]
+                }
+              ]
+            },
+            actions: {},
+            runAfter: {
+              PrepareValue: ['Succeeded']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const result = analyzeFlow(source, source.indexOf('greaterOrEquals'));
   assert.equal(result.references.length, 0);
@@ -188,131 +190,149 @@ test('analyzeFlow keeps structured condition expressions out of offline referenc
 });
 
 test('analyzeFlow does not approximate expression syntax offline', () => {
-  const source = JSON.stringify({
-    definition: {
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+  const source = JSON.stringify(
+    {
+      definition: {
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        InitText: {
-          type: 'InitializeVariable',
-          inputs: {
-            variables: [
-              {
-                name: 'text',
-                type: 'string',
-                value: '',
-              },
-            ],
+        actions: {
+          InitText: {
+            type: 'InitializeVariable',
+            inputs: {
+              variables: [
+                {
+                  name: 'text',
+                  type: 'string',
+                  value: ''
+                }
+              ]
+            },
+            runAfter: {}
           },
-          runAfter: {},
-        },
-        GoodExpression: {
-          type: 'Compose',
-          inputs: "@concat('literal } brace', split(replace(toLower(variables('text')), 'a', 'b'), ','), 1.2e3)",
-          runAfter: {
-            InitText: ['Succeeded'],
+          GoodExpression: {
+            type: 'Compose',
+            inputs: "@concat('literal } brace', split(replace(toLower(variables('text')), 'a', 'b'), ','), 1.2e3)",
+            runAfter: {
+              InitText: ['Succeeded']
+            }
           },
-        },
-        BadExpression: {
-          type: 'Compose',
-          inputs: "@variables('text') trailing",
-          runAfter: {
-            GoodExpression: ['Succeeded'],
-          },
-        },
-      },
+          BadExpression: {
+            type: 'Compose',
+            inputs: "@variables('text') trailing",
+            runAfter: {
+              GoodExpression: ['Succeeded']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const result = analyzeFlow(source, source.indexOf('trailing'));
   assert.equal(result.references.length, 0);
-  assert.equal(result.diagnostics.some((item) => item.code === 'FLOW_EXPR_TRAILING_TOKEN'), false);
+  assert.equal(
+    result.diagnostics.some((item) => item.code === 'FLOW_EXPR_TRAILING_TOKEN'),
+    false
+  );
 });
 
 test('analyzeFlow does not approximate variable mutation target resolution offline', () => {
-  const source = JSON.stringify({
-    definition: {
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+  const source = JSON.stringify(
+    {
+      definition: {
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        SetMissingVariable: {
-          type: 'SetVariable',
-          inputs: {
-            name: 'missingVariable',
-            value: 1,
-          },
-          runAfter: {},
-        },
-      },
+        actions: {
+          SetMissingVariable: {
+            type: 'SetVariable',
+            inputs: {
+              name: 'missingVariable',
+              value: 1
+            },
+            runAfter: {}
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const result = analyzeFlow(source, source.indexOf('missingVariable'));
   assert.equal(result.references.length, 0);
-  assert.equal(result.diagnostics.some((item) => item.code === 'FLOW_VARIABLE_UNRESOLVED'), false);
+  assert.equal(
+    result.diagnostics.some((item) => item.code === 'FLOW_VARIABLE_UNRESOLVED'),
+    false
+  );
 });
 
 test('analyzeFlow suggests workflow expression function snippets', () => {
-  const source = JSON.stringify({
-    definition: {
-      parameters: {
-        targetValue: {
-          type: 'String',
+  const source = JSON.stringify(
+    {
+      definition: {
+        parameters: {
+          targetValue: {
+            type: 'String'
+          }
         },
-      },
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        InitCounter: {
-          type: 'InitializeVariable',
-          inputs: {
-            variables: [
-              {
-                name: 'counter',
-                type: 'integer',
-                value: 0,
-              },
-            ],
+        actions: {
+          InitCounter: {
+            type: 'InitializeVariable',
+            inputs: {
+              variables: [
+                {
+                  name: 'counter',
+                  type: 'integer',
+                  value: 0
+                }
+              ]
+            },
+            runAfter: {}
           },
-          runAfter: {},
-        },
-        PrepareValue: {
-          type: 'Compose',
-          inputs: 12,
-          runAfter: {
-            InitCounter: ['Succeeded'],
+          PrepareValue: {
+            type: 'Compose',
+            inputs: 12,
+            runAfter: {
+              InitCounter: ['Succeeded']
+            }
           },
-        },
-        For_each_record: {
-          type: 'Foreach',
-          foreach: "@triggerBody()?['value']",
-          actions: {},
-          runAfter: {
-            PrepareValue: ['Succeeded'],
+          For_each_record: {
+            type: 'Foreach',
+            foreach: "@triggerBody()?['value']",
+            actions: {},
+            runAfter: {
+              PrepareValue: ['Succeeded']
+            }
           },
-        },
-        UseExpression: {
-          type: 'Compose',
-          inputs: '@trig',
-          runAfter: {
-            For_each_record: ['Succeeded'],
-          },
-        },
-      },
+          UseExpression: {
+            type: 'Compose',
+            inputs: '@trig',
+            runAfter: {
+              For_each_record: ['Succeeded']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const cursor = source.indexOf('@trig') + '@trig'.length;
   const result = analyzeFlow(source, cursor);
@@ -324,86 +344,93 @@ test('analyzeFlow suggests workflow expression function snippets', () => {
 });
 
 test('analyzeFlow completes expression target names by function context', () => {
-  const source = JSON.stringify({
-    definition: {
-      parameters: {
-        targetValue: {
-          type: 'String',
+  const source = JSON.stringify(
+    {
+      definition: {
+        parameters: {
+          targetValue: {
+            type: 'String'
+          }
         },
-      },
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        InitCounter: {
-          type: 'InitializeVariable',
-          inputs: {
-            variables: [
-              {
-                name: 'counter',
-                type: 'integer',
-                value: 0,
-              },
-            ],
+        actions: {
+          InitCounter: {
+            type: 'InitializeVariable',
+            inputs: {
+              variables: [
+                {
+                  name: 'counter',
+                  type: 'integer',
+                  value: 0
+                }
+              ]
+            },
+            runAfter: {}
           },
-          runAfter: {},
-        },
-        PrepareValue: {
-          type: 'Compose',
-          inputs: 12,
-          runAfter: {
-            InitCounter: ['Succeeded'],
+          PrepareValue: {
+            type: 'Compose',
+            inputs: 12,
+            runAfter: {
+              InitCounter: ['Succeeded']
+            }
           },
-        },
-        For_each_record: {
-          type: 'Foreach',
-          foreach: "@triggerBody()?['value']",
-          actions: {},
-          runAfter: {
-            PrepareValue: ['Succeeded'],
+          For_each_record: {
+            type: 'Foreach',
+            foreach: "@triggerBody()?['value']",
+            actions: {},
+            runAfter: {
+              PrepareValue: ['Succeeded']
+            }
           },
-        },
-        UseAction: {
-          type: 'Compose',
-          inputs: "@outputs('Prep",
-          runAfter: {
-            For_each_record: ['Succeeded'],
+          UseAction: {
+            type: 'Compose',
+            inputs: "@outputs('Prep",
+            runAfter: {
+              For_each_record: ['Succeeded']
+            }
           },
-        },
-        UseLoop: {
-          type: 'Compose',
-          inputs: "@items('For",
-          runAfter: {
-            UseAction: ['Succeeded'],
+          UseLoop: {
+            type: 'Compose',
+            inputs: "@items('For",
+            runAfter: {
+              UseAction: ['Succeeded']
+            }
           },
-        },
-        UseVariable: {
-          type: 'Compose',
-          inputs: "@variables('cou",
-          runAfter: {
-            UseLoop: ['Succeeded'],
+          UseVariable: {
+            type: 'Compose',
+            inputs: "@variables('cou",
+            runAfter: {
+              UseLoop: ['Succeeded']
+            }
           },
-        },
-        UseParameter: {
-          type: 'Compose',
-          inputs: "@parameters('tar",
-          runAfter: {
-            UseVariable: ['Succeeded'],
-          },
-        },
-      },
+          UseParameter: {
+            type: 'Compose',
+            inputs: "@parameters('tar",
+            runAfter: {
+              UseVariable: ['Succeeded']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   const actionResult = analyzeFlow(source, source.indexOf("@outputs('Prep") + "@outputs('Prep".length);
   assert.ok(actionResult.completions.some((item) => item.label === 'PrepareValue' && item.type === 'action'));
 
   const loopResult = analyzeFlow(source, source.indexOf("@items('For") + "@items('For".length);
   assert.ok(loopResult.completions.some((item) => item.label === 'For_each_record'));
-  assert.equal(loopResult.completions.some((item) => item.label === 'PrepareValue'), false);
+  assert.equal(
+    loopResult.completions.some((item) => item.label === 'PrepareValue'),
+    false
+  );
 
   const variableResult = analyzeFlow(source, source.indexOf("@variables('cou") + "@variables('cou".length);
   assert.ok(variableResult.completions.some((item) => item.label === 'counter' && item.type === 'variable'));
@@ -413,43 +440,47 @@ test('analyzeFlow completes expression target names by function context', () => 
 });
 
 test('completeFlowExpression provides expression completions for modal field editors', () => {
-  const source = JSON.stringify({
-    definition: {
-      parameters: {
-        targetValue: {
-          type: 'String',
+  const source = JSON.stringify(
+    {
+      definition: {
+        parameters: {
+          targetValue: {
+            type: 'String'
+          }
         },
-      },
-      triggers: {
-        manual: {
-          type: 'Request',
-          inputs: {},
+        triggers: {
+          manual: {
+            type: 'Request',
+            inputs: {}
+          }
         },
-      },
-      actions: {
-        InitCounter: {
-          type: 'InitializeVariable',
-          inputs: {
-            variables: [
-              {
-                name: 'counter',
-                type: 'integer',
-                value: 0,
-              },
-            ],
+        actions: {
+          InitCounter: {
+            type: 'InitializeVariable',
+            inputs: {
+              variables: [
+                {
+                  name: 'counter',
+                  type: 'integer',
+                  value: 0
+                }
+              ]
+            },
+            runAfter: {}
           },
-          runAfter: {},
-        },
-        PrepareValue: {
-          type: 'Compose',
-          inputs: 12,
-          runAfter: {
-            InitCounter: ['Succeeded'],
-          },
-        },
-      },
+          PrepareValue: {
+            type: 'Compose',
+            inputs: 12,
+            runAfter: {
+              InitCounter: ['Succeeded']
+            }
+          }
+        }
+      }
     },
-  }, null, 2);
+    null,
+    2
+  );
 
   assert.ok(completeFlowExpression(source, 'trig').some((item) => item.label === 'triggerBody()'));
   assert.ok(completeFlowExpression(source, "outputs('Prep").some((item) => item.label === 'PrepareValue' && item.type === 'action'));
@@ -459,7 +490,7 @@ test('completeFlowExpression provides expression completions for modal field edi
 
 test('analyzeFlow leaves reference validation to canonical Power Automate checks', async () => {
   const source = await readFixture('broken-power-automate-wrapper.json');
-  const result = analyzeFlow(source, source.indexOf("DoesNotExist"));
+  const result = analyzeFlow(source, source.indexOf('DoesNotExist'));
   const codes = new Set(result.diagnostics.map((item) => item.code));
   assert.equal(codes.has('FLOW_REFERENCE_UNRESOLVED'), false);
   assert.equal(codes.has('FLOW_RUN_AFTER_TARGET_MISSING'), false);

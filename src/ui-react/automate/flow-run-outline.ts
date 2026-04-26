@@ -10,8 +10,8 @@ type IndexedRunAction = {
 };
 
 export function formatRunDuration(item: FlowRun | FlowAction) {
-  const startTime = prop(item, 'properties.startTime');
-  const endTime = prop(item, 'properties.endTime');
+  const startTime = prop<string | number>(item, 'properties.startTime');
+  const endTime = prop<string | number>(item, 'properties.endTime');
   if (!startTime || !endTime) return '-';
   const diff = new Date(endTime).getTime() - new Date(startTime).getTime();
   if (!Number.isFinite(diff) || diff < 0) return '-';
@@ -40,20 +40,20 @@ export function buildRunActionOutlineItems(outline: FlowAnalysisOutlineItem[], r
   const sortedActions = runActions
     .map((action, originalIndex) => ({ action, originalIndex }))
     .sort((a, b) => compareActionsByExecutionOrder(a.action, b.action) || a.originalIndex - b.originalIndex)
-    .map((entry, orderIndex): IndexedRunAction => ({
-      ...entry,
-      orderIndex,
-      ref: runActionRef(entry.action, entry.originalIndex),
-    }));
+    .map(
+      (entry, orderIndex): IndexedRunAction => ({
+        ...entry,
+        orderIndex,
+        ref: runActionRef(entry.action, entry.originalIndex)
+      })
+    );
   const runActionsByName = buildRunActionsByName(sortedActions);
   const matched = new Set<string>();
   const workflow = outline.find((item) => item.kind === 'workflow') || outline[0];
   const actionContainer = workflow?.children?.find((item) => item.name === 'actions' && item.children?.length);
   const sourceItems = actionContainer?.children?.length ? actionContainer.children : [];
 
-  const decorated = sourceItems
-    .map((item) => decorateDefinitionActionForRun(item, runActionsByName, matched, statusFilter))
-    .filter((item): item is FlowAnalysisOutlineItem => Boolean(item));
+  const decorated = sourceItems.map((item) => decorateDefinitionActionForRun(item, runActionsByName, matched, statusFilter)).filter((item): item is FlowAnalysisOutlineItem => Boolean(item));
   const unmatched = sortedActions
     .filter((entry) => !matched.has(entry.ref))
     .filter((entry) => !statusFilter || String(prop(entry.action, 'properties.status') || '') === statusFilter)
@@ -65,7 +65,7 @@ export function buildRunActionOutlineItems(outline: FlowAnalysisOutlineItem[], r
         kind: 'branch',
         name: 'Run-only actions',
         detail: String(unmatched.length),
-        children: unmatched,
+        children: unmatched
       });
     }
     return decorated;
@@ -74,12 +74,7 @@ export function buildRunActionOutlineItems(outline: FlowAnalysisOutlineItem[], r
 }
 
 export function runActionRef(action: FlowAction, originalIndex: number) {
-  return [
-    String(originalIndex),
-    action.name || '',
-    String(prop(action, 'properties.correlation.actionTrackingId') || ''),
-    String(prop(action, 'properties.startTime') || ''),
-  ].join(':');
+  return [String(originalIndex), action.name || '', String(prop(action, 'properties.correlation.actionTrackingId') || ''), String(prop(action, 'properties.startTime') || '')].join(':');
 }
 
 export function findRunActionForOutlineItem(item: FlowAnalysisOutlineItem, runActions: FlowAction[]): FlowAction | undefined {
@@ -128,12 +123,7 @@ function takeNextRunActionByName(runActionsByName: Map<string, IndexedRunAction[
   return matches?.shift();
 }
 
-function decorateDefinitionActionForRun(
-  item: FlowAnalysisOutlineItem,
-  runActionsByName: Map<string, IndexedRunAction[]>,
-  matched: Set<string>,
-  statusFilter: string,
-): FlowAnalysisOutlineItem | null {
+function decorateDefinitionActionForRun(item: FlowAnalysisOutlineItem, runActionsByName: Map<string, IndexedRunAction[]>, matched: Set<string>, statusFilter: string): FlowAnalysisOutlineItem | null {
   const runAction = takeNextRunActionByName(runActionsByName, item.name);
   if (runAction) matched.add(runAction.ref);
   const children = (item.children || [])
@@ -149,7 +139,7 @@ function decorateDefinitionActionForRun(
       ...item,
       detail: item.detail ? `${item.detail} · not run` : 'not run',
       inputs: { ...(item.inputs || {}), status: 'not run' },
-      children: children.length ? children : item.children ? [] : undefined,
+      children: children.length ? children : item.children ? [] : undefined
     };
   }
   const runItem = runActionToOutlineItem(runAction);
@@ -160,7 +150,7 @@ function decorateDefinitionActionForRun(
     type: item.type || runItem.type,
     runActionRef: runItem.runActionRef,
     inputs: { ...(item.inputs || {}), ...(runItem.inputs || {}) },
-    children: children.length ? children : item.children ? [] : undefined,
+    children: children.length ? children : item.children ? [] : undefined
   };
 }
 
@@ -182,8 +172,8 @@ function runActionToOutlineItem(entry: IndexedRunAction): FlowAnalysisOutlineIte
       ...(code && code !== status ? { code } : {}),
       duration: formatRunDuration(action),
       ...(prop(action, 'properties.repetitionCount') != null ? { repetitions: prop(action, 'properties.repetitionCount') } : {}),
-      ...(retryHistory?.length ? { retries: retryHistory.length } : {}),
-    },
+      ...(retryHistory?.length ? { retries: retryHistory.length } : {})
+    }
   };
 }
 
@@ -197,8 +187,7 @@ function compareActionsByExecutionOrder(a: FlowAction, b: FlowAction) {
   const bStart = timestampValue(prop(b, 'properties.startTime'));
   const aEnd = timestampValue(prop(a, 'properties.endTime'));
   const bEnd = timestampValue(prop(b, 'properties.endTime'));
-  return compareNullableAscending(aStart, bStart)
-    || compareNullableAscending(aEnd, bEnd);
+  return compareNullableAscending(aStart, bStart) || compareNullableAscending(aEnd, bEnd);
 }
 
 function timestampValue(value: unknown) {

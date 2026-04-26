@@ -16,7 +16,9 @@ import { CanvasTab, type CanvasState } from './canvas/CanvasTab.js';
 import { PlatformTab, type PlatformState } from './platform/PlatformTab.js';
 import { isMonacoKeyboardEvent } from './monaco-support.js';
 import { JsonViewer } from './JsonViewer.js';
-import type { ApiEnvelope, DataverseState, ShellState } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, DataverseEntityDetail, DataverseEntitySummary, DataverseRecordPage, DataverseState, PowerPlatformInventoryItem, ShellState } from './ui-types.js';
+
+type ConsoleSeed = { api: string; method: string; path: string };
 
 export function App() {
   const appMode = getAppMode();
@@ -42,7 +44,7 @@ export function App() {
   const envPickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const confirm = useConfirm();
 
-  const [consoleSeed, setConsoleSeed] = useState<any | null>(null);
+  const [consoleSeed, setConsoleSeed] = useState<ConsoleSeed | null>(null);
 
   const [dataverse, setDataverse] = useState<DataverseState>({
     entitiesEnvironment: '',
@@ -52,32 +54,32 @@ export function App() {
     currentEntityDetail: null,
     currentEntityDiagnostics: [],
     selectedColumns: [] as string[],
-    recordPreview: null as any,
+    recordPreview: null,
     entityFilter: '',
     attrFilter: '',
     explorerSubTab: 'metadata',
     dvSubTab: 'dv-explorer',
     queryPreview: 'Preview a Dataverse path here.',
-    queryResult: null,
+    queryResult: null
   });
 
   const [appsState, setAppsState] = useState<AppsState>({
     loadedEnvironment: '',
     items: [],
     current: null,
-    filter: '',
+    filter: ''
   });
 
   const [canvasState, setCanvasState] = useState<CanvasState>({
     sessions: [],
-    sessionStarting: false,
+    sessionStarting: false
   });
 
   const [platformState, setPlatformState] = useState<PlatformState>({
     loadedEnvironment: '',
     items: [],
     current: null,
-    filter: '',
+    filter: ''
   });
 
   useEffect(() => {
@@ -161,7 +163,7 @@ export function App() {
       selectedColumns: [],
       recordPreview: null,
       queryPreview: 'Preview a Dataverse path here.',
-      queryResult: null,
+      queryResult: null
     }));
     setAppsState({ loadedEnvironment: '', items: [], current: null, filter: '' });
     setPlatformState({ loadedEnvironment: '', items: [], current: null, filter: '' });
@@ -175,7 +177,7 @@ export function App() {
       setConsoleSeed({
         api: detail.api,
         method: detail.method,
-        path: detail.path,
+        path: detail.path
       });
     };
     window.addEventListener('pp:open-console', listener as EventListener);
@@ -230,7 +232,9 @@ export function App() {
   async function loadEntities() {
     if (!globalEnvironment) return;
     try {
-      const payload = await api<any>(`/api/dv/entities?environment=${encodeURIComponent(globalEnvironment)}&allowInteractive=false&softFail=true`, { allowFailure: true });
+      const payload = await api<ApiEnvelope<DataverseEntitySummary[]>>(`/api/dv/entities?environment=${encodeURIComponent(globalEnvironment)}&allowInteractive=false&softFail=true`, {
+        allowFailure: true
+      });
       if (payload.success === false) {
         setDataverse((current) => ({
           ...current,
@@ -241,7 +245,7 @@ export function App() {
           currentEntityDetail: null,
           currentEntityDiagnostics: payload.diagnostics || [],
           selectedColumns: [],
-          recordPreview: null,
+          recordPreview: null
         }));
         return;
       }
@@ -255,7 +259,7 @@ export function App() {
         currentEntityDetail: null,
         currentEntityDiagnostics: [],
         selectedColumns: [],
-        recordPreview: null,
+        recordPreview: null
       }));
       pushToast(`Loaded ${entities.length} entities`);
     } catch (error) {
@@ -268,7 +272,7 @@ export function App() {
         currentEntityDetail: null,
         currentEntityDiagnostics: [],
         selectedColumns: [],
-        recordPreview: null,
+        recordPreview: null
       }));
     }
   }
@@ -279,7 +283,7 @@ export function App() {
       return;
     }
     try {
-      const payload = await api<any>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(globalEnvironment)}`);
+      const payload = await api<ApiEnvelope<DataverseEntityDetail>>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(globalEnvironment)}`);
       const detail = payload.data;
       const currentEntity = dataverse.entities.find((item) => item.logicalName === logicalName) || { logicalName };
       const selectedColumns = getDefaultSelectedColumns(detail, 0);
@@ -289,7 +293,7 @@ export function App() {
         currentEntityDetail: detail,
         currentEntityDiagnostics: payload.diagnostics || [],
         selectedColumns,
-        attrFilter: '',
+        attrFilter: ''
       }));
       void loadRecordPreview(detail, selectedColumns);
     } catch (error) {
@@ -306,14 +310,14 @@ export function App() {
     if (!select.length) {
       setDataverse((current) => ({
         ...current,
-        recordPreview: { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] },
+        recordPreview: { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
       }));
       return;
     }
     try {
-      const payload = await api<any>('/api/dv/query/execute', {
+      const payload = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/query/execute', {
         method: 'POST',
-        body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: 5 }),
+        body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: 5 })
       });
       setDataverse((current) => ({ ...current, recordPreview: payload.data }));
     } catch (error) {
@@ -324,15 +328,15 @@ export function App() {
   async function loadApps() {
     if (!globalEnvironment) return;
     try {
-      const payload = await api<any>('/api/request/execute', {
+      const payload = await api<ApiEnvelope<ApiExecuteResponse<{ value?: PowerPlatformInventoryItem[] }>>>('/api/request/execute', {
         method: 'POST',
-        body: JSON.stringify({ environment: globalEnvironment, api: 'powerapps', method: 'GET', path: '/apps', allowInteractive: false, softFail: true }),
+        body: JSON.stringify({ environment: globalEnvironment, api: 'powerapps', method: 'GET', path: '/apps', allowInteractive: false, softFail: true })
       });
       setAppsState((current) => ({
         ...current,
         loadedEnvironment: globalEnvironment,
         items: payload.data?.response?.value || [],
-        current: null,
+        current: null
       }));
     } catch (error) {
       setAppsState((current) => ({ ...current, loadedEnvironment: globalEnvironment, items: [], current: null }));
@@ -343,15 +347,15 @@ export function App() {
   async function loadPlatformEnvironments() {
     if (!globalEnvironment) return;
     try {
-      const payload = await api<any>('/api/request/execute', {
+      const payload = await api<ApiEnvelope<ApiExecuteResponse<{ value?: PowerPlatformInventoryItem[] }>>>('/api/request/execute', {
         method: 'POST',
-        body: JSON.stringify({ environment: globalEnvironment, api: 'bap', method: 'GET', path: '/environments', allowInteractive: false, softFail: true }),
+        body: JSON.stringify({ environment: globalEnvironment, api: 'bap', method: 'GET', path: '/environments', allowInteractive: false, softFail: true })
       });
       setPlatformState((current) => ({
         ...current,
         loadedEnvironment: globalEnvironment,
         items: payload.data?.response?.value || [],
-        current: null,
+        current: null
       }));
     } catch (error) {
       setPlatformState((current) => ({ ...current, loadedEnvironment: globalEnvironment, items: [], current: null }));
@@ -398,7 +402,9 @@ export function App() {
                   <span className="env-trigger-placeholder">Select…</span>
                 )}
               </span>
-              <span className="env-trigger-chevron" aria-hidden="true">▾</span>
+              <span className="env-trigger-chevron" aria-hidden="true">
+                ▾
+              </span>
             </button>
           </div>
           <div className="header-flex-spacer" aria-hidden="true" />
@@ -422,92 +428,102 @@ export function App() {
 
       <div className="app-main">
         <div className={`tab-panel stack ${activeTab === 'setup' ? 'active' : ''}`} id="panel-setup">
-          <SetupTab
-            active={activeTab === 'setup'}
-            shellData={shellData}
-            globalEnvironment={globalEnvironment}
-            refreshState={refreshState}
-            toast={pushToast}
-          />
+          <SetupTab active={activeTab === 'setup'} shellData={shellData} globalEnvironment={globalEnvironment} refreshState={refreshState} toast={pushToast} />
         </div>
 
-        {!setupMode ? <div className={`tab-panel stack ${activeTab === 'console' ? 'active' : ''}`} id="panel-console">
-          <ConsoleTab
-            active={activeTab === 'console'}
-            environment={globalEnvironment}
-            seed={consoleSeed}
-            clearSeed={() => setConsoleSeed(null)}
-            toast={pushToast}
-            renderResponseBody={(value) => <JsonViewer value={value} />}
-          />
-        </div> : null}
+        {!setupMode ? (
+          <div className={`tab-panel stack ${activeTab === 'console' ? 'active' : ''}`} id="panel-console">
+            <ConsoleTab
+              active={activeTab === 'console'}
+              environment={globalEnvironment}
+              seed={consoleSeed}
+              clearSeed={() => setConsoleSeed(null)}
+              toast={pushToast}
+              renderResponseBody={(value) => <JsonViewer value={value} />}
+            />
+          </div>
+        ) : null}
 
-        {!setupMode ? <div className={`tab-panel ${activeTab === 'dataverse' ? 'active' : ''}`} id="panel-dataverse">
-          <DataverseTab
-            dataverse={dataverse}
-            setDataverse={setDataverse}
-            environment={globalEnvironment}
-            environmentUrl={environmentUrl}
-            loadEntities={loadEntities}
-            loadEntityDetail={loadEntityDetail}
-            loadRecordPreview={loadRecordPreview}
-            toast={pushToast}
-          />
-        </div> : null}
+        {!setupMode ? (
+          <div className={`tab-panel ${activeTab === 'dataverse' ? 'active' : ''}`} id="panel-dataverse">
+            <DataverseTab
+              dataverse={dataverse}
+              setDataverse={setDataverse}
+              environment={globalEnvironment}
+              environmentUrl={environmentUrl}
+              loadEntities={loadEntities}
+              loadEntityDetail={loadEntityDetail}
+              loadRecordPreview={loadRecordPreview}
+              toast={pushToast}
+            />
+          </div>
+        ) : null}
 
-        {!setupMode ? <AutomateTab
-          active={activeTab === 'automate'}
-          environment={globalEnvironment}
-          openConsole={(seed) => {
-            setConsoleSeed(seed);
-            setActiveTab('console');
-          }}
-          toast={pushToast}
-        /> : null}
-
-        {!setupMode ? <div className={`tab-panel ${activeTab === 'apps' ? 'active' : ''}`} id="panel-apps">
-          <AppsTab
-            state={appsState}
-            setState={setAppsState}
+        {!setupMode ? (
+          <AutomateTab
+            active={activeTab === 'automate'}
             environment={globalEnvironment}
-            reload={loadApps}
-            openConsole={(path) => {
-              setConsoleSeed({ api: 'powerapps', method: 'GET', path });
+            openConsole={(seed) => {
+              setConsoleSeed(seed);
               setActiveTab('console');
             }}
             toast={pushToast}
           />
-        </div> : null}
+        ) : null}
 
-        {!setupMode ? <div className={`tab-panel ${activeTab === 'canvas' ? 'active' : ''}`} id="panel-canvas">
-          <CanvasTab
-            state={canvasState}
-            setState={setCanvasState}
-            environment={globalEnvironment}
-            environmentId={currentEnvData?.makerEnvironmentId}
-            apps={appsState.items}
-            appsLoaded={appsState.loadedEnvironment === globalEnvironment}
-            loadApps={loadApps}
-            toast={pushToast}
-          />
-        </div> : null}
+        {!setupMode ? (
+          <div className={`tab-panel ${activeTab === 'apps' ? 'active' : ''}`} id="panel-apps">
+            <AppsTab
+              state={appsState}
+              setState={setAppsState}
+              environment={globalEnvironment}
+              reload={loadApps}
+              openConsole={(path) => {
+                setConsoleSeed({ api: 'powerapps', method: 'GET', path });
+                setActiveTab('console');
+              }}
+              toast={pushToast}
+            />
+          </div>
+        ) : null}
 
-        {!setupMode ? <div className={`tab-panel ${activeTab === 'platform' ? 'active' : ''}`} id="panel-platform">
-          <PlatformTab
-            state={platformState}
-            setState={setPlatformState}
-            environment={globalEnvironment}
-            reload={loadPlatformEnvironments}
-            openConsole={(path) => {
-              setConsoleSeed({ api: 'bap', method: 'GET', path });
-              setActiveTab('console');
-            }}
-            toast={pushToast}
-          />
-        </div> : null}
+        {!setupMode ? (
+          <div className={`tab-panel ${activeTab === 'canvas' ? 'active' : ''}`} id="panel-canvas">
+            <CanvasTab
+              state={canvasState}
+              setState={setCanvasState}
+              environment={globalEnvironment}
+              environmentId={currentEnvData?.makerEnvironmentId}
+              apps={appsState.items}
+              appsLoaded={appsState.loadedEnvironment === globalEnvironment}
+              loadApps={loadApps}
+              toast={pushToast}
+            />
+          </div>
+        ) : null}
+
+        {!setupMode ? (
+          <div className={`tab-panel ${activeTab === 'platform' ? 'active' : ''}`} id="panel-platform">
+            <PlatformTab
+              state={platformState}
+              setState={setPlatformState}
+              environment={globalEnvironment}
+              reload={loadPlatformEnvironments}
+              openConsole={(path) => {
+                setConsoleSeed({ api: 'bap', method: 'GET', path });
+                setActiveTab('console');
+              }}
+              toast={pushToast}
+            />
+          </div>
+        ) : null}
       </div>
 
-      {stateLoading ? <div className="app-loading-bar" aria-hidden="true"><span /></div> : null}
+      {stateLoading ? (
+        <div className="app-loading-bar" aria-hidden="true">
+          <span />
+        </div>
+      ) : null}
 
       {envPickerOpen ? (
         <EnvironmentPickerModal
@@ -530,9 +546,7 @@ export function App() {
         />
       ) : null}
 
-      {shortcutHelpOpen ? (
-        <ShortcutHelpModal tabs={availableTabs} onClose={() => setShortcutHelpOpen(false)} />
-      ) : null}
+      {shortcutHelpOpen ? <ShortcutHelpModal tabs={availableTabs} onClose={() => setShortcutHelpOpen(false)} /> : null}
 
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </>

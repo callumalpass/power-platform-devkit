@@ -56,7 +56,7 @@ export class HttpClient {
           method,
           headers,
           body,
-          ...(controller ? { signal: controller.signal } : {}),
+          ...(controller ? { signal: controller.signal } : {})
         });
         const parsed = await readResponse<T>(response, request.responseType ?? 'json', method, url.toString());
         if (!parsed.success || !parsed.data) return fail(...parsed.diagnostics);
@@ -64,14 +64,14 @@ export class HttpClient {
           return fail(
             createDiagnostic('error', 'HTTP_REQUEST_FAILED', `${method} ${url.toString()} returned ${response.status}.`, {
               source: 'pp/http',
-              detail: parsed.data.text,
-            }),
+              detail: parsed.data.text
+            })
           );
         }
         return ok({
           status: response.status,
           headers: headersToObject(response.headers),
-          data: parsed.data.data,
+          data: parsed.data.data
         });
       } finally {
         if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -84,8 +84,8 @@ export class HttpClient {
       return fail(
         createDiagnostic('error', 'HTTP_UNHANDLED_ERROR', message, {
           source: 'pp/http',
-          detail: `${request.method ?? 'GET'} ${request.path}`,
-        }),
+          detail: `${request.method ?? 'GET'} ${request.path}`
+        })
       );
     }
   }
@@ -120,12 +120,7 @@ function resolveRequestBody(request: HttpRequestOptions): string | undefined {
   return JSON.stringify(request.body);
 }
 
-async function readResponse<T>(
-  response: Response,
-  responseType: HttpResponseType,
-  method: string,
-  url: string,
-): Promise<OperationResult<{ data: T; text?: string }>> {
+async function readResponse<T>(response: Response, responseType: HttpResponseType, method: string, url: string): Promise<OperationResult<{ data: T; text?: string }>> {
   if (responseType === 'void' || response.status === 204 || response.status === 205) {
     return ok({ data: undefined as T });
   }
@@ -144,8 +139,8 @@ async function readResponse<T>(
     return fail(
       createDiagnostic('error', 'HTTP_RESPONSE_PARSE_FAILED', `${method} ${url} returned invalid JSON.`, {
         source: 'pp/http',
-        detail: `Status: ${response.status}\n${error instanceof Error ? error.message : String(error)}\n\n${snippet}`,
-      }),
+        detail: `Status: ${response.status}\n${error instanceof Error ? error.message : String(error)}\n\n${snippet}`
+      })
     );
   }
 }

@@ -1,18 +1,8 @@
 import type { FlowApiOperationSchemaField, FlowDynamicValueOption } from '../ui-types.js';
 import { Select } from '../Select.js';
-import {
-  builtInFieldsForAction,
-  type BuiltInActionField,
-} from './flow-built-in-templates.js';
+import { builtInFieldsForAction, type BuiltInActionField } from './flow-built-in-templates.js';
 import { FlowExpressionValueEditor } from './FlowExpressionValueEditor.js';
-import {
-  isObject,
-  parseEditableJson,
-  readPathValue,
-  schemaTypeLabel,
-  shouldEditAsJson,
-  valueToEditText,
-} from './flow-action-document.js';
+import { isObject, parseEditableJson, readPathValue, schemaTypeLabel, shouldEditAsJson, valueToEditText } from './flow-action-document.js';
 import { summarizeDynamicMetadata } from './flow-dynamic-schema.js';
 import type { FlowEditorSchemaIndex } from './flow-editor-schema-index.js';
 
@@ -32,21 +22,21 @@ export function CommonActionFields(props: {
         { label: 'Host', path: ['inputs', 'host'], kind: 'json' },
         { label: 'Parameters', path: ['inputs', 'parameters'], kind: 'json' },
         { label: 'Headers', path: ['inputs', 'headers'], kind: 'json' },
-        { label: 'Body', path: ['inputs', 'body'], kind: 'json' },
+        { label: 'Body', path: ['inputs', 'body'], kind: 'json' }
       );
     } else if (type === 'serviceprovider') {
-      fields.push(
-        { label: 'Service provider config', path: ['inputs', 'serviceProviderConfiguration'], kind: 'json' },
-        { label: 'Parameters', path: ['inputs', 'parameters'], kind: 'json' },
-      );
+      fields.push({ label: 'Service provider config', path: ['inputs', 'serviceProviderConfiguration'], kind: 'json' }, { label: 'Parameters', path: ['inputs', 'parameters'], kind: 'json' });
     }
   }
-  const trailing: BuiltInActionField[] = props.includeTrailing === false ? [] : [
-    { label: 'Run after', path: ['runAfter'], kind: 'json' as const },
-    { label: 'Operation options', path: ['operationOptions'] },
-    { label: 'Description', path: ['description'] },
-    { label: 'Metadata', path: ['metadata'], kind: 'json' as const },
-  ];
+  const trailing: BuiltInActionField[] =
+    props.includeTrailing === false
+      ? []
+      : [
+          { label: 'Run after', path: ['runAfter'], kind: 'json' as const },
+          { label: 'Operation options', path: ['operationOptions'] },
+          { label: 'Description', path: ['description'] },
+          { label: 'Metadata', path: ['metadata'], kind: 'json' as const }
+        ];
   return (
     <div className="flow-action-field-list">
       {fields.map((field) => (
@@ -78,7 +68,14 @@ export function CommonActionFields(props: {
 }
 type ActionValueOption = string | FlowDynamicValueOption;
 
-export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; value: unknown; options?: FlowDynamicValueOption[]; source: string; schemaIndex?: FlowEditorSchemaIndex; onChange: (value: unknown) => void }) {
+export function SchemaFieldEditor(props: {
+  field: FlowApiOperationSchemaField;
+  value: unknown;
+  options?: FlowDynamicValueOption[];
+  source: string;
+  schemaIndex?: FlowEditorSchemaIndex;
+  onChange: (value: unknown) => void;
+}) {
   const { field } = props;
   const type = field.type || schemaTypeLabel(field.schema) || 'value';
   const dynamicHint = summarizeDynamicMetadata(field);
@@ -86,7 +83,10 @@ export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; v
   return (
     <div className="flow-action-schema-field">
       <div>
-        <div className="flow-action-field-label">{field.title || field.name}{field.required ? ' *' : ''}</div>
+        <div className="flow-action-field-label">
+          {field.title || field.name}
+          {field.required ? ' *' : ''}
+        </div>
         <div className="flow-action-field-meta">
           {field.location || 'parameter'} · {type}
           {field.visibility ? ` · ${field.visibility}` : ''}
@@ -94,46 +94,49 @@ export function SchemaFieldEditor(props: { field: FlowApiOperationSchemaField; v
         {field.description ? <div className="flow-action-field-desc">{field.description}</div> : null}
         {dynamicHint ? <div className="flow-action-field-desc">{dynamicHint}</div> : null}
       </div>
-      <ActionValueEditor value={props.value} kind={options?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'} options={options} source={props.source} schemaIndex={props.schemaIndex} onChange={props.onChange} />
+      <ActionValueEditor
+        value={props.value}
+        kind={options?.length ? 'select' : shouldEditAsJson(field) ? 'json' : 'text'}
+        options={options}
+        source={props.source}
+        schemaIndex={props.schemaIndex}
+        onChange={props.onChange}
+      />
     </div>
   );
 }
-function ActionValueEditor(props: { label?: string; value: unknown; kind?: 'text' | 'json' | 'select'; options?: ActionValueOption[]; source: string; schemaIndex?: FlowEditorSchemaIndex; onChange: (value: unknown) => void }) {
+function ActionValueEditor(props: {
+  label?: string;
+  value: unknown;
+  kind?: 'text' | 'json' | 'select';
+  options?: ActionValueOption[];
+  source: string;
+  schemaIndex?: FlowEditorSchemaIndex;
+  onChange: (value: unknown) => void;
+}) {
   const kind = props.kind || (isObject(props.value) || Array.isArray(props.value) ? 'json' : 'text');
   const valueText = valueToEditText(props.value, kind);
-  const content = kind === 'select' ? (
-    <Select
-      aria-label={props.label || 'Value'}
-      value={String(props.value ?? '')}
-      onChange={(next) => props.onChange(next)}
-      options={[
-        { value: '', label: 'not set' },
-        ...(props.options || []).map((item) => ({ value: optionValue(item), label: optionLabel(item) })),
-      ]}
-    />
-  ) : kind === 'json' ? (
-    <FlowExpressionValueEditor
-      value={valueText}
-      source={props.source}
-      schemaIndex={props.schemaIndex}
-      mode="json"
-      onChange={(next) => props.onChange(parseEditableJson(next))}
-    />
-  ) : (
-    <FlowExpressionValueEditor
-      value={valueText}
-      source={props.source}
-      schemaIndex={props.schemaIndex}
-      mode="text"
-      onChange={(next) => props.onChange(next)}
-    />
-  );
+  const content =
+    kind === 'select' ? (
+      <Select
+        aria-label={props.label || 'Value'}
+        value={String(props.value ?? '')}
+        onChange={(next) => props.onChange(next)}
+        options={[{ value: '', label: 'not set' }, ...(props.options || []).map((item) => ({ value: optionValue(item), label: optionLabel(item) }))]}
+      />
+    ) : kind === 'json' ? (
+      <FlowExpressionValueEditor value={valueText} source={props.source} schemaIndex={props.schemaIndex} mode="json" onChange={(next) => props.onChange(parseEditableJson(next))} />
+    ) : (
+      <FlowExpressionValueEditor value={valueText} source={props.source} schemaIndex={props.schemaIndex} mode="text" onChange={(next) => props.onChange(next)} />
+    );
   return props.label ? (
     <div className="flow-action-value-editor" role="group" aria-label={props.label}>
       <span>{props.label}</span>
       {content}
     </div>
-  ) : content;
+  ) : (
+    content
+  );
 }
 function optionValue(option: ActionValueOption) {
   return typeof option === 'string' ? option : option.value;

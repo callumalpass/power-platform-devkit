@@ -10,12 +10,7 @@ import { AccessPanel } from './setup/AccessPanel.js';
 import { ToolsPanel } from './setup/ToolsPanel.js';
 import { summarizeHealthFailure } from './setup/health.js';
 import { api } from './utils.js';
-import {
-  HEALTH_APIS,
-  SETUP_SUB_TAB_LABELS,
-  type HealthEntry,
-  type SetupSubTab,
-} from './setup/types.js';
+import { HEALTH_APIS, SETUP_SUB_TAB_LABELS, type HealthEntry, type SetupSubTab } from './setup/types.js';
 
 type SetupTabProps = {
   active: boolean;
@@ -35,7 +30,7 @@ export function SetupTab(props: SetupTabProps) {
     flow: true,
     powerapps: true,
     bap: true,
-    graph: false,
+    graph: false
   });
 
   const login = useAuthSession(toast, refreshState);
@@ -76,19 +71,21 @@ export function SetupTab(props: SetupTabProps) {
   }
 
   async function checkTokenStatuses(accountList: AccountSummary[], runId: number) {
-    await Promise.all(accountList.map(async (account) => {
-      try {
-        const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
-        if (!isCurrentTokenStatusRun(runId)) return;
-        setTokenStatus((current) => ({
-          ...current,
-          [account.name]: data.success && data.data ? data.data : { authenticated: false },
-        }));
-      } catch {
-        if (!isCurrentTokenStatusRun(runId)) return;
-        setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
-      }
-    }));
+    await Promise.all(
+      accountList.map(async (account) => {
+        try {
+          const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
+          if (!isCurrentTokenStatusRun(runId)) return;
+          setTokenStatus((current) => ({
+            ...current,
+            [account.name]: data.success && data.data ? data.data : { authenticated: false }
+          }));
+        } catch {
+          if (!isCurrentTokenStatusRun(runId)) return;
+          setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
+        }
+      })
+    );
   }
 
   async function pingApi(alias: string, apiName: string, runId: number) {
@@ -97,20 +94,20 @@ export function SetupTab(props: SetupTabProps) {
       ...current,
       [alias]: {
         ...(current[alias] || {}),
-        [apiName]: { status: 'pending', summary: 'Checking...' },
-      },
+        [apiName]: { status: 'pending', summary: 'Checking...' }
+      }
     }));
     try {
       const payload = await api<any>('/api/checks/ping', {
         method: 'POST',
         body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
-        allowFailure: true,
+        allowFailure: true
       });
       const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
       if (!isCurrentHealthRun(runId)) return;
       setHealth((current) => ({
         ...current,
-        [alias]: { ...(current[alias] || {}), [apiName]: value },
+        [alias]: { ...(current[alias] || {}), [apiName]: value }
       }));
     } catch {
       if (!isCurrentHealthRun(runId)) return;
@@ -118,16 +115,14 @@ export function SetupTab(props: SetupTabProps) {
         ...current,
         [alias]: {
           ...(current[alias] || {}),
-          [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' },
-        },
+          [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' }
+        }
       }));
     }
   }
 
   async function checkHealth(environmentList: EnvironmentSummary[], runId: number) {
-    await Promise.all(environmentList.flatMap((environment) => (
-      HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))
-    )));
+    await Promise.all(environmentList.flatMap((environment) => HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))));
   }
 
   function recheckHealth() {
@@ -151,14 +146,7 @@ export function SetupTab(props: SetupTabProps) {
   if (isFirstRun) {
     return (
       <>
-        <OnboardingFlow
-          shellData={shellData}
-          globalEnvironment={globalEnvironment}
-          selectedApis={selectedApis}
-          setSelectedApis={setSelectedApis}
-          refreshState={refreshState}
-          toast={toast}
-        />
+        <OnboardingFlow shellData={shellData} globalEnvironment={globalEnvironment} selectedApis={selectedApis} setSelectedApis={setSelectedApis} refreshState={refreshState} toast={toast} />
         <ConfirmDialog request={confirm.request} onClose={confirm.close} />
       </>
     );
@@ -181,24 +169,13 @@ export function SetupTab(props: SetupTabProps) {
 
       {showLoginDrawer ? (
         <div className="login-drawer">
-          <LoginProgress
-            session={login.activeSession}
-            loginTargets={login.loginTargets}
-            onCancel={login.handleCancelLogin}
-            onDismiss={login.clearCompletedLogin}
-            toast={toast}
-          />
+          <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
         </div>
       ) : null}
 
       <div className="dv-sub-nav">
         {(['accounts', 'environments', 'access', 'tools'] as SetupSubTab[]).map((tabName) => (
-          <button
-            key={tabName}
-            className={`sub-tab ${setupSubTab === tabName ? 'active' : ''}`}
-            type="button"
-            onClick={() => setSetupSubTab(tabName)}
-          >
+          <button key={tabName} className={`sub-tab ${setupSubTab === tabName ? 'active' : ''}`} type="button" onClick={() => setSetupSubTab(tabName)}>
             {SETUP_SUB_TAB_LABELS[tabName]}
           </button>
         ))}

@@ -5,14 +5,23 @@ import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
 import { JsonViewer } from '../JsonViewer.js';
 
-type CanvasSessionEntry = { id: string; status: string; appId: string; environmentAlias: string; result?: any; error?: string; createdAt: string; deviceCode?: { verificationUri: string; userCode: string; message: string } };
+type CanvasSessionEntry = {
+  id: string;
+  status: string;
+  appId: string;
+  environmentAlias: string;
+  result?: any;
+  error?: string;
+  createdAt: string;
+  deviceCode?: { verificationUri: string; userCode: string; message: string };
+};
 
 const DESCRIBE_ENDPOINTS = new Set(['controls', 'apis', 'datasources']);
 
 type DescribeTarget = { sessionId: string; version: string; endpoint: string; name: string; title: string };
 
 function CanvasResultView(props: { result: any; endpoint: string; toast: (message: string, isError?: boolean) => void; onRowClick?: (item: any) => void }) {
-  const { result, endpoint, toast, onRowClick } = props;
+  const { result, toast, onRowClick } = props;
   const [view, setView] = useState<'table' | 'json'>('table');
   const rowClickable = Boolean(onRowClick);
 
@@ -50,8 +59,12 @@ function CanvasResultView(props: { result: any; endpoint: string; toast: (messag
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {hasTable && (
             <div className="result-toggle">
-              <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>Table</button>
-              <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>JSON</button>
+              <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>
+                Table
+              </button>
+              <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>
+                JSON
+              </button>
             </div>
           )}
           {count !== undefined && <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{count} items</span>}
@@ -63,16 +76,18 @@ function CanvasResultView(props: { result: any; endpoint: string; toast: (messag
         <div style={{ overflowX: 'auto' }}>
           <table className="result-table">
             <thead>
-              <tr>{columns.map((col) => <th key={col}>{col}</th>)}</tr>
+              <tr>
+                {columns.map((col) => (
+                  <th key={col}>{col}</th>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {items!.map((item: any, i: number) => (
-                <tr
-                  key={i}
-                  className={rowClickable ? 'canvas-result-row-clickable' : ''}
-                  onClick={rowClickable ? () => onRowClick!(item) : undefined}
-                >
-                  {columns.map((col) => <td key={col}>{item?.[col] === undefined || item[col] === null ? '' : String(item[col])}</td>)}
+                <tr key={i} className={rowClickable ? 'canvas-result-row-clickable' : ''} onClick={rowClickable ? () => onRowClick!(item) : undefined}>
+                  {columns.map((col) => (
+                    <td key={col}>{item?.[col] === undefined || item[col] === null ? '' : String(item[col])}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -120,7 +135,9 @@ export function CanvasTab(props: {
     void loadApps();
   }, [environment, appsLoaded]);
 
-  useEffect(() => { setSelectedApp(null); }, [environment]);
+  useEffect(() => {
+    setSelectedApp(null);
+  }, [environment]);
 
   const canvasApps = useMemo(() => {
     return apps.filter((item: any) => {
@@ -154,7 +171,7 @@ export function CanvasTab(props: {
       const session = payload.data as CanvasSessionEntry;
       setState((c: any) => ({
         ...c,
-        sessions: c.sessions.map((s: any) => s.id === id ? session : s),
+        sessions: c.sessions.map((s: any) => (s.id === id ? session : s))
       }));
       if (session.status === 'active') toast('Session is alive');
       else toast('Session has expired', true);
@@ -168,7 +185,7 @@ export function CanvasTab(props: {
       await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
       setState((c: any) => ({
         ...c,
-        sessions: c.sessions.filter((s: any) => s.id !== id),
+        sessions: c.sessions.filter((s: any) => s.id !== id)
       }));
       setExplorerResult(null);
       toast('Session ended');
@@ -183,13 +200,13 @@ export function CanvasTab(props: {
     try {
       const payload = await api<any>('/api/canvas/sessions', {
         method: 'POST',
-        body: JSON.stringify({ environment, appId: selectedApp.name }),
+        body: JSON.stringify({ environment, appId: selectedApp.name })
       });
       const session = payload.data as CanvasSessionEntry;
       setState((c: any) => ({
         ...c,
         sessions: [session, ...c.sessions],
-        sessionStarting: false,
+        sessionStarting: false
       }));
       toast('Canvas session starting…');
       void pollSession(session.id, beginSessionPoll(session.id));
@@ -226,11 +243,21 @@ export function CanvasTab(props: {
         const session = payload.data as CanvasSessionEntry;
         setState((c: any) => ({
           ...c,
-          sessions: c.sessions.map((s: any) => s.id === id ? session : s),
+          sessions: c.sessions.map((s: any) => (s.id === id ? session : s))
         }));
-        if (session.status === 'active') { endSessionPoll(id, generation); toast('Canvas session active'); return; }
-        if (session.status === 'failed') { endSessionPoll(id, generation); toast(session.error || 'Session failed to start.', true); return; }
-      } catch { /* retry */ }
+        if (session.status === 'active') {
+          endSessionPoll(id, generation);
+          toast('Canvas session active');
+          return;
+        }
+        if (session.status === 'failed') {
+          endSessionPoll(id, generation);
+          toast(session.error || 'Session failed to start.', true);
+          return;
+        }
+      } catch {
+        /* retry */
+      }
     }
     if (!isCurrentSessionPoll(id, generation)) return;
     endSessionPoll(id, generation);
@@ -249,8 +276,8 @@ export function CanvasTab(props: {
         body: JSON.stringify({
           sessionId: activeSession.id,
           method: 'GET',
-          path: `${pathPrefix}/api/yaml/${endpoint}`,
-        }),
+          path: `${pathPrefix}/api/yaml/${endpoint}`
+        })
       });
       setExplorerResult(payload.data?.response ?? payload.data);
     } catch (error) {
@@ -265,7 +292,7 @@ export function CanvasTab(props: {
     { key: 'controls', label: 'Controls' },
     { key: 'apis', label: 'APIs' },
     { key: 'datasources', label: 'Data Sources' },
-    { key: 'accessibility-errors', label: 'Accessibility' },
+    { key: 'accessibility-errors', label: 'Accessibility' }
   ];
 
   async function fetchYaml() {
@@ -274,7 +301,7 @@ export function CanvasTab(props: {
     try {
       const payload = await api<any>('/api/canvas/yaml/fetch', {
         method: 'POST',
-        body: JSON.stringify({ sessionId: activeSession.id, outDir: yamlDir.trim() }),
+        body: JSON.stringify({ sessionId: activeSession.id, outDir: yamlDir.trim() })
       });
       const files = payload.data?.files as string[] | undefined;
       toast(`Saved ${files?.length ?? 0} YAML files to ${yamlDir.trim()}`);
@@ -293,7 +320,7 @@ export function CanvasTab(props: {
     try {
       const payload = await api<any>('/api/canvas/yaml/validate', {
         method: 'POST',
-        body: JSON.stringify({ sessionId: activeSession.id, dir: yamlDir.trim() }),
+        body: JSON.stringify({ sessionId: activeSession.id, dir: yamlDir.trim() })
       });
       setExplorerResult(payload.data?.response ?? payload.data);
       setExplorerEndpoint('yaml-validate');
@@ -305,9 +332,7 @@ export function CanvasTab(props: {
     }
   }
 
-  const pendingSession = selectedApp
-    ? (state.sessions as CanvasSessionEntry[]).find((s) => s.appId === selectedApp.name && (s.status === 'starting' || s.status === 'waiting_for_auth'))
-    : undefined;
+  const pendingSession = selectedApp ? (state.sessions as CanvasSessionEntry[]).find((s) => s.appId === selectedApp.name && (s.status === 'starting' || s.status === 'waiting_for_auth')) : undefined;
 
   return (
     <>
@@ -315,34 +340,63 @@ export function CanvasTab(props: {
         <div className="panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <h2>Canvas Apps</h2>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadApps().then(() => toast('Apps refreshed')).catch((error) => toast(error instanceof Error ? error.message : String(error), true))}>Refresh</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={() =>
+                void loadApps()
+                  .then(() => toast('Apps refreshed'))
+                  .catch((error) => toast(error instanceof Error ? error.message : String(error), true))
+              }
+            >
+              Refresh
+            </button>
           </div>
           <input type="text" className="entity-filter" placeholder="Filter canvas apps…" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <div className="entity-count">{canvasApps.length ? `${canvasApps.length} canvas apps` : ''}</div>
           <div className="entity-list">
-            {canvasApps.length ? filtered.map((item: any) => {
-              const session = sessionForApp(item.name);
-              return (
-                <div key={item.name} className={`entity-item ${selectedApp?.name === item.name ? 'active' : ''}`} onClick={() => { setSelectedApp(item); setExplorerResult(null); }}>
-                  <div className="entity-item-name">
-                    {session ? <span className={`health-dot ${session.status === 'active' ? 'ok' : 'pending'}`} style={{ marginRight: 6 }}></span> : null}
-                    {prop(item, 'properties.displayName') || item.name || 'Unnamed'}
+            {canvasApps.length ? (
+              filtered.map((item: any) => {
+                const session = sessionForApp(item.name);
+                return (
+                  <div
+                    key={item.name}
+                    className={`entity-item ${selectedApp?.name === item.name ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedApp(item);
+                      setExplorerResult(null);
+                    }}
+                  >
+                    <div className="entity-item-name">
+                      {session ? <span className={`health-dot ${session.status === 'active' ? 'ok' : 'pending'}`} style={{ marginRight: 6 }}></span> : null}
+                      {prop(item, 'properties.displayName') || item.name || 'Unnamed'}
+                    </div>
+                    <div className="entity-item-logical">{item.name}</div>
+                    <div className="entity-item-badges">
+                      {prop(item, 'properties.appType') ? <span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span> : null}
+                      {session?.result?.session?.isCoauthoringEnabled === false ? (
+                        <span className="entity-item-flag" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                          No coauthoring
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="entity-item-logical">{item.name}</div>
-                  <div className="entity-item-badges">
-                    {prop(item, 'properties.appType') ? <span className="entity-item-flag">{String(prop(item, 'properties.appType')).replace(/([a-z])([A-Z])/g, '$1 $2')}</span> : null}
-                    {session?.result?.session?.isCoauthoringEnabled === false ? <span className="entity-item-flag" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>No coauthoring</span> : null}
-                  </div>
-                </div>
-              );
-            }) : <div className="entity-loading">{appsLoaded ? 'No canvas apps found.' : 'Select an environment to load apps.'}</div>}
+                );
+              })
+            ) : (
+              <div className="entity-loading">{appsLoaded ? 'No canvas apps found.' : 'Select an environment to load apps.'}</div>
+            )}
           </div>
         </div>
       </div>
       <div className="detail-area">
         <div className="panel">
           {!selectedApp ? (
-            <EmptyState icon={<Icon name="pencil" size={18} />} title="Canvas Authoring" description="Select a canvas app to start an authoring session, then explore its controls, data sources, APIs, and YAML source." />
+            <EmptyState
+              icon={<Icon name="pencil" size={18} />}
+              title="Canvas Authoring"
+              description="Select a canvas app to start an authoring session, then explore its controls, data sources, APIs, and YAML source."
+            />
           ) : (
             <>
               <div className="toolbar-row">
@@ -352,20 +406,24 @@ export function CanvasTab(props: {
                 </div>
                 {activeSession ? (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span className="entity-item-flag" style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>Session Active</span>
-                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(activeSession.id)}>End</button>
+                    <span className="entity-item-flag" style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>
+                      Session Active
+                    </span>
+                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(activeSession.id)}>
+                      End
+                    </button>
                   </div>
                 ) : currentSession?.status === 'unknown' ? (
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button className="btn" onClick={() => void probeSession(currentSession.id)}>Check Session</button>
-                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(currentSession.id)}>End</button>
+                    <button className="btn" onClick={() => void probeSession(currentSession.id)}>
+                      Check Session
+                    </button>
+                    <button className="btn btn-ghost btn-sm btn-danger-text" onClick={() => void endSession(currentSession.id)}>
+                      End
+                    </button>
                   </div>
                 ) : (
-                  <button
-                    className="btn"
-                    disabled={state.sessionStarting || !!pendingSession}
-                    onClick={() => void startSession()}
-                  >
+                  <button className="btn" disabled={state.sessionStarting || !!pendingSession} onClick={() => void startSession()}>
                     {state.sessionStarting || pendingSession ? 'Starting…' : 'Start Session'}
                   </button>
                 )}
@@ -374,16 +432,12 @@ export function CanvasTab(props: {
               {pendingSession?.deviceCode && (
                 <div style={{ padding: '12px 16px', marginBottom: 12, borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)' }}>
                   <div style={{ fontWeight: 600, marginBottom: 6 }}>Authentication required</div>
-                  <div style={{ marginBottom: 8, fontSize: '0.8125rem' }}>
-                    Canvas authoring uses a separate identity. Open the link below and enter the code to sign in.
-                  </div>
+                  <div style={{ marginBottom: 8, fontSize: '0.8125rem' }}>Canvas authoring uses a separate identity. Open the link below and enter the code to sign in.</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                     <a href={pendingSession.deviceCode.verificationUri} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
                       {pendingSession.deviceCode.verificationUri}
                     </a>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em' }}>
-                      {pendingSession.deviceCode.userCode}
-                    </span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em' }}>{pendingSession.deviceCode.userCode}</span>
                     <CopyButton value={pendingSession.deviceCode.userCode} label="copy code" title="Copy device code" toast={toast} />
                   </div>
                 </div>
@@ -395,7 +449,7 @@ export function CanvasTab(props: {
                   ['Created', formatDate(prop(selectedApp, 'properties.createdTime'))],
                   ['Modified', formatDate(prop(selectedApp, 'properties.lastModifiedTime'))],
                   ['Published', formatDate(prop(selectedApp, 'properties.lastPublishTime'))],
-                  ['App ID', selectedApp.name],
+                  ['App ID', selectedApp.name]
                 ].map(([label, value]) => (
                   <div key={String(label)} className="metric">
                     <div className="metric-label">{label}</div>
@@ -408,7 +462,9 @@ export function CanvasTab(props: {
                 {currentSession?.result?.cluster && (
                   <div className="metric">
                     <div className="metric-label">Cluster</div>
-                    <div className="metric-value">{currentSession.result.cluster.geoName}-il{currentSession.result.cluster.clusterNumber}</div>
+                    <div className="metric-value">
+                      {currentSession.result.cluster.geoName}-il{currentSession.result.cluster.clusterNumber}
+                    </div>
                   </div>
                 )}
                 {currentSession?.result?.session && (
@@ -424,7 +480,8 @@ export function CanvasTab(props: {
 
               {currentSession?.result?.session && !currentSession.result.session.isCoauthoringEnabled && (
                 <div style={{ padding: '10px 14px', marginBottom: 12, borderRadius: 6, background: 'var(--warn-soft)', fontSize: '0.8125rem' }}>
-                  <strong>Coauthoring is not enabled for this app.</strong> YAML fetch and validate require coauthoring. Enable it in Power Apps Studio under Settings &gt; Upcoming features &gt; Experimental &gt; "Allow other users to co-author alongside me".
+                  <strong>Coauthoring is not enabled for this app.</strong> YAML fetch and validate require coauthoring. Enable it in Power Apps Studio under Settings &gt; Upcoming features &gt;
+                  Experimental &gt; "Allow other users to co-author alongside me".
                 </div>
               )}
 
@@ -432,12 +489,7 @@ export function CanvasTab(props: {
                 <>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                     {endpoints.map((ep) => (
-                      <button
-                        key={ep.key}
-                        className={`btn ${explorerEndpoint === ep.key ? '' : 'btn-ghost'}`}
-                        disabled={explorerLoading}
-                        onClick={() => void callEndpoint(ep.key)}
-                      >
+                      <button key={ep.key} className={`btn ${explorerEndpoint === ep.key ? '' : 'btn-ghost'}`} disabled={explorerLoading} onClick={() => void callEndpoint(ep.key)}>
                         {ep.label}
                       </button>
                     ))}
@@ -449,20 +501,21 @@ export function CanvasTab(props: {
                       value={yamlDir}
                       onChange={(e) => setYamlDir(e.target.value)}
                       placeholder="YAML directory path"
-                      style={{ flex: 1, minWidth: 160, padding: '5px 8px', fontSize: '0.8125rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg)', color: 'inherit' }}
+                      style={{
+                        flex: 1,
+                        minWidth: 160,
+                        padding: '5px 8px',
+                        fontSize: '0.8125rem',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg)',
+                        color: 'inherit'
+                      }}
                     />
-                    <button
-                      className={`btn ${explorerEndpoint === 'yaml-fetch' ? '' : 'btn-ghost'}`}
-                      disabled={yamlBusy || !yamlDir.trim()}
-                      onClick={() => void fetchYaml()}
-                    >
+                    <button className={`btn ${explorerEndpoint === 'yaml-fetch' ? '' : 'btn-ghost'}`} disabled={yamlBusy || !yamlDir.trim()} onClick={() => void fetchYaml()}>
                       {yamlBusy && explorerEndpoint === 'yaml-fetch' ? 'Fetching…' : 'Fetch YAML'}
                     </button>
-                    <button
-                      className={`btn ${explorerEndpoint === 'yaml-validate' ? '' : 'btn-ghost'}`}
-                      disabled={yamlBusy || !yamlDir.trim()}
-                      onClick={() => void validateYaml()}
-                    >
+                    <button className={`btn ${explorerEndpoint === 'yaml-validate' ? '' : 'btn-ghost'}`} disabled={yamlBusy || !yamlDir.trim()} onClick={() => void validateYaml()}>
                       {yamlBusy && explorerEndpoint === 'yaml-validate' ? 'Validating…' : 'Validate YAML'}
                     </button>
                   </div>
@@ -473,20 +526,25 @@ export function CanvasTab(props: {
                       result={explorerResult}
                       endpoint={explorerEndpoint}
                       toast={toast}
-                      onRowClick={activeSession && DESCRIBE_ENDPOINTS.has(explorerEndpoint)
-                        ? (item) => {
-                            const name = typeof item?.name === 'string' && item.name ? item.name : null;
-                            if (!name) { toast('This row has no name to describe.', true); return; }
-                            const version = activeSession.result?.session?.clientConfig?.webAuthoringVersion;
-                            setDescribeTarget({
-                              sessionId: activeSession.id,
-                              version: version ? `/${version}` : '',
-                              endpoint: explorerEndpoint,
-                              name,
-                              title: item.displayName || name,
-                            });
-                          }
-                        : undefined}
+                      onRowClick={
+                        activeSession && DESCRIBE_ENDPOINTS.has(explorerEndpoint)
+                          ? (item) => {
+                              const name = typeof item?.name === 'string' && item.name ? item.name : null;
+                              if (!name) {
+                                toast('This row has no name to describe.', true);
+                                return;
+                              }
+                              const version = activeSession.result?.session?.clientConfig?.webAuthoringVersion;
+                              setDescribeTarget({
+                                sessionId: activeSession.id,
+                                version: version ? `/${version}` : '',
+                                endpoint: explorerEndpoint,
+                                name,
+                                title: item.displayName || name
+                              });
+                            }
+                          : undefined
+                      }
                     />
                   )}
                 </>
@@ -495,9 +553,7 @@ export function CanvasTab(props: {
           )}
         </div>
       </div>
-      {describeTarget ? (
-        <CanvasDescribeModal target={describeTarget} toast={toast} onClose={() => setDescribeTarget(null)} />
-      ) : null}
+      {describeTarget ? <CanvasDescribeModal target={describeTarget} toast={toast} onClose={() => setDescribeTarget(null)} /> : null}
     </>
   );
 }
@@ -517,37 +573,59 @@ function CanvasDescribeModal(props: { target: DescribeTarget; toast: (message: s
       body: JSON.stringify({
         sessionId: target.sessionId,
         method: 'GET',
-        path: `${target.version}/api/yaml/${target.endpoint}/${encodeURIComponent(target.name)}`,
-      }),
+        path: `${target.version}/api/yaml/${target.endpoint}/${encodeURIComponent(target.name)}`
+      })
     })
-      .then((payload) => { if (!cancelled) setData(payload.data?.response ?? payload.data); })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((payload) => {
+        if (!cancelled) setData(payload.data?.response ?? payload.data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [target.endpoint, target.name, target.sessionId, target.version]);
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) { if (event.key === 'Escape') onClose(); }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   const rawJson = useMemo(() => {
-    try { return JSON.stringify(data, null, 2); }
-    catch { return '{}'; }
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return '{}';
+    }
   }, [data]);
 
   return (
-    <div className="rt-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div
+      className="rt-modal-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div className="rt-modal size-lg canvas-describe-modal">
         <div className="rt-modal-header">
           <div>
             <h3 className="rt-modal-title">{target.title}</h3>
-            <span className="rt-modal-id">{target.endpoint} · {target.name}</span>
+            <span className="rt-modal-id">
+              {target.endpoint} · {target.name}
+            </span>
           </div>
           <div className="rt-modal-actions">
             <CopyButton value={rawJson} label="Copy JSON" title="Copy describe response" toast={toast} />
-            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>Close</button>
+            <button className="btn btn-ghost" type="button" onClick={onClose} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+              Close
+            </button>
           </div>
         </div>
         <div className="rt-modal-body body-flush canvas-describe-body">

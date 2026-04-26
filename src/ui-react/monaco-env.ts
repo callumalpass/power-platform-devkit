@@ -17,7 +17,7 @@ if (typeof self !== 'undefined' && !self.MonacoEnvironment) {
       const noop = 'self.onmessage=function(){};';
       const url = URL.createObjectURL(new Blob([noop], { type: 'application/javascript' }));
       return new Worker(url);
-    },
+    }
   };
 }
 

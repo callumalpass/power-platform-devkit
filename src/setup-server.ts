@@ -48,7 +48,7 @@ export async function startSetupServer(options: SetupServerOptions = {}): Promis
     appKind: 'pp-setup',
     quit: () => {
       void close();
-    },
+    }
   });
 
   const server = createServer((request, response) => {
@@ -102,12 +102,15 @@ export async function startSetupServer(options: SetupServerOptions = {}): Promis
         sendText(response, 403, 'PP Setup Manager link is missing or has an invalid token.');
         return;
       }
-      sendHtml(response, renderHtml({
-        appMode: 'setup',
-        setupToken: token,
-        title: 'PP Setup Manager',
-        scriptSrc: '/assets/ui/app.js',
-      }));
+      sendHtml(
+        response,
+        renderHtml({
+          appMode: 'setup',
+          setupToken: token,
+          title: 'PP Setup Manager',
+          scriptSrc: '/assets/ui/app.js'
+        })
+      );
       return;
     }
 
@@ -115,9 +118,9 @@ export async function startSetupServer(options: SetupServerOptions = {}): Promis
       response.writeHead(200, {
         'content-type': 'text/javascript; charset=utf-8',
         'cache-control': 'no-store',
-        'x-content-type-options': 'nosniff',
+        'x-content-type-options': 'nosniff'
       });
-      response.end(SETUP_RENDERER_JS ?? await readFile(join(assetsDir!, 'renderer.js'), 'utf8'));
+      response.end(SETUP_RENDERER_JS ?? (await readFile(join(assetsDir!, 'renderer.js'), 'utf8')));
       return;
     }
 
@@ -130,7 +133,7 @@ export async function startSetupServer(options: SetupServerOptions = {}): Promis
       const apiRequest: DesktopApiRequest = {
         path: `${url.pathname}${url.search}`,
         method: request.method ?? 'GET',
-        body,
+        body
       };
       const apiResponse = await handleDesktopApiRequest(context, apiRequest);
       sendJson(response, apiResponse.status, apiResponse.body);
@@ -210,7 +213,7 @@ function sendHtml(response: ServerResponse, html: string): void {
   response.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff',
+    'x-content-type-options': 'nosniff'
   });
   response.end(html);
 }
@@ -219,7 +222,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff',
+    'x-content-type-options': 'nosniff'
   });
   response.end(JSON.stringify(body));
 }
@@ -228,7 +231,7 @@ function sendText(response: ServerResponse, status: number, text: string): void 
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff',
+    'x-content-type-options': 'nosniff'
   });
   response.end(text);
 }
@@ -239,7 +242,7 @@ function openBrowser(url: string): void {
   const child = spawn(command, args, {
     detached: true,
     stdio: 'ignore',
-    shell: false,
+    shell: false
   });
   child.unref();
 }
@@ -253,7 +256,7 @@ function resolveSetupAssetsDir(explicitDir?: string): string {
     join(moduleDir(), 'setup'),
     join(moduleDir(), 'desktop'),
     join(moduleDir(), '..', 'dist', 'desktop'),
-    join(process.cwd(), 'dist', 'desktop'),
+    join(process.cwd(), 'dist', 'desktop')
   ].filter((value): value is string => Boolean(value));
 
   const found = candidates.find((candidate) => existsSync(join(candidate, 'renderer.js')));

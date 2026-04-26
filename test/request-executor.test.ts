@@ -12,17 +12,35 @@ const environment: Environment = {
   account: 'admin',
   url: 'https://org.crm.dynamics.com',
   makerEnvironmentId: 'f3f934b0-7b79-e09e-b393-f0b21c05fcce',
-  tenantId: 'tenant-id',
+  tenantId: 'tenant-id'
 };
 
 test('buildRequest normalizes relative paths for each Power Platform API', () => {
   const cases: Array<{ api: ApiKind; input: string; baseUrl?: string; path: string; authResource: string }> = [
     { api: 'dv', input: '/accounts', baseUrl: environment.url, path: '/api/data/v9.2/accounts', authResource: 'https://org.crm.dynamics.com' },
-    { api: 'flow', input: '/flows', baseUrl: 'https://api.flow.microsoft.com', path: '/providers/Microsoft.ProcessSimple/environments/f3f934b0-7b79-e09e-b393-f0b21c05fcce/flows', authResource: 'https://service.flow.microsoft.com' },
+    {
+      api: 'flow',
+      input: '/flows',
+      baseUrl: 'https://api.flow.microsoft.com',
+      path: '/providers/Microsoft.ProcessSimple/environments/f3f934b0-7b79-e09e-b393-f0b21c05fcce/flows',
+      authResource: 'https://service.flow.microsoft.com'
+    },
     { api: 'bap', input: '/environments', baseUrl: 'https://api.bap.microsoft.com', path: '/providers/Microsoft.BusinessAppPlatform/environments', authResource: 'https://service.powerapps.com' },
-    { api: 'powerapps', input: '/apps/{environment}', baseUrl: 'https://api.powerapps.com', path: '/providers/Microsoft.PowerApps/apps/f3f934b0-7b79-e09e-b393-f0b21c05fcce', authResource: 'https://service.powerapps.com' },
-    { api: 'canvas-authoring', input: '/gateway/cluster', baseUrl: 'https://f3f934b07b79e09eb393f0b21c05fc.ce.environment.api.powerplatform.com', path: '/gateway/cluster', authResource: 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default' },
-    { api: 'graph', input: '/me', baseUrl: 'https://graph.microsoft.com', path: '/v1.0/me', authResource: 'https://graph.microsoft.com' },
+    {
+      api: 'powerapps',
+      input: '/apps/{environment}',
+      baseUrl: 'https://api.powerapps.com',
+      path: '/providers/Microsoft.PowerApps/apps/f3f934b0-7b79-e09e-b393-f0b21c05fcce',
+      authResource: 'https://service.powerapps.com'
+    },
+    {
+      api: 'canvas-authoring',
+      input: '/gateway/cluster',
+      baseUrl: 'https://f3f934b07b79e09eb393f0b21c05fc.ce.environment.api.powerplatform.com',
+      path: '/gateway/cluster',
+      authResource: 'c6c4e5e1-0bc0-4d7d-b69b-954a907287e4/.default'
+    },
+    { api: 'graph', input: '/me', baseUrl: 'https://graph.microsoft.com', path: '/v1.0/me', authResource: 'https://graph.microsoft.com' }
   ];
 
   for (const item of cases) {
@@ -92,7 +110,7 @@ test('accountForApi swaps the saved pp default client for canvas authoring only'
     kind: 'user',
     tenantId: 'common',
     clientId: '51f81489-12ee-4a9e-aaae-a2591f45987d',
-    tokenCacheKey: 'admin',
+    tokenCacheKey: 'admin'
   };
 
   assert.equal(accountForApi(account, 'dv'), account);
@@ -118,7 +136,7 @@ test('executeRequest allows account-scoped Graph and SharePoint without an envir
       accountName: 'work',
       api: 'graph',
       path: '/me',
-      configOptions: { configDir },
+      configOptions: { configDir }
     });
     assert.equal(graph.success, true);
     assert.equal(graph.data?.request.environment, undefined);
@@ -129,7 +147,7 @@ test('executeRequest allows account-scoped Graph and SharePoint without an envir
       accountName: 'work',
       api: 'sharepoint',
       path: 'https://contoso.sharepoint.com/sites/foo/_api/web',
-      configOptions: { configDir },
+      configOptions: { configDir }
     });
     assert.equal(sharepoint.success, true);
     assert.equal(sharepoint.data?.request.environment, undefined);
@@ -145,7 +163,7 @@ test('executeRequest still requires an environment for environment-scoped APIs',
   const result = await executeRequest({
     accountName: 'work',
     api: 'dv',
-    path: '/WhoAmI',
+    path: '/WhoAmI'
   });
   assert.equal(result.success, false);
   assert.equal(result.diagnostics[0]?.code, 'ENVIRONMENT_REQUIRED');

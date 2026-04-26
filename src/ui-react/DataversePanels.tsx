@@ -1,40 +1,13 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction, type WheelEvent as ReactWheelEvent } from 'react';
-import {
-  formatDate,
-  getDefaultSelectedColumns,
-  getSelectableAttributes,
-  highlightJson,
-  prop,
-} from './utils.js';
+import { getDefaultSelectedColumns, getSelectableAttributes, highlightJson } from './utils.js';
 import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
 import { Select } from './Select.js';
-import {
-  analyzeFetchXml,
-  executeFetchXml,
-  getEntityDetail,
-  previewFetchXml,
-  type FetchXmlAnalysis,
-  type FetchXmlCompletionItem,
-  type FetchXmlPayload,
-} from './dataverse-data.js';
-import type {
-  DataverseAttribute,
-  DataverseEntityDetail,
-  DataverseRecordPage,
-  DataverseState,
-  DiagnosticItem,
-  ToastFn,
-} from './ui-types.js';
-import {
-  applyMonacoAppTheme,
-  attachMonacoVim,
-  MonacoVimToggle,
-  type MonacoVimAttachment,
-  useMonacoVimPreference,
-} from './monaco-support.js';
+import { analyzeFetchXml, executeFetchXml, getEntityDetail, previewFetchXml, type FetchXmlAnalysis, type FetchXmlCompletionItem, type FetchXmlPayload } from './dataverse-data.js';
+import type { DataverseAttribute, DataverseEntityDetail, DataverseRecordPage, DataverseState, DiagnosticItem, ToastFn } from './ui-types.js';
+import { applyMonacoAppTheme, attachMonacoVim, MonacoVimToggle, type MonacoVimAttachment, useMonacoVimPreference } from './monaco-support.js';
 
 type ConditionRow = { id: number; attribute: string; operator: string; value: string };
 type LinkRow = {
@@ -80,27 +53,82 @@ type RelationshipsDrag =
   | { kind: 'pan'; pointerId: number; startClientX: number; startClientY: number; startViewBox: RelationshipsViewBox };
 
 const OPERATORS = [
-  'eq', 'ne', 'gt', 'ge', 'lt', 'le',
-  'like', 'not-like', 'begins-with', 'not-begin-with', 'ends-with', 'not-end-with',
-  'in', 'not-in', 'between', 'not-between',
-  'null', 'not-null',
-  'above', 'under', 'eq-or-above', 'eq-or-under',
-  'contain-values', 'not-contain-values',
-  'eq-userid', 'ne-userid', 'eq-businessid', 'ne-businessid',
-  'yesterday', 'today', 'tomorrow',
-  'last-x-hours', 'next-x-hours', 'last-x-days', 'next-x-days',
-  'last-x-weeks', 'next-x-weeks', 'last-x-months', 'next-x-months',
-  'last-x-years', 'next-x-years',
-  'this-month', 'this-year', 'this-week', 'last-month', 'last-year', 'last-week',
-  'next-month', 'next-year', 'next-week',
+  'eq',
+  'ne',
+  'gt',
+  'ge',
+  'lt',
+  'le',
+  'like',
+  'not-like',
+  'begins-with',
+  'not-begin-with',
+  'ends-with',
+  'not-end-with',
+  'in',
+  'not-in',
+  'between',
+  'not-between',
+  'null',
+  'not-null',
+  'above',
+  'under',
+  'eq-or-above',
+  'eq-or-under',
+  'contain-values',
+  'not-contain-values',
+  'eq-userid',
+  'ne-userid',
+  'eq-businessid',
+  'ne-businessid',
+  'yesterday',
+  'today',
+  'tomorrow',
+  'last-x-hours',
+  'next-x-hours',
+  'last-x-days',
+  'next-x-days',
+  'last-x-weeks',
+  'next-x-weeks',
+  'last-x-months',
+  'next-x-months',
+  'last-x-years',
+  'next-x-years',
+  'this-month',
+  'this-year',
+  'this-week',
+  'last-month',
+  'last-year',
+  'last-week',
+  'next-month',
+  'next-year',
+  'next-week'
 ] as const;
 
 const SYSTEM_ENTITIES = new Set([
-  'systemuser', 'team', 'businessunit', 'organization', 'transactioncurrency',
-  'calendar', 'activityparty', 'activitypointer', 'principalobjectaccess',
-  'principalobjectattributeaccess', 'audit', 'asyncoperation', 'bulkdeletefailure',
-  'importdata', 'importfile', 'importlog', 'duplicaterecord', 'duplicaterule',
-  'plugintracelog', 'sdkmessageprocessingstep', 'workflow', 'sla', 'slaitem',
+  'systemuser',
+  'team',
+  'businessunit',
+  'organization',
+  'transactioncurrency',
+  'calendar',
+  'activityparty',
+  'activitypointer',
+  'principalobjectaccess',
+  'principalobjectattributeaccess',
+  'audit',
+  'asyncoperation',
+  'bulkdeletefailure',
+  'importdata',
+  'importfile',
+  'importlog',
+  'duplicaterecord',
+  'duplicaterule',
+  'plugintracelog',
+  'sdkmessageprocessingstep',
+  'workflow',
+  'sla',
+  'slaitem'
 ]);
 
 function nextId() {
@@ -127,18 +155,7 @@ function formatDiagnosticsCount(items: DiagnosticItem[]) {
   return 'IntelliSense ready';
 }
 
-function orderByDefault(detail: DataverseEntityDetail | null) {
-  const cols = getDefaultSelectedColumns(detail, 0);
-  const orderColumn = cols.find((name) => name !== detail?.primaryIdAttribute) || cols[0] || '';
-  return orderColumn ? `${orderColumn} asc` : '';
-}
-
-export function FetchXmlTab(props: {
-  dataverse: DataverseState;
-  environment: string;
-  environmentUrl?: string;
-  toast: ToastFn;
-}) {
+export function FetchXmlTab(props: { dataverse: DataverseState; environment: string; environmentUrl?: string; toast: ToastFn }) {
   const { dataverse, environment, environmentUrl, toast } = props;
   const entityMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -164,19 +181,14 @@ export function FetchXmlTab(props: {
   const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
   const [vimMode, setVimMode] = useState('off');
 
-  const selectableAttributes = useMemo(
-    (): DataverseAttribute[] => (entityDetail ? getSelectableAttributes(entityDetail) : []),
-    [entityDetail],
-  );
+  const selectableAttributes = useMemo((): DataverseAttribute[] => (entityDetail ? getSelectableAttributes(entityDetail) : []), [entityDetail]);
 
   useEffect(() => {
     const detail = dataverse.currentEntityDetail;
     if (!detail) return;
     setEntityName(detail.logicalName || '');
     setEntityDetail(detail);
-    const cols = dataverse.selectedColumns.length
-      ? dataverse.selectedColumns
-      : getDefaultSelectedColumns(detail, 0);
+    const cols = dataverse.selectedColumns.length ? dataverse.selectedColumns : getDefaultSelectedColumns(detail, 0);
     setSelectedAttrs(cols);
     setOrderAttribute(cols.find((name: string) => name !== detail.primaryIdAttribute) || '');
     setRawXml((current) => current || buildRawFetchXml(detail.logicalName, cols));
@@ -210,7 +222,7 @@ export function FetchXmlTab(props: {
       void analyzeFetchXml({
         environmentAlias: environment,
         source: rawXml,
-        rootEntityName: entityName || undefined,
+        rootEntityName: entityName || undefined
       })
         .then((analysis) => setDiagnostics(analysis.diagnostics))
         .catch(() => setDiagnostics([]))
@@ -220,9 +232,7 @@ export function FetchXmlTab(props: {
   }, [entityName, environment, rawXml]);
 
   function toggleAttribute(name: string) {
-    setSelectedAttrs((current) => current.includes(name)
-      ? current.filter((item) => item !== name)
-      : [...current, name]);
+    setSelectedAttrs((current) => (current.includes(name) ? current.filter((item) => item !== name) : [...current, name]));
   }
 
   function syncFromBuilder() {
@@ -240,9 +250,7 @@ export function FetchXmlTab(props: {
       distinct,
       top: 50,
       filterType,
-      conditions: conditions
-        .filter((row) => row.attribute && row.operator)
-        .map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined })),
+      conditions: conditions.filter((row) => row.attribute && row.operator).map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined })),
       orders: orderAttribute ? [{ attribute: orderAttribute, descending: orderDescending }] : [],
       linkEntities: links
         .filter((link) => link.name && link.from && link.to)
@@ -253,10 +261,8 @@ export function FetchXmlTab(props: {
           alias: link.alias || undefined,
           linkType: link.linkType,
           attributes: link.attributes.length ? link.attributes : undefined,
-          conditions: link.conditions
-            .filter((row) => row.attribute && row.operator)
-            .map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined })),
-        })),
+          conditions: link.conditions.filter((row) => row.attribute && row.operator).map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined }))
+        }))
     };
   }
 
@@ -284,11 +290,11 @@ export function FetchXmlTab(props: {
     }
     try {
       const payload = await executeFetchXml({
-          environmentAlias: environment,
-          entity: activeEntityName || 'unknown',
-          entitySetName: entityDetail?.entitySetName,
-          rawXml: rawXml.trim() || undefined,
-          ...(rawXml.trim() ? {} : buildPreviewPayload()),
+        environmentAlias: environment,
+        entity: activeEntityName || 'unknown',
+        entitySetName: entityDetail?.entitySetName,
+        rawXml: rawXml.trim() || undefined,
+        ...(rawXml.trim() ? {} : buildPreviewPayload())
       });
       setResult(payload);
       toast('FetchXML executed');
@@ -307,180 +313,204 @@ export function FetchXmlTab(props: {
               <span className="entity-context-name">{entityDetail.displayName || entityDetail.logicalName}</span>
               <span className="entity-context-set">{entityDetail.entitySetName || entityDetail.logicalName}</span>
             </>
-          ) : <span className="entity-context-empty">No entity selected. Pick one in Explorer or choose below.</span>}
+          ) : (
+            <span className="entity-context-empty">No entity selected. Pick one in Explorer or choose below.</span>
+          )}
         </div>
         <div className="form-grid">
-        <div className="form-row">
-          <div className="field">
-            <span className="field-label">Entity</span>
-            <Select
-              aria-label="Entity"
-              placeholder="select entity…"
-              value={entityName}
-              onChange={setEntityName}
-              options={[
-                { value: '', label: 'select entity…' },
-                ...dataverse.entities.map((item) => ({
-                  value: item.logicalName,
-                  label: `${item.displayName || item.logicalName} (${item.logicalName})`,
-                })),
-              ]}
-            />
-          </div>
-          <div className="field">
-            <span className="field-label">Entity Set Name</span>
-            <input value={entityDetail?.entitySetName || ''} readOnly tabIndex={-1} style={{ color: 'var(--muted)' }} />
-          </div>
-        </div>
-        <div className="field">
-          <span className="field-label">Attributes</span>
-          <div className="attr-picker">
-            {selectableAttributes.length ? selectableAttributes.map((attribute) => (
-              <span
-                key={attribute.logicalName}
-                className={`attr-chip ${selectedAttrs.includes(attribute.logicalName) ? 'selected' : ''}`}
-                onClick={() => toggleAttribute(attribute.logicalName)}
-                title={`${attribute.displayName || attribute.logicalName} (${attribute.attributeTypeName || attribute.attributeType || ''})`}
-              >
-                {attribute.logicalName}
-              </span>
-            )) : <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>Select an entity to see attributes</span>}
-          </div>
-          <div className="btn-group" style={{ marginTop: 8 }}>
-            <button className="btn btn-ghost" type="button" onClick={syncFromBuilder}>Seed XML from selection</button>
-            <button className="btn btn-secondary" type="button" onClick={() => setSelectedAttrs(getDefaultSelectedColumns(entityDetail, 0))}>Default columns</button>
-          </div>
-        </div>
-        <div className="form-row three">
-          <div className="field">
-            <span className="field-label">Top</span>
-            <input value="50" readOnly tabIndex={-1} />
-          </div>
-          <div className="field">
-            <span className="field-label">Distinct</span>
-            <Select
-              value={String(distinct)}
-              onChange={(next) => setDistinct(next === 'true')}
-              options={[
-                { value: 'false', label: 'false' },
-                { value: 'true', label: 'true' },
-              ]}
-            />
-          </div>
-          <div className="field">
-            <span className="field-label">Filter Type</span>
-            <Select
-              value={filterType}
-              onChange={(next) => setFilterType(next as 'and' | 'or')}
-              options={[
-                { value: 'and', label: 'and' },
-                { value: 'or', label: 'or' },
-              ]}
-            />
-          </div>
-        </div>
-        <div className="field">
-          <span className="field-label">Conditions</span>
-          <div className="condition-list">
-            {conditions.map((row) => (
-              <div key={row.id} className="condition-row">
-                <Select
-                  aria-label="Attribute"
-                  placeholder="select…"
-                  value={row.attribute}
-                  onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { attribute: next }))}
-                  options={[{ value: '', label: 'select…' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
-                />
-                <Select
-                  aria-label="Operator"
-                  placeholder="select…"
-                  value={row.operator}
-                  onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { operator: next }))}
-                  options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
-                />
-                <input value={row.value} placeholder="value" onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { value: event.target.value }))} />
-                <button type="button" className="condition-remove" onClick={() => setConditions((current) => removeConditionRow(current, row.id))}>×</button>
-              </div>
-            ))}
-          </div>
-          <button className="btn btn-ghost" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setConditions((current) => addConditionRow(current))}>+ Add condition</button>
-        </div>
-        <div className="form-row">
-          <div className="field">
-            <span className="field-label">Order By</span>
-            <Select
-              aria-label="Order by"
-              value={orderAttribute}
-              onChange={setOrderAttribute}
-              options={[{ value: '', label: 'none' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
-            />
-          </div>
-          <div className="field">
-            <span className="field-label">Direction</span>
-            <Select
-              value={String(orderDescending)}
-              onChange={(next) => setOrderDescending(next === 'true')}
-              options={[
-                { value: 'false', label: 'ascending' },
-                { value: 'true', label: 'descending' },
-              ]}
-            />
-          </div>
-        </div>
-        <FetchXmlLinksEditor
-          dataverse={dataverse}
-          environment={environment}
-          links={links}
-          setLinks={setLinks}
-          toast={toast}
-        />
-        <div className="field">
-          <span className="field-label">FetchXML</span>
-          <div className="fetchxml-editor-shell">
-            <div className="fetchxml-editor-toolbar">
-              <div className="fetchxml-editor-toolbar-left">
-                <span id="fetch-editor-status">
-                  <span className={`fetchxml-status-dot ${diagnostics.some((item) => item.level === 'error') ? 'error' : diagnostics.some((item) => item.level === 'warning') ? 'warn' : ''}`}></span>
-                  {isAnalyzing ? 'Analyzing…' : formatDiagnosticsCount(diagnostics)}
-                </span>
-              </div>
-              <div className="fetchxml-editor-toolbar-right">
-                <MonacoVimToggle enabled={vimEnabled} mode={vimMode} onToggle={setVimEnabled} />
-                <span>Tab/Enter accept completions. Ctrl-Space opens suggestions.</span>
-              </div>
+          <div className="form-row">
+            <div className="field">
+              <span className="field-label">Entity</span>
+              <Select
+                aria-label="Entity"
+                placeholder="select entity…"
+                value={entityName}
+                onChange={setEntityName}
+                options={[
+                  { value: '', label: 'select entity…' },
+                  ...dataverse.entities.map((item) => ({
+                    value: item.logicalName,
+                    label: `${item.displayName || item.logicalName} (${item.logicalName})`
+                  }))
+                ]}
+              />
             </div>
-            <FetchXmlCodeEditor
-              value={rawXml}
-              environment={environment}
-              rootEntityName={entityName || dataverse.currentEntityDetail?.logicalName}
-              onChange={setRawXml}
-              onAnalysis={(analysis) => {
-                setDiagnostics(analysis.diagnostics);
-                setIsAnalyzing(false);
-              }}
-              onAnalyzeStart={() => setIsAnalyzing(true)}
-              vimEnabled={vimEnabled}
-              onVimMode={setVimMode}
-            />
+            <div className="field">
+              <span className="field-label">Entity Set Name</span>
+              <input value={entityDetail?.entitySetName || ''} readOnly tabIndex={-1} style={{ color: 'var(--muted)' }} />
+            </div>
           </div>
-          <div className="fetchxml-diagnostics">
-            {diagnostics.slice(0, 6).map((item, index) => (
-              <div key={index} className={`fetchxml-diagnostic ${item.level || 'info'}`}>
-                <div className="fetchxml-diagnostic-code">{item.code || 'INFO'} @ {item.from ?? 0}</div>
-                <div className="fetchxml-diagnostic-message">{item.message}</div>
+          <div className="field">
+            <span className="field-label">Attributes</span>
+            <div className="attr-picker">
+              {selectableAttributes.length ? (
+                selectableAttributes.map((attribute) => (
+                  <span
+                    key={attribute.logicalName}
+                    className={`attr-chip ${selectedAttrs.includes(attribute.logicalName) ? 'selected' : ''}`}
+                    onClick={() => toggleAttribute(attribute.logicalName)}
+                    title={`${attribute.displayName || attribute.logicalName} (${attribute.attributeTypeName || attribute.attributeType || ''})`}
+                  >
+                    {attribute.logicalName}
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>Select an entity to see attributes</span>
+              )}
+            </div>
+            <div className="btn-group" style={{ marginTop: 8 }}>
+              <button className="btn btn-ghost" type="button" onClick={syncFromBuilder}>
+                Seed XML from selection
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setSelectedAttrs(getDefaultSelectedColumns(entityDetail, 0))}>
+                Default columns
+              </button>
+            </div>
+          </div>
+          <div className="form-row three">
+            <div className="field">
+              <span className="field-label">Top</span>
+              <input value="50" readOnly tabIndex={-1} />
+            </div>
+            <div className="field">
+              <span className="field-label">Distinct</span>
+              <Select
+                value={String(distinct)}
+                onChange={(next) => setDistinct(next === 'true')}
+                options={[
+                  { value: 'false', label: 'false' },
+                  { value: 'true', label: 'true' }
+                ]}
+              />
+            </div>
+            <div className="field">
+              <span className="field-label">Filter Type</span>
+              <Select
+                value={filterType}
+                onChange={(next) => setFilterType(next as 'and' | 'or')}
+                options={[
+                  { value: 'and', label: 'and' },
+                  { value: 'or', label: 'or' }
+                ]}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <span className="field-label">Conditions</span>
+            <div className="condition-list">
+              {conditions.map((row) => (
+                <div key={row.id} className="condition-row">
+                  <Select
+                    aria-label="Attribute"
+                    placeholder="select…"
+                    value={row.attribute}
+                    onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { attribute: next }))}
+                    options={[{ value: '', label: 'select…' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+                  />
+                  <Select
+                    aria-label="Operator"
+                    placeholder="select…"
+                    value={row.operator}
+                    onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { operator: next }))}
+                    options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
+                  />
+                  <input value={row.value} placeholder="value" onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { value: event.target.value }))} />
+                  <button type="button" className="condition-remove" onClick={() => setConditions((current) => removeConditionRow(current, row.id))}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button className="btn btn-ghost" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setConditions((current) => addConditionRow(current))}>
+              + Add condition
+            </button>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <span className="field-label">Order By</span>
+              <Select
+                aria-label="Order by"
+                value={orderAttribute}
+                onChange={setOrderAttribute}
+                options={[{ value: '', label: 'none' }, ...selectableAttributes.map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))]}
+              />
+            </div>
+            <div className="field">
+              <span className="field-label">Direction</span>
+              <Select
+                value={String(orderDescending)}
+                onChange={(next) => setOrderDescending(next === 'true')}
+                options={[
+                  { value: 'false', label: 'ascending' },
+                  { value: 'true', label: 'descending' }
+                ]}
+              />
+            </div>
+          </div>
+          <FetchXmlLinksEditor dataverse={dataverse} environment={environment} links={links} setLinks={setLinks} toast={toast} />
+          <div className="field">
+            <span className="field-label">FetchXML</span>
+            <div className="fetchxml-editor-shell">
+              <div className="fetchxml-editor-toolbar">
+                <div className="fetchxml-editor-toolbar-left">
+                  <span id="fetch-editor-status">
+                    <span className={`fetchxml-status-dot ${diagnostics.some((item) => item.level === 'error') ? 'error' : diagnostics.some((item) => item.level === 'warning') ? 'warn' : ''}`}></span>
+                    {isAnalyzing ? 'Analyzing…' : formatDiagnosticsCount(diagnostics)}
+                  </span>
+                </div>
+                <div className="fetchxml-editor-toolbar-right">
+                  <MonacoVimToggle enabled={vimEnabled} mode={vimMode} onToggle={setVimEnabled} />
+                  <span>Tab/Enter accept completions. Ctrl-Space opens suggestions.</span>
+                </div>
               </div>
-            ))}
+              <FetchXmlCodeEditor
+                value={rawXml}
+                environment={environment}
+                rootEntityName={entityName || dataverse.currentEntityDetail?.logicalName}
+                onChange={setRawXml}
+                onAnalysis={(analysis) => {
+                  setDiagnostics(analysis.diagnostics);
+                  setIsAnalyzing(false);
+                }}
+                onAnalyzeStart={() => setIsAnalyzing(true)}
+                vimEnabled={vimEnabled}
+                onVimMode={setVimMode}
+              />
+            </div>
+            <div className="fetchxml-diagnostics">
+              {diagnostics.slice(0, 6).map((item, index) => (
+                <div key={index} className={`fetchxml-diagnostic ${item.level || 'info'}`}>
+                  <div className="fetchxml-diagnostic-code">
+                    {item.code || 'INFO'} @ {item.from ?? 0}
+                  </div>
+                  <div className="fetchxml-diagnostic-message">{item.message}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="btn-group">
-          <button className="btn btn-secondary" type="button" disabled={!canBuildFetchXml} onClick={() => void preview()}>Build from fields</button>
-          <button className="btn btn-primary" type="button" disabled={!canRunFetchXml} onClick={() => void execute()}>Run FetchXML</button>
-        </div>
+          <div className="btn-group">
+            <button className="btn btn-secondary" type="button" disabled={!canBuildFetchXml} onClick={() => void preview()}>
+              Build from fields
+            </button>
+            <button className="btn btn-primary" type="button" disabled={!canRunFetchXml} onClick={() => void execute()}>
+              Run FetchXML
+            </button>
+          </div>
         </div>
       </div>
       <div className="panel">
         <h2>FetchXML Result</h2>
-        <ResultView result={result} entityLogicalName={result?.logicalName} entitySetName={result?.entitySetName} primaryIdAttribute={entityDetail?.primaryIdAttribute} environment={environment} environmentUrl={environmentUrl} entityMap={entityMap} placeholder="Run FetchXML to see the response." toast={toast} />
+        <ResultView
+          result={result}
+          entityLogicalName={result?.logicalName}
+          entitySetName={result?.entitySetName}
+          primaryIdAttribute={entityDetail?.primaryIdAttribute}
+          environment={environment}
+          environmentUrl={environmentUrl}
+          entityMap={entityMap}
+          placeholder="Run FetchXML to see the response."
+          toast={toast}
+        />
       </div>
     </div>
   );
@@ -511,10 +541,18 @@ function FetchXmlCodeEditor(props: {
   const onAnalyzeStartRef = useRef(onAnalyzeStart);
   const onVimModeRef = useRef(onVimMode);
 
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onAnalysisRef.current = onAnalysis; }, [onAnalysis]);
-  useEffect(() => { onAnalyzeStartRef.current = onAnalyzeStart; }, [onAnalyzeStart]);
-  useEffect(() => { onVimModeRef.current = onVimMode; }, [onVimMode]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    onAnalysisRef.current = onAnalysis;
+  }, [onAnalysis]);
+  useEffect(() => {
+    onAnalyzeStartRef.current = onAnalyzeStart;
+  }, [onAnalyzeStart]);
+  useEffect(() => {
+    onVimModeRef.current = onVimMode;
+  }, [onVimMode]);
   useEffect(() => {
     vimEnabledRef.current = vimEnabled;
     vimAttachmentRef.current?.setEnabled(vimEnabled);
@@ -556,7 +594,7 @@ function FetchXmlCodeEditor(props: {
       tabSize: 2,
       insertSpaces: true,
       wordWrap: 'on',
-      theme: 'pp-app',
+      theme: 'pp-app'
     });
 
     const analyze = (source: string, cursor: number) => {
@@ -568,7 +606,7 @@ function FetchXmlCodeEditor(props: {
         environmentAlias: environment,
         source,
         cursor,
-        rootEntityName,
+        rootEntityName
       }).finally(() => requestRef.current.delete(key));
       requestRef.current.set(key, request);
       return request;
@@ -618,12 +656,12 @@ function FetchXmlCodeEditor(props: {
           onAnalysisRef.current(analysis);
           updateFetchXmlEditorMarkers(completionModel, analysis.diagnostics);
           return {
-            suggestions: analysis.completions.map((item) => toMonacoFetchXmlCompletion(item, completionModel, analysis, position)),
+            suggestions: analysis.completions.map((item) => toMonacoFetchXmlCompletion(item, completionModel, analysis, position))
           };
         } catch {
           return { suggestions: [] };
         }
-      },
+      }
     });
 
     const themeObserver = new MutationObserver(() => applyMonacoAppTheme());
@@ -640,7 +678,7 @@ function FetchXmlCodeEditor(props: {
     editorRef.current = editor;
     vimAttachmentRef.current = attachMonacoVim(editor, vimStatusRef.current, {
       enabled: vimEnabledRef.current,
-      onModeChange: (mode) => onVimModeRef.current(mode),
+      onModeChange: (mode) => onVimModeRef.current(mode)
     });
     scheduleAnalysis();
 
@@ -668,19 +706,14 @@ function FetchXmlCodeEditor(props: {
   );
 }
 
-function toMonacoFetchXmlCompletion(
-  item: FetchXmlCompletionItem,
-  model: monaco.editor.ITextModel,
-  analysis: FetchXmlAnalysis,
-  position: monaco.Position,
-): monaco.languages.CompletionItem {
+function toMonacoFetchXmlCompletion(item: FetchXmlCompletionItem, model: monaco.editor.ITextModel, analysis: FetchXmlAnalysis, position: monaco.Position): monaco.languages.CompletionItem {
   return {
     label: item.label,
     kind: fetchXmlCompletionKind(item.type),
     detail: item.detail,
     documentation: item.info ? { value: item.info } : undefined,
     insertText: item.apply || item.label,
-    range: fetchXmlCompletionRange(model, analysis, position),
+    range: fetchXmlCompletionRange(model, analysis, position)
   };
 }
 
@@ -705,7 +738,11 @@ function fetchXmlCompletionKind(type: string | undefined): monaco.languages.Comp
 }
 
 function updateFetchXmlEditorMarkers(model: monaco.editor.ITextModel, diagnostics: DiagnosticItem[]) {
-  monaco.editor.setModelMarkers(model, 'pp-fetchxml', diagnostics.map((item) => fetchXmlMarkerFromDiagnostic(model, item)));
+  monaco.editor.setModelMarkers(
+    model,
+    'pp-fetchxml',
+    diagnostics.map((item) => fetchXmlMarkerFromDiagnostic(model, item))
+  );
 }
 
 function fetchXmlMarkerFromDiagnostic(model: monaco.editor.ITextModel, item: DiagnosticItem): monaco.editor.IMarkerData {
@@ -720,21 +757,11 @@ function fetchXmlMarkerFromDiagnostic(model: monaco.editor.ITextModel, item: Dia
     endColumn: end.column,
     message: item.message,
     source: item.code,
-    severity: item.level === 'error'
-      ? monaco.MarkerSeverity.Error
-      : item.level === 'warning'
-        ? monaco.MarkerSeverity.Warning
-        : monaco.MarkerSeverity.Info,
+    severity: item.level === 'error' ? monaco.MarkerSeverity.Error : item.level === 'warning' ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info
   };
 }
 
-function FetchXmlLinksEditor(props: {
-  dataverse: DataverseState;
-  environment: string;
-  links: LinkRow[];
-  setLinks: Dispatch<SetStateAction<LinkRow[]>>;
-  toast: ToastFn;
-}) {
+function FetchXmlLinksEditor(props: { dataverse: DataverseState; environment: string; links: LinkRow[]; setLinks: Dispatch<SetStateAction<LinkRow[]>>; toast: ToastFn }) {
   const { dataverse, environment, links, setLinks, toast } = props;
   const [details, setDetails] = useState<Record<number, DataverseEntityDetail>>({});
 
@@ -774,7 +801,9 @@ function FetchXmlLinksEditor(props: {
             <div key={link.id} className="link-card">
               <div className="link-card-head">
                 <span>Join #{link.id}</span>
-                <button type="button" className="condition-remove" onClick={() => setLinks((current) => current.filter((item) => item.id !== link.id))}>×</button>
+                <button type="button" className="condition-remove" onClick={() => setLinks((current) => current.filter((item) => item.id !== link.id))}>
+                  ×
+                </button>
               </div>
               <div className="form-row" style={{ marginBottom: 8 }}>
                 <div className="field">
@@ -789,7 +818,7 @@ function FetchXmlLinksEditor(props: {
                     }}
                     options={[
                       { value: '', label: 'select entity…' },
-                      ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` })),
+                      ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` }))
                     ]}
                   />
                 </div>
@@ -800,7 +829,7 @@ function FetchXmlLinksEditor(props: {
                     onChange={(next) => updateLink(link.id, { linkType: next as 'inner' | 'outer' })}
                     options={[
                       { value: 'inner', label: 'inner' },
-                      { value: 'outer', label: 'outer' },
+                      { value: 'outer', label: 'outer' }
                     ]}
                   />
                 </div>
@@ -825,7 +854,9 @@ function FetchXmlLinksEditor(props: {
                     onChange={(next) => updateLink(link.id, { to: next })}
                     options={[
                       { value: '', label: 'select…' },
-                      ...(dataverse.currentEntityDetail ? (getSelectableAttributes(dataverse.currentEntityDetail) as DataverseAttribute[]).map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName })) : []),
+                      ...(dataverse.currentEntityDetail
+                        ? (getSelectableAttributes(dataverse.currentEntityDetail) as DataverseAttribute[]).map((attribute) => ({ value: attribute.logicalName, label: attribute.logicalName }))
+                        : [])
                     ]}
                   />
                 </div>
@@ -837,19 +868,23 @@ function FetchXmlLinksEditor(props: {
               <div className="field" style={{ marginBottom: 8 }}>
                 <span className="field-label">Linked Attributes</span>
                 <div className="attr-picker">
-                  {linkAttributes.length ? linkAttributes.map((attribute) => (
-                    <span
-                      key={attribute.logicalName}
-                      className={`attr-chip ${link.attributes.includes(attribute.logicalName) ? 'selected' : ''}`}
-                      onClick={() => updateLink(link.id, {
-                        attributes: link.attributes.includes(attribute.logicalName)
-                          ? link.attributes.filter((item) => item !== attribute.logicalName)
-                          : [...link.attributes, attribute.logicalName],
-                      })}
-                    >
-                      {attribute.logicalName}
-                    </span>
-                  )) : <span style={{ color: 'var(--muted)', fontSize: '0.6875rem' }}>Select a linked entity first</span>}
+                  {linkAttributes.length ? (
+                    linkAttributes.map((attribute) => (
+                      <span
+                        key={attribute.logicalName}
+                        className={`attr-chip ${link.attributes.includes(attribute.logicalName) ? 'selected' : ''}`}
+                        onClick={() =>
+                          updateLink(link.id, {
+                            attributes: link.attributes.includes(attribute.logicalName) ? link.attributes.filter((item) => item !== attribute.logicalName) : [...link.attributes, attribute.logicalName]
+                          })
+                        }
+                      >
+                        {attribute.logicalName}
+                      </span>
+                    ))
+                  ) : (
+                    <span style={{ color: 'var(--muted)', fontSize: '0.6875rem' }}>Select a linked entity first</span>
+                  )}
                 </div>
               </div>
               <div className="field">
@@ -871,27 +906,52 @@ function FetchXmlLinksEditor(props: {
                         onChange={(next) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { operator: next }) })}
                         options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
                       />
-                      <input value={row.value} placeholder="value" onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { value: event.target.value }) })} />
-                      <button type="button" className="condition-remove" onClick={() => updateLink(link.id, { conditions: removeConditionRow(link.conditions, row.id) })}>×</button>
+                      <input
+                        value={row.value}
+                        placeholder="value"
+                        onChange={(event) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { value: event.target.value }) })}
+                      />
+                      <button type="button" className="condition-remove" onClick={() => updateLink(link.id, { conditions: removeConditionRow(link.conditions, row.id) })}>
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
-                <button className="btn btn-ghost" type="button" style={{ marginTop: 4, padding: '3px 8px', fontSize: '0.6875rem' }} onClick={() => updateLink(link.id, { conditions: addConditionRow(link.conditions) })}>+ Condition</button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  style={{ marginTop: 4, padding: '3px 8px', fontSize: '0.6875rem' }}
+                  onClick={() => updateLink(link.id, { conditions: addConditionRow(link.conditions) })}
+                >
+                  + Condition
+                </button>
               </div>
             </div>
           );
         })}
       </div>
-      <button className="btn btn-ghost" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setLinks((current) => [...current, {
-        id: nextId(),
-        name: '',
-        from: '',
-        to: '',
-        linkType: 'inner',
-        alias: '',
-        attributes: [],
-        conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }],
-      }])}>+ Add join</button>
+      <button
+        className="btn btn-ghost"
+        type="button"
+        style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }}
+        onClick={() =>
+          setLinks((current) => [
+            ...current,
+            {
+              id: nextId(),
+              name: '',
+              from: '',
+              to: '',
+              linkType: 'inner',
+              alias: '',
+              attributes: [],
+              conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }]
+            }
+          ])
+        }
+      >
+        + Add join
+      </button>
     </div>
   );
 }
@@ -901,12 +961,7 @@ function buildRawFetchXml(entityName: string, attributes: string[]) {
   return `<fetch top="50">\n  <entity name="${entityName}">\n${attrs || '    <all-attributes />'}\n  </entity>\n</fetch>`;
 }
 
-export function RelationshipsTab(props: {
-  dataverse: DataverseState;
-  environment: string;
-  loadEntityDetail: (logicalName: string) => Promise<void>;
-  toast: ToastFn;
-}) {
+export function RelationshipsTab(props: { dataverse: DataverseState; environment: string; loadEntityDetail: (logicalName: string) => Promise<void>; toast: ToastFn }) {
   const { dataverse, environment, loadEntityDetail, toast } = props;
   const [entityName, setEntityName] = useState('');
   const [depth, setDepth] = useState(2);
@@ -941,7 +996,7 @@ export function RelationshipsTab(props: {
     const bounds = svgRef.current?.parentElement?.getBoundingClientRect();
     return {
       x: event.clientX - (bounds?.left || 0) + 12,
-      y: event.clientY - (bounds?.top || 0) + 12,
+      y: event.clientY - (bounds?.top || 0) + 12
     };
   }
 
@@ -959,9 +1014,11 @@ export function RelationshipsTab(props: {
         `${node.attrCount} attrs · ${metadataLookupCount} metadata lookups · ${outEdges.length} shown`,
         node.entitySetName,
         outEdges.length ? `References: ${outEdges.map((edge) => edge.label).join(', ')}` : '',
-        inEdges.length ? `Referenced by: ${inEdges.map((edge) => `${edge.source}.${edge.label}`).join(', ')}` : '',
-      ].filter(Boolean).join('\n'),
-      nodeId: node.id,
+        inEdges.length ? `Referenced by: ${inEdges.map((edge) => `${edge.source}.${edge.label}`).join(', ')}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      nodeId: node.id
     });
   }
 
@@ -970,7 +1027,7 @@ export function RelationshipsTab(props: {
     setTooltip({
       ...position,
       title: edge.label,
-      detail: `${edge.source} → ${edge.target}`,
+      detail: `${edge.source} → ${edge.target}`
     });
   }
 
@@ -996,9 +1053,7 @@ export function RelationshipsTab(props: {
       const point = eventToSvgPoint(event);
       setGraph((current) => ({
         ...current,
-        nodes: current.nodes.map((node) => (
-          node.id === drag.nodeId ? { ...node, x: point.x - drag.offsetX, y: point.y - drag.offsetY } : node
-        )),
+        nodes: current.nodes.map((node) => (node.id === drag.nodeId ? { ...node, x: point.x - drag.offsetX, y: point.y - drag.offsetY } : node))
       }));
       return;
     }
@@ -1010,7 +1065,7 @@ export function RelationshipsTab(props: {
     setViewBox({
       ...drag.startViewBox,
       x: drag.startViewBox.x - (event.clientX - drag.startClientX) * scaleX,
-      y: drag.startViewBox.y - (event.clientY - drag.startClientY) * scaleY,
+      y: drag.startViewBox.y - (event.clientY - drag.startClientY) * scaleY
     });
   }
 
@@ -1034,7 +1089,7 @@ export function RelationshipsTab(props: {
       x: anchorX - nextWidth * relX,
       y: anchorY - nextHeight * relY,
       width: nextWidth,
-      height: nextHeight,
+      height: nextHeight
     });
   }
 
@@ -1085,7 +1140,7 @@ export function RelationshipsTab(props: {
               onChange={setEntityName}
               options={[
                 { value: '', label: 'select entity…' },
-                ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` })),
+                ...dataverse.entities.map((item) => ({ value: item.logicalName, label: `${item.displayName || item.logicalName} (${item.logicalName})` }))
               ]}
             />
           </div>
@@ -1099,16 +1154,25 @@ export function RelationshipsTab(props: {
                 options={[
                   { value: '1', label: '1' },
                   { value: '2', label: '2' },
-                  { value: '3', label: '3' },
+                  { value: '3', label: '3' }
                 ]}
               />
             </div>
           </div>
-          <label className="rel-toolbar-check"><input type="checkbox" checked={hideSystem} onChange={(event) => setHideSystem(event.target.checked)} /> Hide system</label>
-          <button className="btn btn-primary" type="button" style={{ padding: '5px 14px', fontSize: '0.75rem' }} onClick={() => void loadGraph()}>{loading ? 'Loading…' : 'Load Graph'}</button>
+          <label className="rel-toolbar-check">
+            <input type="checkbox" checked={hideSystem} onChange={(event) => setHideSystem(event.target.checked)} /> Hide system
+          </label>
+          <button className="btn btn-primary" type="button" style={{ padding: '5px 14px', fontSize: '0.75rem' }} onClick={() => void loadGraph()}>
+            {loading ? 'Loading…' : 'Load Graph'}
+          </button>
           <span style={{ fontSize: '0.6875rem', color: 'var(--muted)', marginLeft: 'auto' }}>{graph.nodes.length ? `${graph.nodes.length} entities, ${graph.edges.length} relationships` : ''}</span>
         </div>
-        <div className="rel-canvas-container" onPointerLeave={() => { if (!drag) setTooltip(null); }}>
+        <div
+          className="rel-canvas-container"
+          onPointerLeave={() => {
+            if (!drag) setTooltip(null);
+          }}
+        >
           <svg
             ref={svgRef}
             className="rel-svg"
@@ -1150,7 +1214,9 @@ export function RelationshipsTab(props: {
                   <line className="rel-edge-hit" x1={sx} y1={sy} x2={tx} y2={ty}></line>
                   <line x1={sx} y1={sy} x2={tx} y2={ty}></line>
                   <circle cx={tx} cy={ty} r={3} className="rel-arrowhead"></circle>
-                  <text x={mx} y={my - 6} className="rel-edge-label">{edge.label}</text>
+                  <text x={mx} y={my - 6} className="rel-edge-label">
+                    {edge.label}
+                  </text>
                 </g>
               );
             })}
@@ -1167,8 +1233,12 @@ export function RelationshipsTab(props: {
                   onClick={(event) => showNodeTooltip(node, event as unknown as ReactPointerEvent<SVGElement>)}
                 >
                   <rect width="160" height="44" rx="10"></rect>
-                  <text x="80" y="17" className="rel-node-label">{node.label}</text>
-                  <text x="80" y="32" className="rel-node-sub">{node.logicalName}</text>
+                  <text x="80" y="17" className="rel-node-label">
+                    {node.label}
+                  </text>
+                  <text x="80" y="32" className="rel-node-sub">
+                    {node.logicalName}
+                  </text>
                 </g>
               );
             })}
@@ -1180,17 +1250,31 @@ export function RelationshipsTab(props: {
               <span>{tooltip.detail}</span>
               {tooltip.nodeId ? (
                 <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-                  <button className="btn btn-primary" type="button" style={{ fontSize: '0.6875rem', padding: '3px 10px' }} onClick={() => {
-                    const nodeId = tooltip.nodeId;
-                    if (!nodeId) return;
-                    setTooltip(null);
-                    void expandRelationshipsNode(nodeId, environment, hideSystem, graph, setGraph, toast);
-                  }}>Expand</button>
-                  <button className="btn btn-ghost" type="button" style={{ fontSize: '0.6875rem', padding: '3px 10px' }} onClick={() => {
-                    const node = graph.nodes.find((item) => item.id === tooltip.nodeId);
-                    setTooltip(null);
-                    if (node) void loadEntityDetail(node.logicalName);
-                  }}>Open in Explorer</button>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    style={{ fontSize: '0.6875rem', padding: '3px 10px' }}
+                    onClick={() => {
+                      const nodeId = tooltip.nodeId;
+                      if (!nodeId) return;
+                      setTooltip(null);
+                      void expandRelationshipsNode(nodeId, environment, hideSystem, graph, setGraph, toast);
+                    }}
+                  >
+                    Expand
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    style={{ fontSize: '0.6875rem', padding: '3px 10px' }}
+                    onClick={() => {
+                      const node = graph.nodes.find((item) => item.id === tooltip.nodeId);
+                      setTooltip(null);
+                      if (node) void loadEntityDetail(node.logicalName);
+                    }}
+                  >
+                    Open in Explorer
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -1210,11 +1294,17 @@ export function RelationshipsTab(props: {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div>
                 <h2>{selectedNode.label}</h2>
-                <p className="desc" style={{ marginBottom: 0 }}>{selectedNode.logicalName}</p>
+                <p className="desc" style={{ marginBottom: 0 }}>
+                  {selectedNode.logicalName}
+                </p>
               </div>
               <div className="btn-group">
-                <button className="btn btn-secondary" type="button" onClick={() => void loadEntityDetail(selectedNode.logicalName)}>Open in Explorer</button>
-                <button className="btn btn-ghost" type="button" onClick={() => void expandRelationshipsNode(selectedNode.id, environment, hideSystem, graph, setGraph, toast)}>Expand 1 hop</button>
+                <button className="btn btn-secondary" type="button" onClick={() => void loadEntityDetail(selectedNode.logicalName)}>
+                  Open in Explorer
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => void expandRelationshipsNode(selectedNode.id, environment, hideSystem, graph, setGraph, toast)}>
+                  Expand 1 hop
+                </button>
               </div>
             </div>
             <div className="metrics">
@@ -1223,7 +1313,7 @@ export function RelationshipsTab(props: {
                 ['Attributes', String(selectedNode.attrCount)],
                 ['Custom', selectedNode.isCustom ? 'Yes' : 'No'],
                 ['Outgoing', String(graph.edges.filter((edge) => edge.source === selectedNode.id).length)],
-                ['Incoming', String(graph.edges.filter((edge) => edge.target === selectedNode.id).length)],
+                ['Incoming', String(graph.edges.filter((edge) => edge.target === selectedNode.id).length)]
               ].map(([label, value]) => (
                 <div className="metric" key={label}>
                   <div className="metric-label">{label}</div>
@@ -1237,33 +1327,45 @@ export function RelationshipsTab(props: {
             <div className="panel" style={{ padding: 0, marginTop: 12, border: 'none' }}>
               <h3 style={{ marginBottom: 8 }}>Lookups</h3>
               <div className="card-list">
-                {graph.edges.filter((edge) => edge.source === selectedNode.id).map((edge) => (
-                  <div key={edge.id} className="card-item" style={{ padding: '8px 10px' }}>
-                    <div className="card-item-info">
-                      <div className="card-item-title">{edge.target}</div>
-                      <div className="card-item-sub">{edge.label}</div>
+                {graph.edges
+                  .filter((edge) => edge.source === selectedNode.id)
+                  .map((edge) => (
+                    <div key={edge.id} className="card-item" style={{ padding: '8px 10px' }}>
+                      <div className="card-item-info">
+                        <div className="card-item-title">{edge.target}</div>
+                        <div className="card-item-sub">{edge.label}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
                 {!graph.edges.filter((edge) => edge.source === selectedNode.id).length ? <div className="empty">No lookup edges from this entity.</div> : null}
               </div>
             </div>
             {selectedDetail ? (
               <div style={{ marginTop: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-                  <CopyButton value={{
-                    description: selectedDetail.description,
-                    primaryIdAttribute: selectedDetail.primaryIdAttribute,
-                    primaryNameAttribute: selectedDetail.primaryNameAttribute,
-                    ownershipType: selectedDetail.ownershipType,
-                  }} label="Copy JSON" title="Copy relationship detail JSON" toast={toast} />
+                  <CopyButton
+                    value={{
+                      description: selectedDetail.description,
+                      primaryIdAttribute: selectedDetail.primaryIdAttribute,
+                      primaryNameAttribute: selectedDetail.primaryNameAttribute,
+                      ownershipType: selectedDetail.ownershipType
+                    }}
+                    label="Copy JSON"
+                    title="Copy relationship detail JSON"
+                    toast={toast}
+                  />
                 </div>
-                <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson({
-                  description: selectedDetail.description,
-                  primaryIdAttribute: selectedDetail.primaryIdAttribute,
-                  primaryNameAttribute: selectedDetail.primaryNameAttribute,
-                  ownershipType: selectedDetail.ownershipType,
-                }) }}></pre>
+                <pre
+                  className="viewer"
+                  dangerouslySetInnerHTML={{
+                    __html: highlightJson({
+                      description: selectedDetail.description,
+                      primaryIdAttribute: selectedDetail.primaryIdAttribute,
+                      primaryNameAttribute: selectedDetail.primaryNameAttribute,
+                      ownershipType: selectedDetail.ownershipType
+                    })
+                  }}
+                ></pre>
               </div>
             ) : null}
           </>
@@ -1280,7 +1382,7 @@ async function loadRelationshipsRecursive(
   hideSystem: boolean,
   cache: Record<string, DataverseEntityDetail>,
   nodes: RelationshipsNode[],
-  edges: RelationshipsEdge[],
+  edges: RelationshipsEdge[]
 ) {
   let detail = cache[entityName];
   if (!detail) {
@@ -1301,7 +1403,7 @@ async function loadRelationshipsRecursive(
       attrCount: (detail.attributes || []).length,
       entitySetName: detail.entitySetName,
       x: 0,
-      y: 0,
+      y: 0
     });
   }
   if (remainingDepth <= 0) return;
@@ -1360,7 +1462,7 @@ async function expandRelationshipsNode(
   hideSystem: boolean,
   graph: RelationshipsGraph,
   setGraph: Dispatch<SetStateAction<RelationshipsGraph>>,
-  toast: ToastFn,
+  toast: ToastFn
 ) {
   try {
     const cache = { ...graph.cache };

@@ -7,7 +7,7 @@ const TAB_LABELS: Record<TabName, string> = {
   automate: 'automate',
   apps: 'apps',
   canvas: 'canvas',
-  platform: 'platform',
+  platform: 'platform'
 };
 
 const TAB_ORDER: TabName[] = ['setup', 'console', 'dataverse', 'automate', 'apps', 'canvas', 'platform'];
@@ -24,14 +24,7 @@ export function PrimaryTabs(props: { activeTab: TabName; setActiveTab: (tab: Tab
     <nav className="tabs">
       <div className="tabs-inner">
         {tabs.map((tabName, index) => (
-          <FragmentTab
-            key={tabName}
-            index={index}
-            tabs={tabs}
-            tabName={tabName}
-            activeTab={props.activeTab}
-            setActiveTab={props.setActiveTab}
-          />
+          <FragmentTab key={tabName} index={index} tabs={tabs} tabName={tabName} activeTab={props.activeTab} setActiveTab={props.setActiveTab} />
         ))}
       </div>
     </nav>
@@ -54,13 +47,10 @@ function FragmentTab(props: { index: number; tabs: readonly TabName[]; tabName: 
   return (
     <>
       {needsSep ? <div className="tab-sep"></div> : null}
-      <button
-        className={`tab ${activeTab === tabName ? 'active' : ''}`}
-        data-tab={tabName}
-        onClick={() => setActiveTab(tabName)}
-        title={`${TAB_LABELS[tabName]} (Alt+${tabs.indexOf(tabName) + 1})`}
-      >
-        <span className="tab-num" aria-hidden="true">{number}</span>
+      <button className={`tab ${activeTab === tabName ? 'active' : ''}`} data-tab={tabName} onClick={() => setActiveTab(tabName)} title={`${TAB_LABELS[tabName]} (Alt+${tabs.indexOf(tabName) + 1})`}>
+        <span className="tab-num" aria-hidden="true">
+          {number}
+        </span>
         <span className="tab-label">{TAB_LABELS[tabName]}</span>
       </button>
     </>
