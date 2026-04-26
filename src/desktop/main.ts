@@ -8,13 +8,14 @@ let devReloadWatcher: ReturnType<typeof watch> | undefined;
 const isDesktopDev = process.env.PP_DESKTOP_DEV === '1';
 const isDesktopE2E = process.env.PP_DESKTOP_E2E === '1';
 const e2eWindowMode = process.env.PP_DESKTOP_E2E_WINDOW_MODE;
+const e2eUserDataDir = process.env.PP_DESKTOP_E2E_USER_DATA_DIR;
 const keepWindowHiddenForE2E = e2eWindowMode === 'hidden';
 const useBackgroundWindowForE2E = e2eWindowMode === 'background';
 const iconPath = path.join(__dirname, process.platform === 'win32' ? 'pp-icon.ico' : 'pp-icon-256x256.png');
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 if (isDesktopDev || isDesktopE2E) {
-  app.setPath('userData', path.join(app.getPath('userData'), isDesktopE2E ? 'e2e' : 'dev'));
+  app.setPath('userData', isDesktopE2E && e2eUserDataDir ? e2eUserDataDir : path.join(app.getPath('userData'), isDesktopE2E ? 'e2e' : 'dev'));
 }
 
 const gotLock = app.requestSingleInstanceLock();

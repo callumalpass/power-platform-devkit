@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { _electron as electron, expect, test as base, type ElectronApplication, type Page, type Response } from '@playwright/test';
 
 type NetworkRecord = {
@@ -44,16 +47,25 @@ type UiAudit = {
 export const test = base.extend<{ electronApp: ElectronApplication; page: Page; audit: UiAudit }>({
   electronApp: async ({ browserName: _browserName }, use) => {
     const args = process.platform === 'linux' ? ['--no-sandbox', 'dist/desktop/main.cjs'] : ['dist/desktop/main.cjs'];
-    const app = await electron.launch({
-      args,
-      env: {
-        ...process.env,
-        PP_DESKTOP_E2E: '1',
-        PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden')
-      }
-    });
-    await use(app);
-    await app.close();
+    const configHome = await createE2eConfigHome();
+    let app: ElectronApplication | undefined;
+    try {
+      app = await electron.launch({
+        args,
+        env: {
+          ...process.env,
+          ...configEnv(configHome),
+          PP_CREDENTIAL_STORE: 'file',
+          PP_DESKTOP_E2E: '1',
+          PP_DESKTOP_E2E_USER_DATA_DIR: join(configHome, 'user-data'),
+          PP_DESKTOP_E2E_WINDOW_MODE: process.env.PP_DESKTOP_E2E_WINDOW_MODE ?? (process.env.PP_DESKTOP_E2E_SHOW_WINDOW === '1' ? 'visible' : 'hidden')
+        }
+      });
+      await use(app);
+    } finally {
+      await app?.close().catch(() => undefined);
+      await rm(configHome, { recursive: true, force: true });
+    }
   },
   page: async ({ electronApp }, use) => {
     const page = await electronApp.firstWindow();
@@ -141,10 +153,57 @@ export const test = base.extend<{ electronApp: ElectronApplication; page: Page; 
 
 export { expect };
 
+async function createE2eConfigHome(): Promise<string> {
+  const configHome = await mkdtemp(join(tmpdir(), 'pp-desktop-e2e-'));
+  const ppDir = join(configHome, 'pp');
+  await mkdir(ppDir, { recursive: true });
+  await writeFile(
+    join(ppDir, 'config.json'),
+    JSON.stringify(
+      {
+        accounts: {
+          playwright: {
+            name: 'playwright',
+            kind: 'static-token',
+            token: 'test-token'
+          }
+        },
+        environments: {
+          dev: {
+            alias: 'dev',
+            account: 'playwright',
+            url: 'https://org.crm.dynamics.com',
+            makerEnvironmentId: 'f3f934b0-7b79-e09e-b393-f0b21c05fcce',
+            tenantId: 'tenant-id'
+          }
+        },
+        browserProfiles: {}
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  return configHome;
+}
+
+function configEnv(configHome: string): NodeJS.ProcessEnv {
+  if (process.platform === 'win32') return { APPDATA: configHome };
+  return { XDG_CONFIG_HOME: configHome };
+}
+
 export async function openApp(page: Page): Promise<void> {
   await expect(page.locator('#app-root')).toBeVisible();
+  await disableToastPointerEvents(page);
   await expect(page.getByRole('button', { name: 'Setup' })).toBeVisible();
   await page.keyboard.press('Escape').catch(() => undefined);
+}
+
+async function disableToastPointerEvents(page: Page): Promise<void> {
+  await page
+    .addStyleTag({
+      content: '#toasts, #toasts .toast, #toasts .toast * { pointer-events: none !important; }'
+    })
+    .catch(() => undefined);
 }
 
 export async function visitTab(page: Page, tabName: string): Promise<void> {
