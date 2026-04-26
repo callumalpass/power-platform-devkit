@@ -112,7 +112,7 @@ const pending = client.request<{ value: Array<{ name?: string }> }>({
 
 const requestInput: RequestInput = { accountName: 'work', api: 'graph', path: '/me' };
 const prepared = buildRequest(undefined, 'work', 'https://graph.microsoft.com/v1.0/me', 'graph');
-const fetchXml = analyzeFetchXml('<fetch><entity name="account" /></fetch>');
+const fetchXml = analyzeFetchXml('<fetch><entity name="account" /></fetch>', 0);
 const narrowed: OperationResult<{ name: string }> = ok({ name: 'Contoso' });
 
 if (narrowed.success) {
@@ -206,12 +206,18 @@ async function assertTypesCompile() {
   const ts = tsModule.default ?? tsModule;
   const configPath = join(consumerDir, 'tsconfig.json');
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
-  assert.equal(config.error, undefined, config.error ? ts.formatDiagnosticsWithColorAndContext([config.error], formatHost(ts)) : '');
+  if (config.error) throw new Error(ts.formatDiagnosticsWithColorAndContext([config.error], formatHost(ts)));
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, consumerDir);
-  assert.deepEqual(parsed.errors, [], ts.formatDiagnosticsWithColorAndContext(parsed.errors, formatHost(ts)));
+  assertNoDiagnostics(ts, parsed.errors);
   const program = ts.createProgram(parsed.fileNames, parsed.options);
   const diagnostics = ts.getPreEmitDiagnostics(program);
-  assert.deepEqual(diagnostics, [], ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost(ts)));
+  assertNoDiagnostics(ts, diagnostics);
+}
+
+function assertNoDiagnostics(ts, diagnostics) {
+  if (diagnostics.length > 0) {
+    throw new Error(ts.formatDiagnosticsWithColorAndContext(diagnostics, formatHost(ts)));
+  }
 }
 
 async function linkDependencies(names) {

@@ -103,8 +103,9 @@
     }
   },
   "scripts": {
+    "build:lib": "tsup",
     "build:desktop": "node scripts/build-desktop.mjs",
-    "build": "tsup && pnpm run build:desktop",
+    "build": "pnpm run build:lib && pnpm run build:desktop",
     "prepack": "pnpm run build",
     "build:sea": "pnpm run build && node scripts/build-sea.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
@@ -117,7 +118,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json,md,yml,yaml}\"",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
     "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
-    "test:package": "pnpm run build && node test/package-smoke.mjs && node test/prepare-consumer-package-smoke.mjs && npm --cache .tmp-test/consumer-package/npm-cache pack --ignore-scripts --pack-destination .tmp-test/consumer-package/pack --json > .tmp-test/consumer-package/pack.json && node test/consumer-package-smoke.mjs",
+    "test:package": "pnpm run build:lib && node test/package-smoke.mjs && node test/prepare-consumer-package-smoke.mjs && npm --cache .tmp-test/consumer-package/npm-cache pack --ignore-scripts --pack-destination .tmp-test/consumer-package/pack --json > .tmp-test/consumer-package/pack.json && node test/consumer-package-smoke.mjs",
     "test:e2e:desktop": "pnpm run build && node scripts/run-desktop-e2e.mjs",
     "typecheck": "tsc --noEmit"
   },
