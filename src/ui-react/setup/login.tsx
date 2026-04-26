@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils.js';
 import { CopyButton, copyTextToClipboard } from '../CopyButton.js';
-import type { ToastFn } from '../ui-types.js';
+import type { ApiEnvelope, ToastFn } from '../ui-types.js';
 import type { AuthSession, LoginTarget } from './types.js';
 
 function loginTargetLabel(target: LoginTarget | null | undefined): string {
@@ -55,9 +55,9 @@ export function useAuthSession(toast: ToastFn, refreshState: (silent?: boolean) 
     while (!done) {
       if (!isCurrentPoll(id, runId)) return;
       try {
-        const payload = await api<any>(`/api/auth/sessions/${encodeURIComponent(id)}`);
+        const payload = await api<ApiEnvelope<AuthSession>>(`/api/auth/sessions/${encodeURIComponent(id)}`);
         if (!isCurrentPoll(id, runId)) return;
-        const next = payload.data as AuthSession | undefined;
+        const next = payload.data;
         if (next) {
           handleSessionUpdate(next, runId);
           done = next.status === 'completed' || next.status === 'failed' || next.status === 'cancelled';

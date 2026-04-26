@@ -29,28 +29,29 @@ function relativeTime(timestamp: number): string {
 }
 
 export function HeaderActions(props: Props) {
+  const { appName, theme, onToggleTheme, toastLog, clearToastLog, toastTrayOpen, setToastTrayOpen, headerMenuOpen, setHeaderMenuOpen, openConfirm, openShortcutHelp } = props;
   const trayRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const errorCount = props.toastLog.filter((item) => item.isError).length;
+  const errorCount = toastLog.filter((item) => item.isError).length;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node;
-      if (props.toastTrayOpen && trayRef.current && !trayRef.current.contains(target)) {
-        props.setToastTrayOpen(false);
+      if (toastTrayOpen && trayRef.current && !trayRef.current.contains(target)) {
+        setToastTrayOpen(false);
       }
-      if (props.headerMenuOpen && menuRef.current && !menuRef.current.contains(target)) {
-        props.setHeaderMenuOpen(false);
+      if (headerMenuOpen && menuRef.current && !menuRef.current.contains(target)) {
+        setHeaderMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [props.toastTrayOpen, props.headerMenuOpen, props.setToastTrayOpen, props.setHeaderMenuOpen]);
+  }, [headerMenuOpen, setHeaderMenuOpen, setToastTrayOpen, toastTrayOpen]);
 
   function requestShutdown() {
-    props.openConfirm({
-      title: `Quit ${props.appName}?`,
-      body: `This closes ${props.appName}. Background CLI and MCP processes are not affected.`,
+    openConfirm({
+      title: `Quit ${appName}?`,
+      body: `This closes ${appName}. Background CLI and MCP processes are not affected.`,
       destructive: true,
       confirmLabel: 'Quit',
       onConfirm: async () => {
@@ -69,24 +70,24 @@ export function HeaderActions(props: Props) {
         <button
           type="button"
           className={`header-icon-btn ${errorCount ? 'has-error' : ''}`}
-          title={`Recent notifications${props.toastLog.length ? ` (${props.toastLog.length})` : ''}`}
+          title={`Recent notifications${toastLog.length ? ` (${toastLog.length})` : ''}`}
           aria-label="Recent notifications"
-          onClick={() => props.setToastTrayOpen(!props.toastTrayOpen)}
+          onClick={() => setToastTrayOpen(!toastTrayOpen)}
         >
           <Icon name="bell" size={15} />
-          {props.toastLog.length ? <span className="header-icon-badge">{props.toastLog.length > 99 ? '99+' : props.toastLog.length}</span> : null}
+          {toastLog.length ? <span className="header-icon-badge">{toastLog.length > 99 ? '99+' : toastLog.length}</span> : null}
         </button>
-        {props.toastTrayOpen ? (
+        {toastTrayOpen ? (
           <div className="header-popover toast-tray">
             <div className="header-popover-header">
               <span>Recent</span>
-              {props.toastLog.length ? (
+              {toastLog.length ? (
                 <button
                   className="header-popover-action"
                   type="button"
                   onClick={() => {
-                    props.clearToastLog();
-                    props.setToastTrayOpen(false);
+                    clearToastLog();
+                    setToastTrayOpen(false);
                   }}
                 >
                   Clear
@@ -94,8 +95,8 @@ export function HeaderActions(props: Props) {
               ) : null}
             </div>
             <div className="toast-tray-list">
-              {props.toastLog.length ? (
-                props.toastLog.map((item) => (
+              {toastLog.length ? (
+                toastLog.map((item) => (
                   <div key={item.id} className={`toast-tray-item ${item.isError ? 'error' : 'ok'}`}>
                     <span className="toast-tray-dot" aria-hidden="true" />
                     <span className="toast-tray-message">{item.message}</span>
@@ -114,25 +115,25 @@ export function HeaderActions(props: Props) {
         type="button"
         id="theme-toggle"
         className="header-icon-btn"
-        title={props.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        aria-label={props.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        onClick={props.onToggleTheme}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        onClick={onToggleTheme}
       >
-        <Icon name={props.theme === 'dark' ? 'sun' : 'moon'} size={15} />
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
       </button>
 
       <div className="header-action-group" ref={menuRef}>
-        <button type="button" className="header-icon-btn" title="More actions" aria-label="More actions" onClick={() => props.setHeaderMenuOpen(!props.headerMenuOpen)}>
+        <button type="button" className="header-icon-btn" title="More actions" aria-label="More actions" onClick={() => setHeaderMenuOpen(!headerMenuOpen)}>
           <Icon name="more" size={15} />
         </button>
-        {props.headerMenuOpen ? (
+        {headerMenuOpen ? (
           <div className="header-popover header-menu">
             <button
               type="button"
               className="header-menu-item"
               onClick={() => {
-                props.setHeaderMenuOpen(false);
-                props.openShortcutHelp();
+                setHeaderMenuOpen(false);
+                openShortcutHelp();
               }}
             >
               <span className="header-menu-item-icon" aria-hidden="true">
@@ -144,12 +145,12 @@ export function HeaderActions(props: Props) {
               type="button"
               className="header-menu-item danger"
               onClick={() => {
-                props.setHeaderMenuOpen(false);
+                setHeaderMenuOpen(false);
                 requestShutdown();
               }}
             >
               <Icon name="power" size={14} />
-              <span>Quit {props.appName}</span>
+              <span>Quit {appName}</span>
             </button>
           </div>
         ) : null}

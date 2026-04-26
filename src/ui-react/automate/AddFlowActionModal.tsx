@@ -47,6 +47,7 @@ export function AddFlowActionModal(props: {
   onAdd: (actionName: string, action: Record<string, unknown>) => void;
   toast: ToastFn;
 }) {
+  const { analysis, connectionModel, containerTarget, environment, initialRunAfter, onAdd, onClose, source, toast } = props;
   const kind = props.kind || 'action';
   const label = kind === 'trigger' ? 'trigger' : 'action';
   const titleLabel = kind === 'trigger' ? 'Trigger' : 'Action';
@@ -61,13 +62,13 @@ export function AddFlowActionModal(props: {
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [operationDraft, setOperationDraft] = useState<Record<string, unknown> | null>(null);
   const [actionName, setActionName] = useState('');
-  const [runAfter, setRunAfter] = useState(props.initialRunAfter || '');
+  const [runAfter, setRunAfter] = useState(initialRunAfter || '');
   const [selectedConnectionReferenceName, setSelectedConnectionReferenceName] = useState('');
   const searchRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const topLevelActions = useMemo(() => topLevelActionNames(props.analysis), [props.analysis]);
-  const topLevelTriggers = useMemo(() => topLevelTriggerNames(props.analysis), [props.analysis]);
-  const runAfterOptions = props.containerTarget ? props.containerTarget.siblings : topLevelActions;
+  const topLevelActions = useMemo(() => topLevelActionNames(analysis), [analysis]);
+  const topLevelTriggers = useMemo(() => topLevelTriggerNames(analysis), [analysis]);
+  const runAfterOptions = containerTarget ? containerTarget.siblings : topLevelActions;
   const builtInCategories = kind === 'trigger' ? BUILT_IN_TRIGGER_CATEGORIES : BUILT_IN_CATEGORIES;
   const builtInTemplates = kind === 'trigger' ? BUILT_IN_TRIGGER_TEMPLATES : BUILT_IN_ACTION_TEMPLATES;
   const propsRef = useRef(props);
@@ -87,9 +88,9 @@ export function AddFlowActionModal(props: {
 
   useEffect(() => {
     if (kind === 'trigger') return;
-    if (props.initialRunAfter !== undefined) return;
+    if (initialRunAfter !== undefined) return;
     if (!runAfter && runAfterOptions.length) setRunAfter(runAfterOptions[runAfterOptions.length - 1] || '');
-  }, [kind, runAfter, runAfterOptions, props.initialRunAfter]);
+  }, [initialRunAfter, kind, runAfter, runAfterOptions]);
 
   useEffect(() => {
     void doSearch('');
@@ -107,11 +108,11 @@ export function AddFlowActionModal(props: {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (isMonacoKeyboardEvent(event)) return;
-      if (event.key === 'Escape') props.onClose();
+      if (event.key === 'Escape') onClose();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [props.onClose]);
+  }, [onClose]);
 
   useEffect(() => {
     return () => {
@@ -126,7 +127,7 @@ export function AddFlowActionModal(props: {
   }
 
   function selectOperation(operation: FlowApiOperation) {
-    const compatibleRefs = compatibleConnectionReferences(props.connectionModel, operation);
+    const compatibleRefs = compatibleConnectionReferences(connectionModel, operation);
     const nextReferenceName = compatibleRefs[0]?.name || '';
     setSelectedConnectionReferenceName(nextReferenceName);
     setSelectedOperation(operation);
@@ -134,8 +135,8 @@ export function AddFlowActionModal(props: {
     setSelectedSchema(null);
     const initialName =
       kind === 'trigger'
-        ? uniqueTriggerName(props.source, sanitizeActionName(operation.summary || operation.name || 'Trigger'))
-        : uniqueActionName(props.source, sanitizeActionName(operation.summary || operation.name || 'Action'));
+        ? uniqueTriggerName(source, sanitizeActionName(operation.summary || operation.name || 'Trigger'))
+        : uniqueActionName(source, sanitizeActionName(operation.summary || operation.name || 'Action'));
     setActionName(initialName);
     if (operation.isBuiltIn && !operation.hasConnectorSchema) {
       const builtIn = kind === 'trigger' ? buildBuiltInTrigger(operation) : buildBuiltInAction(operation);
@@ -146,8 +147,8 @@ export function AddFlowActionModal(props: {
     }
     setOperationDraft(
       kind === 'trigger'
-        ? buildApiOperationTrigger(props.source, operation, undefined, nextReferenceName || undefined)
-        : buildApiOperationAction(props.source, operation, buildRunAfter(runAfter), undefined, nextReferenceName || undefined)
+        ? buildApiOperationTrigger(source, operation, undefined, nextReferenceName || undefined)
+        : buildApiOperationAction(source, operation, buildRunAfter(runAfter), undefined, nextReferenceName || undefined)
     );
   }
 
@@ -158,7 +159,7 @@ export function AddFlowActionModal(props: {
     setSelectedSchema(null);
     const draft = templateDraft(template);
     setOperationDraft(kind === 'trigger' ? draft : { ...draft, runAfter: buildRunAfter(runAfter) });
-    setActionName(kind === 'trigger' ? uniqueTriggerName(props.source, template.name) : uniqueActionName(props.source, template.name));
+    setActionName(kind === 'trigger' ? uniqueTriggerName(source, template.name) : uniqueActionName(source, template.name));
   }
 
   useEffect(() => {
@@ -173,35 +174,35 @@ export function AddFlowActionModal(props: {
       setSelectedSchema(null);
       setOperationDraft(
         kind === 'trigger'
-          ? buildApiOperationTrigger(props.source, selectedOperation, undefined, selectedConnectionReferenceName || undefined)
-          : buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), undefined, selectedConnectionReferenceName || undefined)
+          ? buildApiOperationTrigger(source, selectedOperation, undefined, selectedConnectionReferenceName || undefined)
+          : buildApiOperationAction(source, selectedOperation, buildRunAfter(runAfter), undefined, selectedConnectionReferenceName || undefined)
       );
       return;
     }
     setSchemaLoading(true);
-    void loadFlowApiOperationSchema(props.environment, apiRef, selectedOperation.name)
+    void loadFlowApiOperationSchema(environment, apiRef, selectedOperation.name)
       .then((schema) => {
         if (cancelled) return;
         setSelectedSchema(schema);
         setOperationDraft(
           kind === 'trigger'
-            ? buildApiOperationTrigger(props.source, selectedOperation, schema || undefined, selectedConnectionReferenceName || undefined)
-            : buildApiOperationAction(props.source, selectedOperation, buildRunAfter(runAfter), schema || undefined, selectedConnectionReferenceName || undefined)
+            ? buildApiOperationTrigger(source, selectedOperation, schema || undefined, selectedConnectionReferenceName || undefined)
+            : buildApiOperationAction(source, selectedOperation, buildRunAfter(runAfter), schema || undefined, selectedConnectionReferenceName || undefined)
         );
       })
-      .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
+      .catch((error) => toast(error instanceof Error ? error.message : String(error), true))
       .finally(() => {
         if (!cancelled) setSchemaLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [kind, props.environment, props.source, props.toast, runAfter, selectedConnectionReferenceName, selectedOperation]);
+  }, [environment, kind, runAfter, selectedConnectionReferenceName, selectedOperation, source, toast]);
 
-  const operationDraftRef = useMemo(() => (operationDraft ? resolveActionOperation(props.source, operationDraft) : {}), [props.source, operationDraft]);
-  const operationDynamicOptions = useFlowDynamicOptions(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
-  const operationDynamicSchemaFields = useFlowDynamicSchemaFields(props.environment, operationDraft, selectedSchema, operationDraftRef, props.toast);
-  const expressionSchemaIndex = useFlowEditorSchemaIndex(props.environment, props.source, props.analysis, props.toast);
+  const operationDraftRef = useMemo(() => (operationDraft ? resolveActionOperation(source, operationDraft) : {}), [source, operationDraft]);
+  const operationDynamicOptions = useFlowDynamicOptions(environment, operationDraft, selectedSchema, operationDraftRef, toast);
+  const operationDynamicSchemaFields = useFlowDynamicSchemaFields(environment, operationDraft, selectedSchema, operationDraftRef, toast);
+  const expressionSchemaIndex = useFlowEditorSchemaIndex(environment, source, analysis, toast);
 
   function updateOperationDraft(path: string[], value: unknown) {
     setOperationDraft((current) => (current ? setPathValue(current, path, value) : current));
@@ -216,27 +217,27 @@ export function AddFlowActionModal(props: {
     const runAfterValue = buildRunAfter(runAfter);
     if (selectedOperation) {
       if ((selectedOperation.hasConnectorSchema || selectedOperation.needsConnectionReference) && !selectedConnectionReferenceName) {
-        props.toast(`Select or create a compatible connection reference before inserting this connector ${label}.`, true);
+        toast(`Select or create a compatible connection reference before inserting this connector ${label}.`, true);
         return;
       }
       const operation =
         operationDraft ||
         (kind === 'trigger'
-          ? buildApiOperationTrigger(props.source, selectedOperation, selectedSchema || undefined, selectedConnectionReferenceName || undefined)
-          : buildApiOperationAction(props.source, selectedOperation, runAfterValue, selectedSchema || undefined, selectedConnectionReferenceName || undefined));
-      props.onAdd(actionName, kind === 'trigger' ? operation : { ...operation, runAfter: runAfterValue });
+          ? buildApiOperationTrigger(source, selectedOperation, selectedSchema || undefined, selectedConnectionReferenceName || undefined)
+          : buildApiOperationAction(source, selectedOperation, runAfterValue, selectedSchema || undefined, selectedConnectionReferenceName || undefined));
+      onAdd(actionName, kind === 'trigger' ? operation : { ...operation, runAfter: runAfterValue });
       return;
     }
     if (selectedTemplate) {
       const template = operationDraft || templateDraft(selectedTemplate);
-      props.onAdd(actionName, kind === 'trigger' ? template : { ...template, runAfter: runAfterValue });
+      onAdd(actionName, kind === 'trigger' ? template : { ...template, runAfter: runAfterValue });
     }
   }
 
   const selectedSchemaFields = expandDynamicSchemaFields(selectedSchema?.fields || [], operationDynamicSchemaFields);
   const visibleSelectedSchemaFields = visibleConnectorSchemaFields(selectedSchemaFields);
   const hasSelection = Boolean(selectedOperation || selectedTemplate);
-  const compatibleReferences = useMemo(() => (selectedOperation ? compatibleConnectionReferences(props.connectionModel, selectedOperation) : []), [props.connectionModel, selectedOperation]);
+  const compatibleReferences = useMemo(() => (selectedOperation ? compatibleConnectionReferences(connectionModel, selectedOperation) : []), [connectionModel, selectedOperation]);
   const connectorNeedsReference = Boolean(selectedOperation && (selectedOperation.hasConnectorSchema || selectedOperation.needsConnectionReference));
   const canInsert = Boolean(actionName.trim() && hasSelection && (!connectorNeedsReference || selectedConnectionReferenceName));
 

@@ -2,14 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
+import type { ApiEnvelope, DataverseAttribute, DataverseEntityDetail, DataverseRecordPage, UnknownRecord } from '../ui-types.js';
+
+type LookupSearchState = {
+  query?: string;
+  loading?: boolean;
+  error?: string | null;
+  target?: string;
+  primaryId?: string;
+  primaryName?: string;
+  results?: UnknownRecord[];
+};
+
+type CreateRecordResult = {
+  id?: string;
+  record?: UnknownRecord;
+  status?: number;
+  headers?: Record<string, string>;
+};
 
 export function CreateRecordModal(props: {
-  entityDetail: any;
+  entityDetail: DataverseEntityDetail;
   environment: string;
   entityMap: Map<string, string>;
   metadataWarnings?: string[];
   onClose: () => void;
-  onCreated: (created: any) => void;
+  onCreated: (created: CreateRecordResult) => void;
   toast: (message: string, isError?: boolean) => void;
 }) {
   const { entityDetail, environment, entityMap, metadataWarnings = [], onClose, onCreated, toast } = props;
@@ -20,13 +38,13 @@ export function CreateRecordModal(props: {
   const [advanced, setAdvanced] = useState(false);
   const [jsonText, setJsonText] = useState('{}');
   const [formErrors, setFormErrors] = useState<string[]>([]);
-  const [lookupSearches, setLookupSearches] = useState<Record<string, any>>({});
-  const [lookupDetails, setLookupDetails] = useState<Record<string, any>>({});
+  const [lookupSearches, setLookupSearches] = useState<Record<string, LookupSearchState>>({});
+  const [lookupDetails, setLookupDetails] = useState<Record<string, DataverseEntityDetail>>({});
   const backdropRef = useRef<HTMLDivElement | null>(null);
 
   const creatableAttributes = useMemo(() => {
     return (entityDetail.attributes || [])
-      .filter((attr: any) => {
+      .filter((attr) => {
         if (!attr.logicalName || !attr.isValidForCreate) return false;
         if (attr.isPrimaryId) return false;
         if (attr.attributeOf) return false;
@@ -34,7 +52,7 @@ export function CreateRecordModal(props: {
         if (['partylisttype', 'virtualtype', 'entitynametype', 'managedpropertytype', 'image', 'filetype'].includes(typeName)) return false;
         return true;
       })
-      .sort((a: any, b: any) => {
+      .sort((a, b) => {
         if (a.isPrimaryName && !b.isPrimaryName) return -1;
         if (!a.isPrimaryName && b.isPrimaryName) return 1;
         return (a.displayName || a.logicalName).localeCompare(b.displayName || b.logicalName);
@@ -43,7 +61,7 @@ export function CreateRecordModal(props: {
 
   const filteredCreatableAttributes = useMemo(() => {
     const filter = fieldFilter.trim().toLowerCase();
-    return creatableAttributes.filter((attr: any) => {
+    return creatableAttributes.filter((attr) => {
       const key = payloadKeyForAttribute(attr);
       if (changedOnly && !(key in values)) return false;
       if (!filter) return true;
@@ -52,9 +70,9 @@ export function CreateRecordModal(props: {
   }, [changedOnly, creatableAttributes, fieldFilter, values]);
 
   const groupedAttributes = useMemo(() => {
-    const required: any[] = [];
-    const common: any[] = [];
-    const other: any[] = [];
+    const required: DataverseAttribute[] = [];
+    const common: DataverseAttribute[] = [];
+    const other: DataverseAttribute[] = [];
     for (const attr of filteredCreatableAttributes) {
       if (isRequiredAttribute(attr)) required.push(attr);
       else if (attr.isPrimaryName || isLookupAttribute(attr) || attr.optionValues?.length) common.push(attr);
@@ -83,7 +101,7 @@ export function CreateRecordModal(props: {
     });
   }
 
-  function updateLookup(attr: any, targetLogicalName: string, id: string) {
+  function updateLookup(attr: DataverseAttribute, targetLogicalName: string, id: string) {
     const key = payloadKeyForAttribute(attr);
     const entitySetName = entityMap.get(targetLogicalName) || targetLogicalName;
     const cleanId = id.trim().replace(/[{}]/g, '');
@@ -94,7 +112,7 @@ export function CreateRecordModal(props: {
     setLookupSearches((current) => ({ ...current, [key]: { ...(current[key] || {}), ...patch } }));
   }
 
-  async function searchLookup(attr: any, targetLogicalName: string) {
+  async function searchLookup(attr: DataverseAttribute, targetLogicalName: string) {
     const key = payloadKeyForAttribute(attr);
     const state = lookupSearches[key] || {};
     updateLookupSearch(key, { loading: true, error: null, target: targetLogicalName });
@@ -105,7 +123,7 @@ export function CreateRecordModal(props: {
       const select = [primaryId, primaryName].filter(Boolean);
       const query = String(state.query || '').trim();
       const filter = query && primaryName ? `contains(${primaryName},'${escapeODataString(query)}')` : undefined;
-      const resultPayload = await api<any>('/api/dv/query/execute', {
+      const resultPayload = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/query/execute', {
         method: 'POST',
         body: JSON.stringify({
           environmentAlias: environment,
@@ -121,23 +139,23 @@ export function CreateRecordModal(props: {
         target: targetLogicalName,
         primaryId,
         primaryName,
-        results: resultPayload.data?.records || []
+        results: resultPayload.data.records || []
       });
     } catch (err) {
       updateLookupSearch(key, { loading: false, error: err instanceof Error ? err.message : String(err), results: [] });
     }
   }
 
-  async function loadLookupDetail(targetLogicalName: string) {
+  async function loadLookupDetail(targetLogicalName: string): Promise<DataverseEntityDetail> {
     const cached = lookupDetails[targetLogicalName];
     if (cached) return cached;
-    const detailPayload = await api<any>(`/api/dv/entities/${encodeURIComponent(targetLogicalName)}?environment=${encodeURIComponent(environment)}`);
+    const detailPayload = await api<ApiEnvelope<DataverseEntityDetail>>(`/api/dv/entities/${encodeURIComponent(targetLogicalName)}?environment=${encodeURIComponent(environment)}`);
     const detail = detailPayload.data;
     setLookupDetails((current) => ({ ...current, [targetLogicalName]: detail }));
     return detail;
   }
 
-  function inputForAttribute(attr: any) {
+  function inputForAttribute(attr: DataverseAttribute) {
     const typeName = String(attr.attributeTypeName || attr.attributeType || '').toLowerCase();
     const key = payloadKeyForAttribute(attr);
     const val = values[key];
@@ -151,7 +169,7 @@ export function CreateRecordModal(props: {
       const idMatch = /\(([0-9a-f-]{0,36})\)/i.exec(bind);
       const id = idMatch?.[1] || '';
       const targetMatch = /^\/([^()]+)\(/.exec(bind);
-      const selectedTarget = targets.find((target: string) => entityMap.get(target) === targetMatch?.[1]) || currentTarget;
+      const selectedTarget = targets.find((target) => entityMap.get(target) === targetMatch?.[1]) || currentTarget;
       const lookupState = lookupSearches[key] || {};
       return (
         <div style={{ display: 'grid', gap: 6 }}>
@@ -165,7 +183,7 @@ export function CreateRecordModal(props: {
                   updateLookupSearch(key, { target: next, results: [] });
                 }}
                 {...commonProps}
-                options={targets.map((target: string) => ({ value: target, label: target }))}
+                options={targets.map((target) => ({ value: target, label: target }))}
               />
             ) : null}
             <input
@@ -198,9 +216,9 @@ export function CreateRecordModal(props: {
           ) : null}
           {Array.isArray(lookupState.results) && lookupState.results.length ? (
             <div className="create-record-lookup-results">
-              {lookupState.results.map((row: any, index: number) => {
-                const rowId = row[lookupState.primaryId] || row[Object.keys(row).find((rowKey) => rowKey.endsWith('id')) || ''];
-                const label = row[lookupState.primaryName] || row[`${lookupState.primaryId}@OData.Community.Display.V1.FormattedValue`] || rowId;
+              {lookupState.results.map((row, index) => {
+                const rowId = row[lookupState.primaryId || ''] || row[Object.keys(row).find((rowKey) => rowKey.endsWith('id')) || ''];
+                const label = row[lookupState.primaryName || ''] || row[`${lookupState.primaryId}@OData.Community.Display.V1.FormattedValue`] || rowId;
                 if (typeof rowId !== 'string') return null;
                 return (
                   <button key={`${rowId}-${index}`} className="create-record-lookup-result" type="button" onClick={() => updateLookup(attr, selectedTarget, rowId)}>
@@ -223,7 +241,7 @@ export function CreateRecordModal(props: {
           {...commonProps}
           options={[
             { value: '', label: 'Select value...' },
-            ...attr.optionValues.map((option: any) => ({
+            ...attr.optionValues.map((option) => ({
               value: String(option.value),
               label: option.label ? `${option.label} (${option.value})` : String(option.value)
             }))
@@ -323,7 +341,7 @@ export function CreateRecordModal(props: {
     }
     setSaving(true);
     try {
-      const payload = await api<any>('/api/dv/records/create', {
+      const payload = await api<ApiEnvelope<CreateRecordResult>>('/api/dv/records/create', {
         method: 'POST',
         body: JSON.stringify({
           environmentAlias: environment,
@@ -413,7 +431,7 @@ export function CreateRecordModal(props: {
                 <div className="create-record-section">{group.label}</div>
                 <table className="rt-detail-table">
                   <tbody>
-                    {group.items.map((attr: any) => {
+                    {group.items.map((attr) => {
                       const key = payloadKeyForAttribute(attr);
                       return (
                         <tr key={attr.logicalName} className={key in values ? 'rt-detail-edited' : ''}>
@@ -442,20 +460,20 @@ export function CreateRecordModal(props: {
   );
 }
 
-function payloadKeyForAttribute(attr: any): string {
+function payloadKeyForAttribute(attr: DataverseAttribute): string {
   return isLookupAttribute(attr) ? `${attr.logicalName}@odata.bind` : attr.logicalName;
 }
 
-function isLookupAttribute(attr: any): boolean {
+function isLookupAttribute(attr: DataverseAttribute): boolean {
   const typeName = String(attr.attributeTypeName || attr.attributeType || '').toLowerCase();
   return typeName.includes('lookup') || typeName.includes('customer') || typeName.includes('owner');
 }
 
-function isRequiredAttribute(attr: any): boolean {
+function isRequiredAttribute(attr: DataverseAttribute): boolean {
   return /required/i.test(String(attr.requiredLevel || ''));
 }
 
-function fieldConstraintLabel(attr: any): string {
+function fieldConstraintLabel(attr: DataverseAttribute): string {
   const parts = [];
   if (attr.maxLength != null) parts.push(`Max ${attr.maxLength} chars.`);
   if (attr.minValue != null || attr.maxValue != null) parts.push(`Range ${attr.minValue ?? '-inf'} to ${attr.maxValue ?? 'inf'}.`);
@@ -484,10 +502,10 @@ function formatCreateError(error: unknown): string {
   return message;
 }
 
-function validateCreateBody(body: Record<string, unknown>, attributes: any[]): string[] {
+function validateCreateBody(body: Record<string, unknown>, attributes: DataverseAttribute[]): string[] {
   const errors: string[] = [];
   if (!Object.keys(body).length) errors.push('Enter at least one field value.');
-  const attributesByPayloadKey = new Map(attributes.map((attr: any) => [payloadKeyForAttribute(attr), attr]));
+  const attributesByPayloadKey = new Map(attributes.map((attr) => [payloadKeyForAttribute(attr), attr]));
   for (const attr of attributes) {
     const key = payloadKeyForAttribute(attr);
     if (isRequiredAttribute(attr) && !(key in body)) errors.push(`${attr.displayName || attr.logicalName} is required.`);

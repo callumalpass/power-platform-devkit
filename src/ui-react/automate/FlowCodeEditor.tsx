@@ -41,6 +41,7 @@ export const FlowCodeEditor = forwardRef<
   const vimEnabledRef = useRef(vimEnabled);
   const onChangeRef = useRef(onChange);
   const onVimModeRef = useRef(onVimMode);
+  const toastRef = useRef(toast);
   const diagnosticsRef = useRef(diagnostics);
   const validationRef = useRef(validation);
   const analysisRef = useRef(analysis);
@@ -53,6 +54,9 @@ export const FlowCodeEditor = forwardRef<
   useEffect(() => {
     onVimModeRef.current = onVimMode;
   }, [onVimMode]);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
   useEffect(() => {
     diagnosticsRef.current = diagnostics;
   }, [diagnostics]);
@@ -172,7 +176,7 @@ export const FlowCodeEditor = forwardRef<
             ]
           };
         } catch (error) {
-          toast(error instanceof Error ? error.message : String(error), true);
+          toastRef.current(error instanceof Error ? error.message : String(error), true);
           return { suggestions: flowSnippetCompletions(completionModel, position) };
         }
       }

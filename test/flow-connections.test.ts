@@ -312,7 +312,15 @@ test('setActionConnectionReference updates modern and legacy host fields', () =>
     }
   };
 
-  const updated = setActionConnectionReference(action, 'new_ref') as any;
+  const updated = setActionConnectionReference(action, 'new_ref') as {
+    inputs: {
+      host: {
+        connectionReferenceName?: string;
+        connectionName?: string;
+        connection: { name?: string; referenceName?: string };
+      };
+    };
+  };
 
   assert.equal(updated.inputs.host.connectionReferenceName, 'new_ref');
   assert.equal(updated.inputs.host.connectionName, 'new_ref');

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, prop } from './utils.js';
 import {
   analyzeFlowDocument,
@@ -120,18 +120,6 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
   const flowEditorRef = useRef<FlowEditorHandle | null>(null);
 
   useEffect(() => {
-    if (!active || !environment) return;
-    if (environment === loadedEnvironment && flows.length) return;
-    void loadFlows(false);
-  }, [active, environment, flows.length, loadedEnvironment]);
-
-  useEffect(() => {
-    if (!active || !environment) return;
-    if (connectionsEnvironment === environment) return;
-    void loadEnvironmentConnections(false);
-  }, [active, connectionsEnvironment, environment]);
-
-  useEffect(() => {
     if (!flowDocument.trim()) {
       setAnalysis(null);
       return;
@@ -173,56 +161,74 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [flowFullscreen]);
 
-  async function loadFlows(force: boolean) {
-    if (!environment) return;
-    if (!force && environment === loadedEnvironment && flows.length) return;
-    setLoadingFlows(true);
-    try {
-      const result = await loadFlowList(environment);
-      setFlows(result.flows);
-      setFlowSource(result.source);
-      if (result.usedFallback) toast('Flow list API failed for this environment. Showing Dataverse workflow fallback instead.', true);
-      setLoadedEnvironment(environment);
-      setCurrentFlow(null);
-      resetFlowCallbackUrl(null);
-      setRuns([]);
-      setCurrentRun(null);
-      setActions([]);
-      selectedActionRequestRef.current += 1;
-      setCurrentAction(null);
-      setActionDetail(null);
-      setLoadingActions(false);
-      setLoadingRuns(false);
-      setFlowDocument('');
-      setLoadedFlowDocument('');
-      setAnalysis(null);
-      setFlowValidation(null);
-      setFlowSubTab('definition');
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
-      setFlows([]);
-      setLoadedEnvironment(environment);
-    } finally {
-      setLoadingFlows(false);
-    }
-  }
+  const loadFlows = useCallback(
+    async (force: boolean) => {
+      if (!environment) return;
+      if (!force && environment === loadedEnvironment && flows.length) return;
+      setLoadingFlows(true);
+      try {
+        const result = await loadFlowList(environment);
+        setFlows(result.flows);
+        setFlowSource(result.source);
+        if (result.usedFallback) toast('Flow list API failed for this environment. Showing Dataverse workflow fallback instead.', true);
+        setLoadedEnvironment(environment);
+        setCurrentFlow(null);
+        resetFlowCallbackUrl(null);
+        setRuns([]);
+        setCurrentRun(null);
+        setActions([]);
+        selectedActionRequestRef.current += 1;
+        setCurrentAction(null);
+        setActionDetail(null);
+        setLoadingActions(false);
+        setLoadingRuns(false);
+        setFlowDocument('');
+        setLoadedFlowDocument('');
+        setAnalysis(null);
+        setFlowValidation(null);
+        setFlowSubTab('definition');
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), true);
+        setFlows([]);
+        setLoadedEnvironment(environment);
+      } finally {
+        setLoadingFlows(false);
+      }
+    },
+    [environment, flows.length, loadedEnvironment, toast]
+  );
 
-  async function loadEnvironmentConnections(force: boolean) {
-    if (!environment) return;
-    if (!force && connectionsEnvironment === environment) return;
-    setLoadingConnections(true);
-    try {
-      const connections = await loadFlowApiConnections(environment);
-      setEnvironmentConnections(connections);
-      setConnectionsEnvironment(environment);
-    } catch (error) {
-      setEnvironmentConnections([]);
-      setConnectionsEnvironment(environment);
-      toast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setLoadingConnections(false);
-    }
-  }
+  const loadEnvironmentConnections = useCallback(
+    async (force: boolean) => {
+      if (!environment) return;
+      if (!force && connectionsEnvironment === environment) return;
+      setLoadingConnections(true);
+      try {
+        const connections = await loadFlowApiConnections(environment);
+        setEnvironmentConnections(connections);
+        setConnectionsEnvironment(environment);
+      } catch (error) {
+        setEnvironmentConnections([]);
+        setConnectionsEnvironment(environment);
+        toast(error instanceof Error ? error.message : String(error), true);
+      } finally {
+        setLoadingConnections(false);
+      }
+    },
+    [connectionsEnvironment, environment, toast]
+  );
+
+  useEffect(() => {
+    if (!active || !environment) return;
+    if (environment === loadedEnvironment && flows.length) return;
+    void loadFlows(false);
+  }, [active, environment, flows.length, loadFlows, loadedEnvironment]);
+
+  useEffect(() => {
+    if (!active || !environment) return;
+    if (connectionsEnvironment === environment) return;
+    void loadEnvironmentConnections(false);
+  }, [active, connectionsEnvironment, environment, loadEnvironmentConnections]);
 
   async function selectFlow(flow: FlowItem) {
     setCurrentFlow(flow);
@@ -566,7 +572,7 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
         const flowApiId = flowRuntimeId(currentFlow);
         if (!flowApiId) throw new Error('This flow does not expose a runtime id yet. Turn it on and refresh before running it.');
         const runTriggerName = flowRunTriggerNames(currentFlow, flowDocument)[0] || 'manual';
-        await api<any>('/api/request/execute', {
+        await api('/api/request/execute', {
           method: 'POST',
           body: JSON.stringify({ environment, api: 'flow', method: 'POST', path: `/flows/${flowApiId}/triggers/${encodeURIComponent(runTriggerName)}/run`, responseType: 'void' })
         });
@@ -656,23 +662,22 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
     setLoadingActions(true);
     selectedRunRef.current = run.name;
     try {
-      let loadedActions: FlowAction[] = [];
-      let loadedRunAnalysis: FlowAnalysis | null = null;
-      if (currentFlow) {
-        [loadedActions, loadedRunAnalysis] = await Promise.all([
-          loadRunActions(environment, currentFlow, run).catch(() => []),
-          loadRunDefinitionAnalysis(environment, currentFlow, run).catch(() => null)
-        ]);
-      }
+      const flow = currentFlow;
+      const runAnalysisPromise = flow ? loadRunDefinitionAnalysis(environment, flow, run).catch(() => null) : Promise.resolve<FlowAnalysis | null>(null);
+      const loadedActions = flow ? await loadRunActions(environment, flow, run).catch(() => []) : [];
       if (selectedRunRef.current === run.name) {
         setActions(loadedActions);
-        setRunAnalysis(loadedRunAnalysis);
         if (options.preserveActionRef !== undefined) {
           const refreshedAction = options.preserveActionRef ? loadedActions.find((action, index) => runActionRef(action, index) === options.preserveActionRef) || null : null;
           selectedActionRequestRef.current += 1;
           setCurrentAction(refreshedAction);
           setActionDetail(refreshedAction);
         }
+        setLoadingActions(false);
+      }
+      const loadedRunAnalysis = await runAnalysisPromise;
+      if (selectedRunRef.current === run.name) {
+        setRunAnalysis(loadedRunAnalysis);
       }
     } catch {
       if (selectedRunRef.current === run.name) {

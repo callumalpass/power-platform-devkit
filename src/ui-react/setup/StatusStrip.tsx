@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { formatTimeRemaining } from '../utils.js';
-import { HEALTH_APIS, type HealthEntry } from './types.js';
+import { HEALTH_APIS, type HealthMap, type SetupAccount, type SetupEnvironment, type TokenStatusMap } from './types.js';
 
 type Issue = { kind: 'account' | 'env'; alias?: string; message: string };
 
 export function StatusStrip(props: {
-  accounts: any[];
-  environments: any[];
-  tokenStatus: Record<string, any>;
-  health: Record<string, Record<string, HealthEntry>>;
+  accounts: SetupAccount[];
+  environments: SetupEnvironment[];
+  tokenStatus: TokenStatusMap;
+  health: HealthMap;
   onRecheck: () => void;
   onRefresh: () => void;
   onJumpToAccounts: () => void;

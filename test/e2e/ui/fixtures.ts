@@ -42,7 +42,7 @@ type UiAudit = {
 };
 
 export const test = base.extend<{ electronApp: ElectronApplication; page: Page; audit: UiAudit }>({
-  electronApp: async (_fixtures, use) => {
+  electronApp: async ({ browserName: _browserName }, use) => {
     const args = process.platform === 'linux' ? ['--no-sandbox', 'dist/desktop/main.cjs'] : ['dist/desktop/main.cjs'];
     const app = await electron.launch({
       args,
@@ -196,7 +196,8 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
             return { status: 200, body: { success: true, diagnostics: [], data: entries } };
           }
           if (call.method === 'PUT') {
-            const entries = Array.isArray((input.body as any)?.entries) ? (input.body as any).entries : [];
+            const inputBody = input.body && typeof input.body === 'object' ? (input.body as { entries?: unknown }) : {};
+            const entries = Array.isArray(inputBody.entries) ? inputBody.entries : [];
             window.localStorage.setItem(savedKey, JSON.stringify(entries));
             return { status: 200, body: { success: true, diagnostics: [], data: entries } };
           }
@@ -220,7 +221,7 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
 }
 
 export async function getDesktopApiCalls(page: Page): Promise<DesktopApiCall[]> {
-  return page.evaluate(() => (window.ppDesktopTest as any)?.calls ?? []);
+  return page.evaluate(() => (window.ppDesktopTest as { calls?: DesktopApiCall[] } | undefined)?.calls ?? []);
 }
 
 function isAuditedApiResponse(response: Response): boolean {

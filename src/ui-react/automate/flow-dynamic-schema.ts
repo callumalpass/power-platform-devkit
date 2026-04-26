@@ -57,7 +57,7 @@ export function useFlowDynamicOptions(
     return () => {
       cancelled = true;
     };
-  }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
+  }, [apiRef, dynamicParameters, environment, fields, operationRef.connectionName, signature, toast]);
 
   return options;
 }
@@ -115,7 +115,7 @@ export function useFlowDynamicSchemaFields(
     return () => {
       cancelled = true;
     };
-  }, [apiRef, environment, fields, operationRef.connectionName, signature, toast]);
+  }, [apiRef, dynamicParameters, environment, fields, operationRef.connectionName, signature, toast]);
 
   return fieldsByParent;
 }

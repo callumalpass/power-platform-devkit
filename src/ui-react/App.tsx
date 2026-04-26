@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAppDisplayName, getAppMode, getDefaultSelectedColumns, summarizeError } from './utils.js';
 import { AutomateTab } from './AutomateTab.js';
 import { SetupTab } from './SetupTab.js';
@@ -94,33 +94,36 @@ export function App() {
     };
     window.addEventListener('hashchange', handler);
     return () => window.removeEventListener('hashchange', handler);
-  }, []);
+  }, [availableTabs, defaultTab]);
 
   useEffect(() => {
     window.location.hash = activeTab;
   }, [activeTab]);
 
-  async function refreshState(silent = false) {
-    setStateLoading(true);
-    try {
-      const payload = await api<ApiEnvelope<ShellState>>('/api/state');
-      setShellData(payload.data);
-      const environments = payload.data.environments.map((item) => item.alias);
-      setGlobalEnvironment((current) => {
-        if (current && environments.includes(current)) return current;
-        return environments[0] || '';
-      });
-      if (!silent) pushToast('State refreshed');
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setStateLoading(false);
-    }
-  }
+  const refreshState = useCallback(
+    async (silent = false) => {
+      setStateLoading(true);
+      try {
+        const payload = await api<ApiEnvelope<ShellState>>('/api/state');
+        setShellData(payload.data);
+        const environments = payload.data.environments.map((item) => item.alias);
+        setGlobalEnvironment((current) => {
+          if (current && environments.includes(current)) return current;
+          return environments[0] || '';
+        });
+        if (!silent) pushToast('State refreshed');
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : String(error), true);
+      } finally {
+        setStateLoading(false);
+      }
+    },
+    [pushToast]
+  );
 
   useEffect(() => {
     void refreshState(true);
-  }, []);
+  }, [refreshState]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -150,7 +153,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [availableTabs]);
 
   useEffect(() => {
     setDataverse((current) => ({
@@ -182,54 +185,9 @@ export function App() {
     };
     window.addEventListener('pp:open-console', listener as EventListener);
     return () => window.removeEventListener('pp:open-console', listener as EventListener);
-  }, []);
+  }, [setupMode]);
 
-  useEffect(() => {
-    const listener = (event: Event) => {
-      if (setupMode) return;
-      const detail = (event as CustomEvent).detail || {};
-      if (!detail.entity) return;
-      setActiveTab('dataverse');
-      setDataverse((current) => ({ ...current, dvSubTab: 'dv-explorer' }));
-      void loadEntityDetail(String(detail.entity));
-    };
-    window.addEventListener('pp:navigate-entity', listener as EventListener);
-    return () => window.removeEventListener('pp:navigate-entity', listener as EventListener);
-  }, [globalEnvironment, dataverse.entities]);
-
-  useEffect(() => {
-    const listener = (event: MouseEvent) => {
-      if (setupMode) return;
-      const target = event.target as HTMLElement | null;
-      const link = target?.closest('.record-link') as HTMLElement | null;
-      if (!link?.dataset.entity) return;
-      setActiveTab('dataverse');
-      setDataverse((current) => ({ ...current, dvSubTab: 'dv-explorer' }));
-      void loadEntityDetail(link.dataset.entity);
-    };
-    document.body.addEventListener('click', listener);
-    return () => document.body.removeEventListener('click', listener);
-  }, [globalEnvironment, dataverse.entities]);
-
-  useEffect(() => {
-    if (activeTab !== 'dataverse' || !globalEnvironment) return;
-    if (dataverse.entitiesEnvironment === globalEnvironment) return;
-    void loadEntities();
-  }, [activeTab, dataverse.entitiesEnvironment, globalEnvironment]);
-
-  useEffect(() => {
-    if (activeTab !== 'apps' || !globalEnvironment) return;
-    if (appsState.loadedEnvironment === globalEnvironment && appsState.items.length) return;
-    void loadApps();
-  }, [activeTab, appsState.items.length, appsState.loadedEnvironment, globalEnvironment]);
-
-  useEffect(() => {
-    if (activeTab !== 'platform' || !globalEnvironment) return;
-    if (platformState.loadedEnvironment === globalEnvironment && platformState.items.length) return;
-    void loadPlatformEnvironments();
-  }, [activeTab, globalEnvironment, platformState.items.length, platformState.loadedEnvironment]);
-
-  async function loadEntities() {
+  const loadEntities = useCallback(async () => {
     if (!globalEnvironment) return;
     try {
       const payload = await api<ApiEnvelope<DataverseEntitySummary[]>>(`/api/dv/entities?environment=${encodeURIComponent(globalEnvironment)}&allowInteractive=false&softFail=true`, {
@@ -275,57 +233,63 @@ export function App() {
         recordPreview: null
       }));
     }
-  }
+  }, [globalEnvironment, pushToast]);
 
-  async function loadEntityDetail(logicalName: string) {
-    if (!globalEnvironment) {
-      pushToast('Select an environment first.', true);
-      return;
-    }
-    try {
-      const payload = await api<ApiEnvelope<DataverseEntityDetail>>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(globalEnvironment)}`);
-      const detail = payload.data;
-      const currentEntity = dataverse.entities.find((item) => item.logicalName === logicalName) || { logicalName };
-      const selectedColumns = getDefaultSelectedColumns(detail, 0);
-      setDataverse((current) => ({
-        ...current,
-        currentEntity,
-        currentEntityDetail: detail,
-        currentEntityDiagnostics: payload.diagnostics || [],
-        selectedColumns,
-        attrFilter: ''
-      }));
-      void loadRecordPreview(detail, selectedColumns);
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
+  const loadRecordPreview = useCallback(
+    async (detail = dataverse.currentEntityDetail, selectedColumns = dataverse.selectedColumns) => {
+      if (!detail?.entitySetName || !globalEnvironment) {
+        setDataverse((current) => ({ ...current, recordPreview: null }));
+        return;
+      }
+      const select = selectedColumns.length ? selectedColumns : getDefaultSelectedColumns(detail, 3);
+      if (!select.length) {
+        setDataverse((current) => ({
+          ...current,
+          recordPreview: { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
+        }));
+        return;
+      }
+      try {
+        const payload = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/query/execute', {
+          method: 'POST',
+          body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: 5 })
+        });
+        setDataverse((current) => ({ ...current, recordPreview: payload.data }));
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : String(error), true);
+      }
+    },
+    [dataverse.currentEntityDetail, dataverse.selectedColumns, globalEnvironment, pushToast]
+  );
 
-  async function loadRecordPreview(detail = dataverse.currentEntityDetail, selectedColumns = dataverse.selectedColumns) {
-    if (!detail?.entitySetName || !globalEnvironment) {
-      setDataverse((current) => ({ ...current, recordPreview: null }));
-      return;
-    }
-    const select = selectedColumns.length ? selectedColumns : getDefaultSelectedColumns(detail, 3);
-    if (!select.length) {
-      setDataverse((current) => ({
-        ...current,
-        recordPreview: { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
-      }));
-      return;
-    }
-    try {
-      const payload = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/query/execute', {
-        method: 'POST',
-        body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: 5 })
-      });
-      setDataverse((current) => ({ ...current, recordPreview: payload.data }));
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : String(error), true);
-    }
-  }
+  const loadEntityDetail = useCallback(
+    async (logicalName: string) => {
+      if (!globalEnvironment) {
+        pushToast('Select an environment first.', true);
+        return;
+      }
+      try {
+        const payload = await api<ApiEnvelope<DataverseEntityDetail>>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(globalEnvironment)}`);
+        const detail = payload.data;
+        const currentEntity = dataverse.entities.find((item) => item.logicalName === logicalName) || { logicalName };
+        const selectedColumns = getDefaultSelectedColumns(detail, 0);
+        setDataverse((current) => ({
+          ...current,
+          currentEntity,
+          currentEntityDetail: detail,
+          currentEntityDiagnostics: payload.diagnostics || [],
+          selectedColumns,
+          attrFilter: ''
+        }));
+        void loadRecordPreview(detail, selectedColumns);
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : String(error), true);
+      }
+    },
+    [dataverse.entities, globalEnvironment, loadRecordPreview, pushToast]
+  );
 
-  async function loadApps() {
+  const loadApps = useCallback(async () => {
     if (!globalEnvironment) return;
     try {
       const payload = await api<ApiEnvelope<ApiExecuteResponse<{ value?: PowerPlatformInventoryItem[] }>>>('/api/request/execute', {
@@ -342,9 +306,9 @@ export function App() {
       setAppsState((current) => ({ ...current, loadedEnvironment: globalEnvironment, items: [], current: null }));
       pushToast(error instanceof Error ? error.message : String(error), true);
     }
-  }
+  }, [globalEnvironment, pushToast]);
 
-  async function loadPlatformEnvironments() {
+  const loadPlatformEnvironments = useCallback(async () => {
     if (!globalEnvironment) return;
     try {
       const payload = await api<ApiEnvelope<ApiExecuteResponse<{ value?: PowerPlatformInventoryItem[] }>>>('/api/request/execute', {
@@ -361,7 +325,52 @@ export function App() {
       setPlatformState((current) => ({ ...current, loadedEnvironment: globalEnvironment, items: [], current: null }));
       pushToast(error instanceof Error ? error.message : String(error), true);
     }
-  }
+  }, [globalEnvironment, pushToast]);
+
+  useEffect(() => {
+    const listener = (event: Event) => {
+      if (setupMode) return;
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.entity) return;
+      setActiveTab('dataverse');
+      setDataverse((current) => ({ ...current, dvSubTab: 'dv-explorer' }));
+      void loadEntityDetail(String(detail.entity));
+    };
+    window.addEventListener('pp:navigate-entity', listener as EventListener);
+    return () => window.removeEventListener('pp:navigate-entity', listener as EventListener);
+  }, [loadEntityDetail, setupMode]);
+
+  useEffect(() => {
+    const listener = (event: MouseEvent) => {
+      if (setupMode) return;
+      const target = event.target as HTMLElement | null;
+      const link = target?.closest('.record-link') as HTMLElement | null;
+      if (!link?.dataset.entity) return;
+      setActiveTab('dataverse');
+      setDataverse((current) => ({ ...current, dvSubTab: 'dv-explorer' }));
+      void loadEntityDetail(link.dataset.entity);
+    };
+    document.body.addEventListener('click', listener);
+    return () => document.body.removeEventListener('click', listener);
+  }, [loadEntityDetail, setupMode]);
+
+  useEffect(() => {
+    if (activeTab !== 'dataverse' || !globalEnvironment) return;
+    if (dataverse.entitiesEnvironment === globalEnvironment) return;
+    void loadEntities();
+  }, [activeTab, dataverse.entitiesEnvironment, globalEnvironment, loadEntities]);
+
+  useEffect(() => {
+    if (activeTab !== 'apps' || !globalEnvironment) return;
+    if (appsState.loadedEnvironment === globalEnvironment && appsState.items.length) return;
+    void loadApps();
+  }, [activeTab, appsState.items.length, appsState.loadedEnvironment, globalEnvironment, loadApps]);
+
+  useEffect(() => {
+    if (activeTab !== 'platform' || !globalEnvironment) return;
+    if (platformState.loadedEnvironment === globalEnvironment && platformState.items.length) return;
+    void loadPlatformEnvironments();
+  }, [activeTab, globalEnvironment, loadPlatformEnvironments, platformState.items.length, platformState.loadedEnvironment]);
 
   const currentEnvData = useMemo(() => {
     if (!globalEnvironment || !shellData?.environments) return undefined;

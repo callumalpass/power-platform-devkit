@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formDataObject, formatTimeRemaining, optionList } from '../utils.js';
-import type { ToastFn } from '../ui-types.js';
-import { HEALTH_APIS, type HealthEntry, type TokenEntry } from './types.js';
+import type { ApiEnvelope, ToastFn } from '../ui-types.js';
+import {
+  HEALTH_APIS,
+  type EnvironmentDiscovery,
+  type HealthEntry,
+  type HealthMap,
+  type SetupAccount,
+  type SetupDetailStyle,
+  type SetupEnvironment,
+  type TokenEntry,
+  type TokenStatusMap
+} from './types.js';
 import { healthHint } from './health.js';
 import type { useConfirm } from './ConfirmDialog.js';
 import { DetailPanel } from './DetailPanel.js';
@@ -47,8 +57,8 @@ function worstHealth(statuses: Record<string, HealthEntry> | undefined): 'pendin
 // ---------------------------------------------------------------------------
 
 function EditEnvironmentBody(props: {
-  environment: any;
-  accounts: any[];
+  environment: SetupEnvironment;
+  accounts: SetupAccount[];
   health: Record<string, HealthEntry>;
   tokenStatus: TokenEntry;
   confirm: ReturnType<typeof useConfirm>;
@@ -145,7 +155,7 @@ function EditEnvironmentBody(props: {
               value={draft.account}
               onChange={(next) => setDraft((c) => ({ ...c, account: next }))}
               required
-              options={accounts.map((a: any) => ({ value: a.name, label: a.name }))}
+              options={accounts.map((account) => ({ value: account.name, label: account.name }))}
             />
           </div>
           <div className="field">
@@ -228,9 +238,9 @@ function EditEnvironmentBody(props: {
 // AddEnvironmentForm (still exported for OnboardingFlow; used by drawer)
 // ---------------------------------------------------------------------------
 
-export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (silent?: boolean) => Promise<void>; toast: ToastFn; onSaved?: () => void }) {
+export function AddEnvironmentForm(props: { accounts: SetupAccount[]; refreshState: (silent?: boolean) => Promise<void>; toast: ToastFn; onSaved?: () => void }) {
   const { accounts, refreshState, toast, onSaved } = props;
-  const [discoveries, setDiscoveries] = useState<any[]>([]);
+  const [discoveries, setDiscoveries] = useState<EnvironmentDiscovery[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [selectedDiscoveryAccount, setSelectedDiscoveryAccount] = useState<string>(accounts[0]?.name || '');
   const [draft, setDraft] = useState({
@@ -259,7 +269,7 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
     }
     setDiscovering(true);
     try {
-      const payload = await api<any>('/api/environments/discover', {
+      const payload = await api<ApiEnvelope<EnvironmentDiscovery[]>>('/api/environments/discover', {
         method: 'POST',
         body: JSON.stringify({ account: selectedDiscoveryAccount })
       });
@@ -272,7 +282,7 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
     }
   }
 
-  function applyDiscovery(item: any) {
+  function applyDiscovery(item: EnvironmentDiscovery) {
     const alias = item.displayName
       ? item.displayName
           .toLowerCase()
@@ -292,7 +302,7 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
   async function handleEnvironmentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      await api<any>('/api/environments', {
+      await api('/api/environments', {
         method: 'POST',
         body: JSON.stringify(formDataObject(event.currentTarget))
       });
@@ -320,7 +330,7 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
               value={selectedDiscoveryAccount}
               onChange={setSelectedDiscoveryAccount}
               options={optionList(
-                accounts.map((a: any) => a.name),
+                accounts.map((account) => account.name),
                 'select account'
               ).map((option) => ({
                 value: option.value,
@@ -381,7 +391,7 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
                 value={draft.account}
                 onChange={(next) => setDraft((c) => ({ ...c, account: next }))}
                 required
-                options={accounts.map((a: any) => ({ value: a.name, label: a.name }))}
+                options={accounts.map((account) => ({ value: account.name, label: account.name }))}
               />
             </div>
           </div>
@@ -428,10 +438,10 @@ export function AddEnvironmentForm(props: { accounts: any[]; refreshState: (sile
 // ---------------------------------------------------------------------------
 
 export function EnvironmentsPanel(props: {
-  accounts: any[];
-  environments: any[];
-  tokenStatus: Record<string, any>;
-  health: Record<string, Record<string, HealthEntry>>;
+  accounts: SetupAccount[];
+  environments: SetupEnvironment[];
+  tokenStatus: TokenStatusMap;
+  health: HealthMap;
   confirm: ReturnType<typeof useConfirm>;
   recheckHealth: () => void;
   recheckApi: (alias: string, apiName?: string) => void;
@@ -443,17 +453,18 @@ export function EnvironmentsPanel(props: {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'alias', dir: 'asc' });
   const [drawer, setDrawer] = useState<DrawerState>({ mode: 'closed' });
   const { width: detailWidth, startDrag: startDetailResize } = useResizableWidth('pp-setup-environments-detail', { min: 360, max: 820, initial: 440 });
+  const detailStyle: SetupDetailStyle | undefined = drawer.mode !== 'closed' ? { '--detail-width': `${detailWidth}px` } : undefined;
 
   const rows = useMemo(() => {
     const query = filter.trim().toLowerCase();
     const filtered = query
-      ? environments.filter((env: any) => {
+      ? environments.filter((env) => {
           const haystack = [env.alias, env.displayName, env.account, env.url].filter(Boolean).join(' ').toLowerCase();
           return haystack.includes(query);
         })
       : environments;
     const severityRank: Record<string, number> = { error: 0, pending: 1, ok: 2 };
-    const sorted = [...filtered].sort((a: any, b: any) => {
+    const sorted = [...filtered].sort((a, b) => {
       const direction = sort.dir === 'asc' ? 1 : -1;
       switch (sort.key) {
         case 'account':
@@ -477,7 +488,7 @@ export function EnvironmentsPanel(props: {
     });
   }
 
-  function handleRemove(env: any) {
+  function handleRemove(env: SetupEnvironment) {
     confirm.open({
       title: `Remove environment "${env.alias}"?`,
       body: (
@@ -500,7 +511,7 @@ export function EnvironmentsPanel(props: {
     });
   }
 
-  const editingEnv = drawer.mode === 'edit' ? environments.find((env: any) => env.alias === drawer.alias) : null;
+  const editingEnv = drawer.mode === 'edit' ? environments.find((env) => env.alias === drawer.alias) : null;
 
   return (
     <div className="panel setup-table-panel">
@@ -527,7 +538,7 @@ export function EnvironmentsPanel(props: {
       ) : rows.length === 0 ? (
         <div className="setup-table-empty">No environments match “{filter}”.</div>
       ) : (
-        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}>
+        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={detailStyle}>
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
@@ -553,7 +564,7 @@ export function EnvironmentsPanel(props: {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((env: any) => {
+                {rows.map((env) => {
                   const envHealth = health[env.alias] || {};
                   const overall = worstHealth(envHealth);
                   const accountToken = tokenStatus[env.account];

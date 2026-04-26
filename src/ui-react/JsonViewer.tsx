@@ -19,6 +19,9 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const vimAttachmentRef = useRef<MonacoVimAttachment | null>(null);
   const onChangeRef = useRef(onChange);
+  const initialValueRef = useRef(value);
+  const initialLanguageRef = useRef(language);
+  const initialReadOnlyRef = useRef(readOnly);
   const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
   const [vimMode, setVimMode] = useState('off');
   const vimEnabledRef = useRef(vimEnabled);
@@ -36,11 +39,12 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
     if (!mount) return;
     const id = ++modelCounter;
     applyMonacoAppTheme();
-    const model = monaco.editor.createModel(value || '', language, monaco.Uri.parse(`inmemory://pp/json-viewer-${id}.${language}`));
+    const initialLanguage = initialLanguageRef.current;
+    const model = monaco.editor.createModel(initialValueRef.current || '', initialLanguage, monaco.Uri.parse(`inmemory://pp/json-viewer-${id}.${initialLanguage}`));
     const editor = monaco.editor.create(mount, {
       model,
       automaticLayout: true,
-      readOnly,
+      readOnly: initialReadOnlyRef.current,
       folding: true,
       fontFamily: 'var(--mono)',
       fontSize: 12,
@@ -93,6 +97,15 @@ export function JsonViewer({ value, language = 'json', readOnly = true, height =
       }
     }
   }, [value, readOnly]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly });
+  }, [readOnly]);
+
+  useEffect(() => {
+    const model = modelRef.current;
+    if (model) monaco.editor.setModelLanguage(model, language);
+  }, [language]);
 
   return (
     <div className="json-viewer-shell" style={{ height, width: '100%' }}>

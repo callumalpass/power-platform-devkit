@@ -329,6 +329,22 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
         }
       ]
     },
+    '/flows/flow-probe/runs/run-probe?$expand=properties/actions,properties/flow&include=repetitionCount&isMigrationSource=false': {
+      name: 'run-probe',
+      properties: {
+        status: 'Succeeded',
+        trigger: { name: 'manual', status: 'Succeeded' },
+        flow: {
+          name: 'flow-probe',
+          properties: {
+            definition: {
+              triggers: { manual: { type: 'Request' } },
+              actions: { Compose: { type: 'Compose', inputs: 'hello' } }
+            }
+          }
+        }
+      }
+    },
     '/flows/flow-probe/runs/run-probe/actions/Compose': {
       name: 'Compose',
       properties: {

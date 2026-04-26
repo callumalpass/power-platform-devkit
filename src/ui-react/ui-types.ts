@@ -1,8 +1,11 @@
 import type { AccountKind, Environment } from '../config.js';
+import type { CSSProperties } from 'react';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type JsonRecord = Record<string, JsonValue | unknown>;
+export type UnknownRecord = Record<string, unknown>;
+export type CssVariableStyle = CSSProperties & Record<`--${string}`, string | number | undefined>;
 
 export type ApiEnvelope<T> = {
   data: T;
@@ -12,6 +15,9 @@ export type ApiEnvelope<T> = {
 
 export type ApiExecuteResponse<T> = {
   response?: T;
+  status?: number;
+  headers?: Record<string, string>;
+  request?: unknown;
 };
 
 export type ToastFn = (message: string, isError?: boolean) => void;
@@ -19,6 +25,7 @@ export type ToastFn = (message: string, isError?: boolean) => void;
 export type AccountSummary = {
   name: string;
   kind?: AccountKind;
+  description?: string;
   tenantId?: string;
   clientId?: string;
   tokenCacheKey?: string;
@@ -51,6 +58,7 @@ export type ShellState = {
 
 export type PowerPlatformInventoryItem = {
   name: string;
+  displayName?: string;
   id?: string;
   type?: string;
   location?: string;
@@ -71,6 +79,7 @@ export type DataverseAttribute = {
   logicalName: string;
   attributeOf?: string;
   displayName?: string;
+  description?: string;
   attributeType?: string;
   attributeTypeName?: string;
   requiredLevel?: string;

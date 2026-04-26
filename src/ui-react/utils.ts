@@ -263,6 +263,10 @@ export function optionList(values: string[], emptyLabel?: string) {
   return items;
 }
 
-function readRecord(value: unknown): Record<string, unknown> | undefined {
+export function readRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return readRecord(value) !== undefined;
 }

@@ -42,22 +42,27 @@ test('addTriggerToFlowDocument adds triggers to Power Automate wrapper definitio
 });
 
 test('buildApiOperationTrigger creates connector triggers without runAfter', () => {
-  const trigger = buildApiOperationTrigger(JSON.stringify({ properties: { connectionReferences: {} } }), dataverseTriggerOperation, schema, 'shared_commondataserviceforapps');
+  type ConnectorTrigger = { type?: string; runAfter?: unknown; inputs: { host: unknown; parameters: unknown } };
+  const trigger = buildApiOperationTrigger(JSON.stringify({ properties: { connectionReferences: {} } }), dataverseTriggerOperation, schema, 'shared_commondataserviceforapps') as ConnectorTrigger;
 
   assert.equal(trigger.type, 'OpenApiConnection');
-  assert.equal((trigger as any).runAfter, undefined);
-  assert.deepEqual((trigger as any).inputs.host, {
+  assert.equal(trigger.runAfter, undefined);
+  assert.deepEqual(trigger.inputs.host, {
     connectionReferenceName: 'shared_commondataserviceforapps',
     operationId: 'SubscribeWebhookTrigger',
     apiId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps'
   });
-  assert.deepEqual((trigger as any).inputs.parameters, {
+  assert.deepEqual(trigger.inputs.parameters, {
     entityName: 'accounts',
     scope: 'Organization'
   });
 
   const defaultReferenceTrigger = buildApiOperationTrigger(JSON.stringify({ properties: { connectionReferences: {} } }), dataverseTriggerOperation);
-  assert.equal((defaultReferenceTrigger as any).inputs.host.connectionReferenceName, 'shared_commondataserviceforapps');
+  assert.deepEqual((defaultReferenceTrigger as ConnectorTrigger).inputs.host, {
+    connectionReferenceName: 'shared_commondataserviceforapps',
+    operationId: 'SubscribeWebhookTrigger',
+    apiId: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps'
+  });
 });
 
 test('topLevelTriggerNames and uniqueTriggerName read the trigger outline/document', () => {

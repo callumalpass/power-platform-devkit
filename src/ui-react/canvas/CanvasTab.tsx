@@ -1,16 +1,28 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatDate, highlightJson, prop } from '../utils.js';
+import { api, formatDate, prop, readRecord } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
 import { JsonViewer } from '../JsonViewer.js';
+import type { ApiEnvelope, ApiExecuteResponse, PowerPlatformInventoryItem, UnknownRecord } from '../ui-types.js';
+import { CanvasResultView, renderScalar } from './CanvasResultView.js';
+
+type CanvasAuthoringSessionResult = {
+  cluster?: { geoName?: string; clusterNumber?: string | number };
+  session?: {
+    isCoauthoringEnabled?: boolean;
+    clientConfig?: {
+      webAuthoringVersion?: string;
+    };
+  };
+};
 
 type CanvasSessionEntry = {
   id: string;
   status: string;
   appId: string;
   environmentAlias: string;
-  result?: any;
+  result?: CanvasAuthoringSessionResult;
   error?: string;
   createdAt: string;
   deviceCode?: { verificationUri: string; userCode: string; message: string };
@@ -18,86 +30,14 @@ type CanvasSessionEntry = {
 
 const DESCRIBE_ENDPOINTS = new Set(['controls', 'apis', 'datasources']);
 
+type CanvasRequestPayload = ApiEnvelope<ApiExecuteResponse<unknown> | unknown>;
+type CanvasSessionPayload = ApiEnvelope<CanvasSessionEntry>;
+type CanvasYamlFetchPayload = ApiEnvelope<{ files?: string[] } & UnknownRecord>;
 type DescribeTarget = { sessionId: string; version: string; endpoint: string; name: string; title: string };
 
-function CanvasResultView(props: { result: any; endpoint: string; toast: (message: string, isError?: boolean) => void; onRowClick?: (item: any) => void }) {
-  const { result, toast, onRowClick } = props;
-  const [view, setView] = useState<'table' | 'json'>('table');
-  const rowClickable = Boolean(onRowClick);
-
-  // Extract the main array from known canvas response shapes
-  const items: any[] | null = useMemo(() => {
-    if (!result || typeof result !== 'object') return null;
-    if (Array.isArray(result.controls)) return result.controls;
-    if (Array.isArray(result.apis)) return result.apis;
-    if (Array.isArray(result.dataSources)) return result.dataSources;
-    if (Array.isArray(result.files)) return result.files;
-    if (Array.isArray(result.errors)) return result.errors;
-    if (Array.isArray(result.value)) return result.value;
-    return null;
-  }, [result]);
-
-  const columns: string[] = useMemo(() => {
-    if (!items || items.length === 0) return [];
-    const cols = new Set<string>();
-    for (const item of items.slice(0, 50)) {
-      if (item && typeof item === 'object') {
-        for (const key of Object.keys(item)) {
-          if (typeof item[key] !== 'object' || item[key] === null) cols.add(key);
-        }
-      }
-    }
-    return Array.from(cols);
-  }, [items]);
-
-  const hasTable = items !== null && items.length > 0 && columns.length > 0;
-  const count = result?.count ?? items?.length;
-
-  return (
-    <div>
-      <div className="toolbar-row tight">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {hasTable && (
-            <div className="result-toggle">
-              <button className={`result-toggle-btn ${view === 'table' ? 'active' : ''}`} type="button" onClick={() => setView('table')}>
-                Table
-              </button>
-              <button className={`result-toggle-btn ${view === 'json' ? 'active' : ''}`} type="button" onClick={() => setView('json')}>
-                JSON
-              </button>
-            </div>
-          )}
-          {count !== undefined && <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{count} items</span>}
-        </div>
-        <CopyButton value={result} label="Copy JSON" title="Copy result JSON" toast={toast} />
-      </div>
-
-      {view === 'table' && hasTable ? (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="result-table">
-            <thead>
-              <tr>
-                {columns.map((col) => (
-                  <th key={col}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items!.map((item: any, i: number) => (
-                <tr key={i} className={rowClickable ? 'canvas-result-row-clickable' : ''} onClick={rowClickable ? () => onRowClick!(item) : undefined}>
-                  {columns.map((col) => (
-                    <td key={col}>{item?.[col] === undefined || item[col] === null ? '' : String(item[col])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <pre className="viewer" dangerouslySetInnerHTML={{ __html: highlightJson(result || 'No data.') }} />
-      )}
-    </div>
-  );
+function readCanvasResponse(payload: CanvasRequestPayload): unknown {
+  const dataRecord = readRecord(payload.data);
+  return dataRecord && 'response' in dataRecord ? dataRecord.response : payload.data;
 }
 
 export function CanvasTab(props: {
@@ -105,15 +45,15 @@ export function CanvasTab(props: {
   setState: Dispatch<SetStateAction<CanvasState>>;
   environment: string;
   environmentId?: string;
-  apps: any[];
+  apps: PowerPlatformInventoryItem[];
   appsLoaded: boolean;
   loadApps: () => Promise<void>;
   toast: (message: string, isError?: boolean) => void;
 }) {
   const { state, setState, environment, environmentId, apps, appsLoaded, loadApps, toast } = props;
-  const [selectedApp, setSelectedApp] = useState<any>(null);
+  const [selectedApp, setSelectedApp] = useState<PowerPlatformInventoryItem | null>(null);
   const [filter, setFilter] = useState('');
-  const [explorerResult, setExplorerResult] = useState<any>(null);
+  const [explorerResult, setExplorerResult] = useState<unknown>(null);
   const [explorerLoading, setExplorerLoading] = useState(false);
   const [explorerEndpoint, setExplorerEndpoint] = useState('controls');
   const [yamlDir, setYamlDir] = useState('./canvas-src');
@@ -123,24 +63,25 @@ export function CanvasTab(props: {
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    const polls = sessionPollsRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      sessionPollsRef.current.clear();
+      polls.clear();
     };
   }, []);
 
   useEffect(() => {
     if (!environment || appsLoaded) return;
     void loadApps();
-  }, [environment, appsLoaded]);
+  }, [environment, appsLoaded, loadApps]);
 
   useEffect(() => {
     setSelectedApp(null);
   }, [environment]);
 
   const canvasApps = useMemo(() => {
-    return apps.filter((item: any) => {
+    return apps.filter((item) => {
       const appType = prop(item, 'properties.appType');
       if (appType && appType !== 'CanvasClassicApp' && appType !== 'AppComponentLibrary') return false;
       if (environmentId) {
@@ -152,7 +93,7 @@ export function CanvasTab(props: {
   }, [apps, environmentId]);
 
   const filtered = filter
-    ? canvasApps.filter((item: any) => {
+    ? canvasApps.filter((item) => {
         const name = prop(item, 'properties.displayName') || item.name || '';
         return String(name).toLowerCase().includes(filter.toLowerCase());
       })
@@ -167,11 +108,11 @@ export function CanvasTab(props: {
 
   async function probeSession(id: string) {
     try {
-      const payload = await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}/probe`, { method: 'POST' });
-      const session = payload.data as CanvasSessionEntry;
-      setState((c: any) => ({
+      const payload = await api<CanvasSessionPayload>(`/api/canvas/sessions/${encodeURIComponent(id)}/probe`, { method: 'POST' });
+      const session = payload.data;
+      setState((c) => ({
         ...c,
-        sessions: c.sessions.map((s: any) => (s.id === id ? session : s))
+        sessions: c.sessions.map((s) => (s.id === id ? session : s))
       }));
       if (session.status === 'active') toast('Session is alive');
       else toast('Session has expired', true);
@@ -182,10 +123,10 @@ export function CanvasTab(props: {
 
   async function endSession(id: string) {
     try {
-      await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setState((c: any) => ({
+      await api(`/api/canvas/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setState((c) => ({
         ...c,
-        sessions: c.sessions.filter((s: any) => s.id !== id)
+        sessions: c.sessions.filter((s) => s.id !== id)
       }));
       setExplorerResult(null);
       toast('Session ended');
@@ -196,14 +137,14 @@ export function CanvasTab(props: {
 
   async function startSession() {
     if (!environment || !selectedApp) return;
-    setState((c: any) => ({ ...c, sessionStarting: true }));
+    setState((c) => ({ ...c, sessionStarting: true }));
     try {
-      const payload = await api<any>('/api/canvas/sessions', {
+      const payload = await api<CanvasSessionPayload>('/api/canvas/sessions', {
         method: 'POST',
         body: JSON.stringify({ environment, appId: selectedApp.name })
       });
-      const session = payload.data as CanvasSessionEntry;
-      setState((c: any) => ({
+      const session = payload.data;
+      setState((c) => ({
         ...c,
         sessions: [session, ...c.sessions],
         sessionStarting: false
@@ -211,7 +152,7 @@ export function CanvasTab(props: {
       toast('Canvas session starting…');
       void pollSession(session.id, beginSessionPoll(session.id));
     } catch (error) {
-      setState((c: any) => ({ ...c, sessionStarting: false }));
+      setState((c) => ({ ...c, sessionStarting: false }));
       toast(error instanceof Error ? error.message : String(error), true);
     }
   }
@@ -238,12 +179,12 @@ export function CanvasTab(props: {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       if (!isCurrentSessionPoll(id, generation)) return;
       try {
-        const payload = await api<any>(`/api/canvas/sessions/${encodeURIComponent(id)}`);
+        const payload = await api<CanvasSessionPayload>(`/api/canvas/sessions/${encodeURIComponent(id)}`);
         if (!isCurrentSessionPoll(id, generation)) return;
-        const session = payload.data as CanvasSessionEntry;
-        setState((c: any) => ({
+        const session = payload.data;
+        setState((c) => ({
           ...c,
-          sessions: c.sessions.map((s: any) => (s.id === id ? session : s))
+          sessions: c.sessions.map((s) => (s.id === id ? session : s))
         }));
         if (session.status === 'active') {
           endSessionPoll(id, generation);
@@ -271,7 +212,7 @@ export function CanvasTab(props: {
     try {
       const version = activeSession.result?.session?.clientConfig?.webAuthoringVersion;
       const pathPrefix = version ? `/${version}` : '';
-      const payload = await api<any>('/api/canvas/request', {
+      const payload = await api<CanvasRequestPayload>('/api/canvas/request', {
         method: 'POST',
         body: JSON.stringify({
           sessionId: activeSession.id,
@@ -279,7 +220,7 @@ export function CanvasTab(props: {
           path: `${pathPrefix}/api/yaml/${endpoint}`
         })
       });
-      setExplorerResult(payload.data?.response ?? payload.data);
+      setExplorerResult(readCanvasResponse(payload));
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
       setExplorerResult(null);
@@ -299,11 +240,11 @@ export function CanvasTab(props: {
     if (!activeSession || !yamlDir.trim()) return;
     setYamlBusy(true);
     try {
-      const payload = await api<any>('/api/canvas/yaml/fetch', {
+      const payload = await api<CanvasYamlFetchPayload>('/api/canvas/yaml/fetch', {
         method: 'POST',
         body: JSON.stringify({ sessionId: activeSession.id, outDir: yamlDir.trim() })
       });
-      const files = payload.data?.files as string[] | undefined;
+      const files = payload.data.files;
       toast(`Saved ${files?.length ?? 0} YAML files to ${yamlDir.trim()}`);
       setExplorerResult(payload.data);
       setExplorerEndpoint('yaml-fetch');
@@ -318,11 +259,11 @@ export function CanvasTab(props: {
     if (!activeSession || !yamlDir.trim()) return;
     setYamlBusy(true);
     try {
-      const payload = await api<any>('/api/canvas/yaml/validate', {
+      const payload = await api<CanvasRequestPayload>('/api/canvas/yaml/validate', {
         method: 'POST',
         body: JSON.stringify({ sessionId: activeSession.id, dir: yamlDir.trim() })
       });
-      setExplorerResult(payload.data?.response ?? payload.data);
+      setExplorerResult(readCanvasResponse(payload));
       setExplorerEndpoint('yaml-validate');
       toast('Validation complete');
     } catch (error) {
@@ -356,7 +297,7 @@ export function CanvasTab(props: {
           <div className="entity-count">{canvasApps.length ? `${canvasApps.length} canvas apps` : ''}</div>
           <div className="entity-list">
             {canvasApps.length ? (
-              filtered.map((item: any) => {
+              filtered.map((item) => {
                 const session = sessionForApp(item.name);
                 return (
                   <div
@@ -524,7 +465,6 @@ export function CanvasTab(props: {
                   {!explorerLoading && explorerResult && (
                     <CanvasResultView
                       result={explorerResult}
-                      endpoint={explorerEndpoint}
                       toast={toast}
                       onRowClick={
                         activeSession && DESCRIBE_ENDPOINTS.has(explorerEndpoint)
@@ -540,7 +480,7 @@ export function CanvasTab(props: {
                                 version: version ? `/${version}` : '',
                                 endpoint: explorerEndpoint,
                                 name,
-                                title: item.displayName || name
+                                title: renderScalar(item.displayName) || name
                               });
                             }
                           : undefined
@@ -560,7 +500,7 @@ export function CanvasTab(props: {
 
 function CanvasDescribeModal(props: { target: DescribeTarget; toast: (message: string, isError?: boolean) => void; onClose: () => void }) {
   const { target, toast, onClose } = props;
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -568,7 +508,7 @@ function CanvasDescribeModal(props: { target: DescribeTarget; toast: (message: s
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api<any>('/api/canvas/request', {
+    api<CanvasRequestPayload>('/api/canvas/request', {
       method: 'POST',
       body: JSON.stringify({
         sessionId: target.sessionId,
@@ -577,7 +517,7 @@ function CanvasDescribeModal(props: { target: DescribeTarget; toast: (message: s
       })
     })
       .then((payload) => {
-        if (!cancelled) setData(payload.data?.response ?? payload.data);
+        if (!cancelled) setData(readCanvasResponse(payload));
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));

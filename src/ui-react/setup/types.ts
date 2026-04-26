@@ -1,3 +1,5 @@
+import type { AccountSummary, CssVariableStyle, EnvironmentSummary } from '../ui-types.js';
+
 export type SetupSubTab = 'accounts' | 'environments' | 'access' | 'tools';
 export type ToolsSubTab = 'sharepoint' | 'mcp';
 
@@ -10,6 +12,20 @@ export type HealthEntry = {
 };
 
 export type TokenEntry = { authenticated: boolean; expiresAt?: number | string } | undefined;
+export type TokenStatusMap = Record<string, TokenEntry>;
+export type HealthMap = Record<string, Record<string, HealthEntry>>;
+export type SetupDetailStyle = CssVariableStyle;
+
+export type SetupAccount = AccountSummary;
+export type SetupEnvironment = EnvironmentSummary;
+
+export type EnvironmentDiscovery = {
+  accountName?: string;
+  displayName?: string;
+  makerEnvironmentId?: string;
+  environmentApiUrl?: string;
+  environmentUrl?: string;
+};
 
 export type BrowserProfileStatus = {
   account: string;

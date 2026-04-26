@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { highlightJson } from './utils.js';
+import { highlightJson, readRecord } from './utils.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, formatCellValue, getLookupInfo, columnLabel, type RecordDetailTarget } from './RecordDetailModal.js';
-import type { ToastFn } from './ui-types.js';
+import type { ToastFn, UnknownRecord } from './ui-types.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,7 +11,7 @@ import type { ToastFn } from './ui-types.js';
 type SortState = { column: string; direction: 'asc' | 'desc' } | null;
 
 export type ResultViewProps = {
-  result: any;
+  result: unknown;
   entityLogicalName?: string;
   entitySetName?: string;
   primaryIdAttribute?: string;
@@ -27,7 +27,7 @@ export type ResultViewProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function extractColumns(records: any[]): string[] {
+function extractColumns(records: UnknownRecord[]): string[] {
   const columns: string[] = [];
   const seen = new Set<string>();
   for (const row of records) {
@@ -134,7 +134,14 @@ function Cell(props: {
 // ResultTable
 // ---------------------------------------------------------------------------
 
-function ResultTable(props: { records: any[]; primaryIdColumn?: string; totalCount?: number; highlightedRecordId?: string; onRecordClick?: (entity: string, id: string) => void; toast?: ToastFn }) {
+function ResultTable(props: {
+  records: UnknownRecord[];
+  primaryIdColumn?: string;
+  totalCount?: number;
+  highlightedRecordId?: string;
+  onRecordClick?: (entity: string, id: string) => void;
+  toast?: ToastFn;
+}) {
   const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, toast } = props;
   const [sort, setSort] = useState<SortState>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
@@ -250,10 +257,11 @@ export function ResultView(props: ResultViewProps) {
   const [view, setView] = useState<'table' | 'json'>('table');
   const [detailTarget, setDetailTarget] = useState<RecordDetailTarget | null>(null);
 
-  const records: any[] = result?.records || [];
+  const resultRecord = readRecord(result);
+  const records = Array.isArray(resultRecord?.records) ? resultRecord.records.filter((record): record is UnknownRecord => readRecord(record) !== undefined) : [];
   const hasRecords = records.length > 0;
-  const totalCount = result?.count;
-  const resolvedEntitySetName = entitySetName || result?.entitySetName;
+  const totalCount = typeof resultRecord?.count === 'number' ? resultRecord.count : undefined;
+  const resolvedEntitySetName = entitySetName || (typeof resultRecord?.entitySetName === 'string' ? resultRecord.entitySetName : undefined);
 
   function handleRecordClick(entity: string, id: string) {
     if (!environment) return;

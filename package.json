@@ -112,7 +112,7 @@
     "package:desktop": "pnpm run build && node scripts/package-desktop.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "clean:test": "node -e \"require('node:fs').rmSync('.tmp-test',{recursive:true,force:true})\"",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.ts\"",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.ts\" --max-warnings=0",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.ts\" --fix",
     "format": "prettier --write \"**/*.{ts,tsx,mjs,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json,md,yml,yaml}\"",

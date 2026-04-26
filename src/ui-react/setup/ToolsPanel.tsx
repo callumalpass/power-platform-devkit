@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, optionList } from '../utils.js';
+import { api, optionList, readRecord } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
-import type { ToastFn } from '../ui-types.js';
+import type { AccountSummary, ApiEnvelope, ApiExecuteResponse, ShellState, ToastFn } from '../ui-types.js';
 import { normalizeSharePointWebUrl, shellQuote } from './health.js';
 import { TOOLS_SUB_TAB_LABELS, type ToolsSubTab } from './types.js';
 
@@ -10,26 +10,31 @@ import { TOOLS_SUB_TAB_LABELS, type ToolsSubTab } from './types.js';
 // MCP info
 // ---------------------------------------------------------------------------
 
-function McpInfo(props: { shellData: any; toast: ToastFn }) {
+type SharePointCheckResult = ApiEnvelope<ApiExecuteResponse<unknown>>;
+
+function McpInfo(props: { shellData: ShellState | null; toast: ToastFn }) {
   const { shellData, toast } = props;
+  const mcp = shellData?.mcp;
+  const launchCommand = mcp?.launchCommand ?? '';
+  const tools = mcp?.tools ?? [];
   return (
     <div className="panel">
       <h2>MCP Server</h2>
       <p className="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
-      {shellData?.mcp ? (
+      {mcp ? (
         <>
           <div style={{ marginBottom: 12 }}>
             <span className="field-label">Launch Command</span>
           </div>
           <div className="mcp-cmd-wrap">
-            <div className="mcp-cmd">{shellData.mcp.launchCommand}</div>
-            <CopyButton value={shellData.mcp.launchCommand} label="Copy" title="Copy launch command" toast={toast} className="mcp-copy" />
+            <div className="mcp-cmd">{launchCommand}</div>
+            <CopyButton value={launchCommand} label="Copy" title="Copy launch command" toast={toast} className="mcp-copy" />
           </div>
           <div style={{ marginBottom: 8 }}>
-            <span className="field-label">Available Tools ({shellData.mcp.tools.length})</span>
+            <span className="field-label">Available Tools ({tools.length})</span>
           </div>
           <div className="tool-grid">
-            {shellData.mcp.tools.map((tool: string) => (
+            {tools.map((tool: string) => (
               <div key={tool} className="copy-inline">
                 <code>{tool}</code>
                 <CopyButton value={tool} label="copy" title="Copy tool name" toast={toast} />
@@ -46,12 +51,12 @@ function McpInfo(props: { shellData: any; toast: ToastFn }) {
 // SharePoint check
 // ---------------------------------------------------------------------------
 
-function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
+function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) {
   const { accounts, toast } = props;
   const [account, setAccount] = useState(accounts[0]?.name || '');
   const [siteUrl, setSiteUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<SharePointCheckResult | null>(null);
 
   useEffect(() => {
     if (!account && accounts[0]?.name) setAccount(accounts[0].name);
@@ -72,7 +77,7 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
     setLoading(true);
     setResult(null);
     try {
-      const payload = await api<any>('/api/request/execute', {
+      const payload = await api<SharePointCheckResult>('/api/request/execute', {
         method: 'POST',
         body: JSON.stringify({
           account,
@@ -86,14 +91,16 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
       setResult(payload);
       toast(payload.success === false ? 'SharePoint check failed' : 'SharePoint is reachable', payload.success === false);
     } catch (error) {
-      setResult({ success: false, diagnostics: [{ message: error instanceof Error ? error.message : String(error) }] });
+      setResult({ success: false, data: { response: undefined }, diagnostics: [{ message: error instanceof Error ? error.message : String(error) }] });
       toast(error instanceof Error ? error.message : String(error), true);
     } finally {
       setLoading(false);
     }
   }
 
-  const web = result?.data?.response;
+  const web = readRecord(result?.data?.response);
+  const webTitle = typeof web?.Title === 'string' ? web.Title : '';
+  const webUrl = typeof web?.Url === 'string' ? web.Url : '';
   const diagnostic = Array.isArray(result?.diagnostics) ? result.diagnostics[0] : null;
 
   return (
@@ -110,7 +117,7 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
               value={account}
               onChange={setAccount}
               options={optionList(
-                accounts.map((a: any) => a.name),
+                accounts.map((account) => account.name),
                 'select account'
               ).map((option) => ({
                 value: option.value,
@@ -156,8 +163,8 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
             ) : (
               <>
                 <div className="card-item-sub">Status {result.data?.status ?? '-'}</div>
-                {web?.Title ? <div className="card-item-sub">Site {web.Title}</div> : null}
-                {web?.Url ? <div className="card-item-sub">{web.Url}</div> : null}
+                {webTitle ? <div className="card-item-sub">Site {webTitle}</div> : null}
+                {webUrl ? <div className="card-item-sub">{webUrl}</div> : null}
               </>
             )}
           </div>
@@ -171,7 +178,7 @@ function SharePointPanel(props: { accounts: any[]; toast: ToastFn }) {
 // ToolsPanel  (combines SharePoint, Temp Tokens, MCP under a left rail)
 // ---------------------------------------------------------------------------
 
-export function ToolsPanel(props: { accounts: any[]; shellData: any; toast: ToastFn }) {
+export function ToolsPanel(props: { accounts: AccountSummary[]; shellData: ShellState | null; toast: ToastFn }) {
   const { accounts, shellData, toast } = props;
   const [activeTool, setActiveTool] = useState<ToolsSubTab>('sharepoint');
 

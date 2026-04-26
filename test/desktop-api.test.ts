@@ -14,6 +14,10 @@ function createContext(overrides: Partial<DesktopApiContext> = {}): DesktopApiCo
   };
 }
 
+function responseBody<T>(body: unknown): { success?: boolean; data: T; diagnostics?: Array<{ code?: string; message?: string }> } {
+  return body as { success?: boolean; data: T; diagnostics?: Array<{ code?: string; message?: string }> };
+}
+
 test('handleDesktopApiRequest returns 404 for unknown routes', async () => {
   const response = await handleDesktopApiRequest(createContext(), { method: 'GET', path: '/api/unknown' });
   assert.equal(response.status, 404);
@@ -86,15 +90,15 @@ test('handleDesktopApiRequest exposes browser profile status and reset routes pe
     path: '/api/accounts/work%40example.com/browser-profile'
   });
   assert.equal(statusResponse.status, 200);
-  assert.equal((statusResponse.body as any).data.configured, false);
-  assert.equal((statusResponse.body as any).data.exists, false);
+  assert.equal(responseBody<{ configured: boolean; exists: boolean }>(statusResponse.body).data.configured, false);
+  assert.equal(responseBody<{ configured: boolean; exists: boolean }>(statusResponse.body).data.exists, false);
 
   const resetResponse = await handleDesktopApiRequest(context, {
     method: 'DELETE',
     path: '/api/accounts/work%40example.com/browser-profile'
   });
   assert.equal(resetResponse.status, 200);
-  assert.equal((resetResponse.body as any).data.configured, false);
+  assert.equal(responseBody<{ configured: boolean }>(resetResponse.body).data.configured, false);
 
   const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
   assert.equal(config.accounts['work@example.com'].kind, 'user');
@@ -122,10 +126,11 @@ test('handleDesktopApiRequest serves flow language analysis over IPC-style routi
     body: { source, cursor: 0 }
   });
   assert.equal(response.status, 200);
-  assert.equal((response.body as any).success, true);
-  assert.equal((response.body as any).data.summary.wrapperKind, 'resource-properties-definition');
+  const body = responseBody<{ summary: { wrapperKind?: string }; diagnostics: Array<{ code?: string }> }>(response.body);
+  assert.equal(body.success, true);
+  assert.equal(body.data.summary.wrapperKind, 'resource-properties-definition');
   assert.equal(
-    (response.body as any).data.diagnostics.some((item: any) => item.code === 'FLOW_REFERENCE_UNRESOLVED'),
+    body.data.diagnostics.some((item) => item.code === 'FLOW_REFERENCE_UNRESOLVED'),
     false
   );
 });

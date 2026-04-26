@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from './utils.js';
+import { api, readRecord } from './utils.js';
 import { CopyButton } from './CopyButton.js';
 import { JsonViewer } from './JsonViewer.js';
-import type { ToastFn } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, ToastFn } from './ui-types.js';
 
 export type ApiPreviewSeed = {
   title: string;
@@ -41,13 +41,14 @@ export function ApiResponseModal(props: {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('fields');
   const backdropRef = useRef<HTMLDivElement | null>(null);
+  const targetHeadersKey = useMemo(() => JSON.stringify(target.headers || {}), [target.headers]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     setResponse(null);
-    api<any>('/api/request/execute', {
+    api<ApiEnvelope<ApiExecuteResponse<unknown> | unknown>>('/api/request/execute', {
       method: 'POST',
       body: JSON.stringify({
         environment,
@@ -59,7 +60,8 @@ export function ApiResponseModal(props: {
     })
       .then((payload) => {
         if (cancelled) return;
-        setResponse(payload.data?.response !== undefined ? payload.data.response : payload.data);
+        const dataRecord = readRecord(payload.data);
+        setResponse(dataRecord && 'response' in dataRecord ? dataRecord.response : payload.data);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -70,7 +72,7 @@ export function ApiResponseModal(props: {
     return () => {
       cancelled = true;
     };
-  }, [environment, target.api, target.method, target.path, JSON.stringify(target.headers || {})]);
+  }, [environment, target.api, target.headers, target.method, target.path, targetHeadersKey]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

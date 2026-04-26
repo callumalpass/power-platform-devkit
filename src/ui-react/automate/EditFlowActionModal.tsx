@@ -32,13 +32,14 @@ export function EditFlowActionModal(props: {
   onClose: () => void;
   toast: ToastFn;
 }) {
-  const [actionName, setActionName] = useState(props.target.name);
-  const [draft, setDraft] = useState<Record<string, unknown>>(props.target.value);
-  const [rawText, setRawText] = useState(() => JSON.stringify(props.target.value, null, 2));
-  const [tab, setTab] = useState<EditActionTab>(() => (isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json'));
+  const { environment, source, target, toast } = props;
+  const [actionName, setActionName] = useState(target.name);
+  const [draft, setDraft] = useState<Record<string, unknown>>(target.value);
+  const [rawText, setRawText] = useState(() => JSON.stringify(target.value, null, 2));
+  const [tab, setTab] = useState<EditActionTab>(() => (isActionLikeOutlineItem(target.item) ? 'fields' : 'json'));
   const [schema, setSchema] = useState<FlowApiOperationSchema | null>(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
-  const operationRef = useMemo(() => resolveActionOperation(props.source, draft), [props.source, draft]);
+  const operationRef = useMemo(() => resolveActionOperation(source, draft), [source, draft]);
   const rawError = useMemo(() => {
     try {
       JSON.parse(rawText);
@@ -49,11 +50,11 @@ export function EditFlowActionModal(props: {
   }, [rawText]);
 
   useEffect(() => {
-    setActionName(props.target.name);
-    setDraft(props.target.value);
-    setRawText(JSON.stringify(props.target.value, null, 2));
-    setTab(isActionLikeOutlineItem(props.target.item) ? 'fields' : 'json');
-  }, [props.target]);
+    setActionName(target.name);
+    setDraft(target.value);
+    setRawText(JSON.stringify(target.value, null, 2));
+    setTab(isActionLikeOutlineItem(target.item) ? 'fields' : 'json');
+  }, [target]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,18 +63,18 @@ export function EditFlowActionModal(props: {
       return;
     }
     setSchemaLoading(true);
-    void loadFlowApiOperationSchema(props.environment, operationRef.apiRef, operationRef.operationId)
+    void loadFlowApiOperationSchema(environment, operationRef.apiRef, operationRef.operationId)
       .then((result) => {
         if (!cancelled) setSchema(result);
       })
-      .catch((error) => props.toast(error instanceof Error ? error.message : String(error), true))
+      .catch((error) => toast(error instanceof Error ? error.message : String(error), true))
       .finally(() => {
         if (!cancelled) setSchemaLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [operationRef.apiRef, operationRef.operationId, props.environment, props.toast]);
+  }, [environment, operationRef.apiRef, operationRef.operationId, toast]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

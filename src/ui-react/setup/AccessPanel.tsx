@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api } from '../utils.js';
+import { useCallback, useEffect, useState } from 'react';
+import { api, readRecord } from '../utils.js';
 import { RecordDetailModal, useRecordDetail } from '../RecordDetailModal.js';
-import type { ToastFn } from '../ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, ToastFn, UnknownRecord } from '../ui-types.js';
 
 type AccessData = {
   userId?: string;
@@ -26,6 +26,22 @@ type AccessData = {
   };
 };
 
+type RequestExecutePayload = ApiEnvelope<ApiExecuteResponse<unknown>>;
+
+function responseRecord(payload: RequestExecutePayload): UnknownRecord {
+  return readRecord(payload.data.response) ?? {};
+}
+
+function responseRows(value: unknown): UnknownRecord[] {
+  const record = readRecord(value);
+  return Array.isArray(record?.value) ? record.value.filter((item): item is UnknownRecord => readRecord(item) !== undefined) : [];
+}
+
+function stringField(record: UnknownRecord, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value : '';
+}
+
 export function AccessPanel(props: { active: boolean; environment: string; toast: ToastFn }) {
   const { active, environment, toast } = props;
   const [data, setData] = useState<AccessData | null>(null);
@@ -33,32 +49,41 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   const [error, setError] = useState<string | null>(null);
   const detail = useRecordDetail();
 
-  async function dvGet(path: string) {
-    const result = await api<any>('/api/request/execute', {
-      method: 'POST',
-      body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, allowInteractive: false, softFail: true })
-    });
-    return result.data?.response;
-  }
+  const dvGet = useCallback(
+    async (path: string): Promise<UnknownRecord> => {
+      const result = await api<RequestExecutePayload>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment, api: 'dv', method: 'GET', path, headers: { Prefer: 'odata.include-annotations="*"' }, allowInteractive: false, softFail: true })
+      });
+      return responseRecord(result);
+    },
+    [environment]
+  );
 
-  async function graphGet(path: string) {
-    const result = await api<any>('/api/request/execute', {
-      method: 'POST',
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true })
-    });
-    return result.data?.response;
-  }
+  const graphGet = useCallback(
+    async (path: string): Promise<UnknownRecord> => {
+      const result = await api<RequestExecutePayload>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true })
+      });
+      return responseRecord(result);
+    },
+    [environment]
+  );
 
-  async function graphGetOptional(path: string) {
-    const result = await api<any>('/api/request/execute', {
-      method: 'POST',
-      body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
-      allowFailure: true
-    });
-    return result.success === false ? null : result.data?.response;
-  }
+  const graphGetOptional = useCallback(
+    async (path: string): Promise<UnknownRecord | null> => {
+      const result = await api<RequestExecutePayload>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({ environment, api: 'graph', method: 'GET', path, allowInteractive: false, softFail: true }),
+        allowFailure: true
+      });
+      return result.success === false ? null : responseRecord(result);
+    },
+    [environment]
+  );
 
-  async function loadAccess() {
+  const loadAccess = useCallback(async () => {
     if (!environment) {
       toast('Select an environment first.', true);
       return;
@@ -68,8 +93,8 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
     setData(null);
     try {
       const whoami = await dvGet('/WhoAmI');
-      const userId = whoami?.UserId;
-      const businessUnitId = whoami?.BusinessUnitId;
+      const userId = stringField(whoami, 'UserId');
+      const businessUnitId = stringField(whoami, 'BusinessUnitId');
       if (!userId) throw new Error('Could not determine current user.');
 
       const [user, rolesResult, teamsResult] = await Promise.all([
@@ -78,14 +103,14 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
         dvGet(`/systemusers(${userId})/teammembership_association?$select=name,teamid`)
       ]);
 
-      const roles: NonNullable<AccessData['roles']> = Array.isArray(rolesResult?.value) ? rolesResult.value.map((r: any) => ({ name: r.name, roleid: r.roleid })) : [];
-      const teams: NonNullable<AccessData['teams']> = Array.isArray(teamsResult?.value) ? teamsResult.value.map((t: any) => ({ name: t.name, teamid: t.teamid })) : [];
+      const roles: NonNullable<AccessData['roles']> = responseRows(rolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
+      const teams: NonNullable<AccessData['teams']> = responseRows(teamsResult).map((team) => ({ name: stringField(team, 'name'), teamid: stringField(team, 'teamid') }));
 
       await Promise.all(
         teams.map(async (team) => {
           try {
             const teamRolesResult = await dvGet(`/teams(${team.teamid})/teamroles_association?$select=name,roleid`);
-            team.roles = Array.isArray(teamRolesResult?.value) ? teamRolesResult.value.map((r: any) => ({ name: r.name, roleid: r.roleid })) : [];
+            team.roles = responseRows(teamRolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
           } catch {
             team.roles = [];
           }
@@ -100,13 +125,15 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
           graphGetOptional('/me/licenseDetails')
         ]);
         graph = {
-          displayName: me?.displayName,
-          jobTitle: me?.jobTitle,
-          department: me?.department,
-          officeLocation: me?.officeLocation,
-          mail: me?.mail,
-          manager: managerResult?.displayName,
-          licenses: Array.isArray(licensesResult?.value) ? licensesResult.value.map((l: any) => l.skuPartNumber).filter(Boolean) : []
+          displayName: stringField(me, 'displayName'),
+          jobTitle: stringField(me, 'jobTitle'),
+          department: stringField(me, 'department'),
+          officeLocation: stringField(me, 'officeLocation'),
+          mail: stringField(me, 'mail'),
+          manager: managerResult ? stringField(managerResult, 'displayName') : undefined,
+          licenses: responseRows(licensesResult)
+            .map((license) => stringField(license, 'skuPartNumber'))
+            .filter(Boolean)
         };
       } catch {
         // Graph not available — that's fine
@@ -120,11 +147,11 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
     } finally {
       setLoading(false);
     }
-  }
+  }, [dvGet, environment, graphGet, graphGetOptional, toast]);
 
   useEffect(() => {
     if (active && environment) void loadAccess();
-  }, [active, environment]);
+  }, [active, environment, loadAccess]);
 
   if (!environment) {
     return (

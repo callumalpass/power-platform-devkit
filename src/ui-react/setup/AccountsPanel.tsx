@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formDataObject, formatDate, formatTimeRemaining } from '../utils.js';
-import type { ToastFn } from '../ui-types.js';
-import { API_SCOPE_OPTIONS, type AuthSession, type BrowserProfileResult, type BrowserProfileStatus, type TokenEntry } from './types.js';
+import type { ApiEnvelope, ToastFn } from '../ui-types.js';
+import {
+  API_SCOPE_OPTIONS,
+  type AuthSession,
+  type BrowserProfileResult,
+  type BrowserProfileStatus,
+  type SetupAccount,
+  type SetupDetailStyle,
+  type SetupEnvironment,
+  type TokenEntry,
+  type TokenStatusMap
+} from './types.js';
 import type { useAuthSession } from './login.js';
 import type { useConfirm } from './ConfirmDialog.js';
 import { DetailPanel } from './DetailPanel.js';
@@ -38,7 +48,7 @@ function tokenState(token: TokenEntry): 'pending' | 'ok' | 'error' {
 // ---------------------------------------------------------------------------
 
 function EditAccountBody(props: {
-  account: any;
+  account: SetupAccount;
   tokenStatus: TokenEntry;
   confirm: ReturnType<typeof useConfirm>;
   refreshState: (silent?: boolean) => Promise<void>;
@@ -282,7 +292,7 @@ function EditAccountBody(props: {
 // ---------------------------------------------------------------------------
 
 export function AddAccountForm(props: {
-  accounts: any[];
+  accounts: SetupAccount[];
   selectedApis: Record<string, boolean>;
   setSelectedApis: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   globalEnvironment: string;
@@ -303,17 +313,17 @@ export function AddAccountForm(props: {
     const form = event.currentTarget;
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const connectAfterSave = submitter?.value === 'connect';
-    const payload: any = formDataObject(form);
+    const payload = formDataObject(form);
     payload.kind = accountKind;
     try {
-      await api<any>('/api/accounts', {
+      await api('/api/accounts', {
         method: 'POST',
         body: JSON.stringify(payload)
       });
       toast('Account saved');
       await refreshState(true);
       if (connectAfterSave && (accountKind === 'user' || accountKind === 'device-code')) {
-        const session = await api<any>('/api/auth/sessions', {
+        const session = await api<ApiEnvelope<AuthSession>>('/api/auth/sessions', {
           method: 'POST',
           body: JSON.stringify({
             ...payload,
@@ -537,9 +547,9 @@ export function AddAccountForm(props: {
 type DrawerState = { mode: 'closed' } | { mode: 'new' } | { mode: 'edit'; accountName: string };
 
 export function AccountsPanel(props: {
-  accounts: any[];
-  environments: any[];
-  tokenStatus: Record<string, any>;
+  accounts: SetupAccount[];
+  environments: SetupEnvironment[];
+  tokenStatus: TokenStatusMap;
   selectedApis: Record<string, boolean>;
   setSelectedApis: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   globalEnvironment: string;
@@ -553,6 +563,7 @@ export function AccountsPanel(props: {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
   const [drawer, setDrawer] = useState<DrawerState>({ mode: 'closed' });
   const { width: detailWidth, startDrag: startDetailResize } = useResizableWidth('pp-setup-accounts-detail', { min: 360, max: 820, initial: 440 });
+  const detailStyle: SetupDetailStyle | undefined = drawer.mode !== 'closed' ? { '--detail-width': `${detailWidth}px` } : undefined;
 
   const envCountByAccount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -565,12 +576,12 @@ export function AccountsPanel(props: {
   const rows = useMemo(() => {
     const query = filter.trim().toLowerCase();
     const filtered = query
-      ? accounts.filter((account: any) => {
+      ? accounts.filter((account) => {
           const haystack = [account.name, account.kind, account.accountUsername, account.loginHint, account.tenantId, account.description].filter(Boolean).join(' ').toLowerCase();
           return haystack.includes(query);
         })
       : accounts;
-    const sorted = [...filtered].sort((a: any, b: any) => {
+    const sorted = [...filtered].sort((a, b) => {
       const direction = sort.dir === 'asc' ? 1 : -1;
       switch (sort.key) {
         case 'kind':
@@ -599,11 +610,11 @@ export function AccountsPanel(props: {
     });
   }
 
-  async function handleLogin(account: any) {
+  async function handleLogin(account: SetupAccount) {
     const accountEnvironmentAlias =
-      globalEnvironment && environments.some((environment: any) => environment.alias === globalEnvironment && environment.account === account.name) ? globalEnvironment : undefined;
+      globalEnvironment && environments.some((environment) => environment.alias === globalEnvironment && environment.account === account.name) ? globalEnvironment : undefined;
     try {
-      const started = await api<any>('/api/auth/sessions', {
+      const started = await api<ApiEnvelope<AuthSession>>('/api/auth/sessions', {
         method: 'POST',
         body: JSON.stringify({
           name: account.name,
@@ -621,7 +632,7 @@ export function AccountsPanel(props: {
     }
   }
 
-  function handleRemove(account: any) {
+  function handleRemove(account: SetupAccount) {
     confirm.open({
       title: `Remove account "${account.name}"?`,
       body: (
@@ -644,11 +655,11 @@ export function AccountsPanel(props: {
     });
   }
 
-  function accountAsJson(account: any): string {
+  function accountAsJson(account: SetupAccount): string {
     return JSON.stringify(account, null, 2);
   }
 
-  const editingAccount = drawer.mode === 'edit' ? accounts.find((a: any) => a.name === drawer.accountName) : null;
+  const editingAccount = drawer.mode === 'edit' ? accounts.find((account) => account.name === drawer.accountName) : null;
 
   return (
     <div className="panel setup-table-panel">
@@ -675,7 +686,7 @@ export function AccountsPanel(props: {
       ) : rows.length === 0 ? (
         <div className="setup-table-empty">No accounts match “{filter}”.</div>
       ) : (
-        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={drawer.mode !== 'closed' ? { ['--detail-width' as any]: `${detailWidth}px` } : undefined}>
+        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={detailStyle}>
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
@@ -705,7 +716,7 @@ export function AccountsPanel(props: {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((account: any) => {
+                {rows.map((account) => {
                   const token = tokenStatus[account.name];
                   const state = tokenState(token);
                   const expiry = token?.authenticated ? formatTimeRemaining(token.expiresAt) : null;

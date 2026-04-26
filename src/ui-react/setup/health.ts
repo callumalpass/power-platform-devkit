@@ -1,9 +1,11 @@
 import type { HealthEntry } from './types.js';
+import { readRecord } from '../utils.js';
 
-export function summarizeHealthFailure(payload: any): HealthEntry {
-  const diagnostic = Array.isArray(payload?.diagnostics) ? payload.diagnostics[0] : null;
-  const message = diagnostic?.message || 'Health check failed';
-  const detail = diagnostic?.detail || '';
+export function summarizeHealthFailure(payload: unknown): HealthEntry {
+  const payloadRecord = readRecord(payload);
+  const diagnostic = Array.isArray(payloadRecord?.diagnostics) ? readRecord(payloadRecord.diagnostics[0]) : undefined;
+  const message = typeof diagnostic?.message === 'string' ? diagnostic.message : 'Health check failed';
+  const detail = typeof diagnostic?.detail === 'string' ? diagnostic.detail : '';
   const summary = /Interactive authentication is disabled/i.test(message)
     ? 'Needs login for this API'
     : /returned 401/i.test(message) || /returned 403/i.test(message)
@@ -11,7 +13,7 @@ export function summarizeHealthFailure(payload: any): HealthEntry {
       : /returned 404/i.test(message)
         ? 'API endpoint unavailable'
         : message;
-  return { status: 'error', summary, message, detail, code: diagnostic?.code || '' };
+  return { status: 'error', summary, message, detail, code: typeof diagnostic?.code === 'string' ? diagnostic.code : '' };
 }
 
 export function healthHint(entry: HealthEntry): string | null {

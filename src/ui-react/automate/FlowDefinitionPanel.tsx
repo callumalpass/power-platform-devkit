@@ -1,6 +1,6 @@
 import type { RefObject } from 'react';
 import { MonacoVimToggle } from '../monaco-support.js';
-import type { FlowAnalysis, FlowAnalysisOutlineItem, ToastFn } from '../ui-types.js';
+import type { CssVariableStyle, FlowAnalysis, FlowAnalysisOutlineItem, ToastFn } from '../ui-types.js';
 import type { FlowValidationResult } from '../automate-data.js';
 import { FlowCodeEditor } from './FlowCodeEditor.js';
 import { FlowOutlineCanvas } from './FlowOutlineCanvas.js';
@@ -56,6 +56,7 @@ export function FlowDefinitionPanel(props: {
   const { active } = props;
   const { width: outlineWidth, startDrag: startOutlineResize } = useResizableWidth('pp-automate-outline-width', { min: 220, max: 640, initial: 320, edge: 'right' });
   const schemaIndex = useFlowEditorSchemaIndex(active ? props.environment : '', props.flowDocument, props.analysis, props.toast);
+  const editorLayoutStyle: CssVariableStyle = { '--outline-width': `${outlineWidth}px` };
 
   return (
     <div className={`dv-subpanel ${active ? 'active' : ''}`}>
@@ -113,7 +114,7 @@ export function FlowDefinitionPanel(props: {
               </button>
             </div>
           </div>
-          <div className="flow-editor-layout" style={{ ['--outline-width' as any]: `${outlineWidth}px` }}>
+          <div className="flow-editor-layout" style={editorLayoutStyle}>
             <aside className="flow-outline-rail">
               <FlowOutlineCanvas
                 items={props.analysis?.outline || []}

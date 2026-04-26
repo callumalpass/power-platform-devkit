@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, formatBytes } from '../utils.js';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { api, formatBytes, readRecord } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
 import { Select } from '../Select.js';
+import type { ApiEnvelope, ApiExecuteResponse } from '../ui-types.js';
 
 const APIS = [
   {
@@ -83,6 +84,7 @@ type ConsoleRequestTab = 'query' | 'headers' | 'body';
 type ConsoleRailTab = 'history' | 'saved';
 type ConsoleHistoryEntry = { api: string; method: string; path: string; status: number; elapsed: number };
 type ConsoleSavedEntry = { api: string; method: string; path: string; name?: string };
+type ConsoleSeed = { api?: string; method?: string; path?: string } | null;
 type ConsoleResponsePreview = {
   text: string;
   truncated: boolean;
@@ -100,6 +102,8 @@ type ConsoleResponseState = {
   truncated?: boolean;
   originalSize?: string;
 };
+type SavedRequestsPayload = ApiEnvelope<ConsoleSavedEntry[]>;
+type ExecuteRequestPayload = ApiEnvelope<ApiExecuteResponse<unknown> & { responsePreview?: ConsoleResponsePreview }>;
 
 const CONSOLE_RESPONSE_PREVIEW_BYTES = 512 * 1024;
 
@@ -145,24 +149,26 @@ function persistConsoleItems(key: string, items: Array<ConsoleHistoryEntry | Con
   }
 }
 
-function sanitizeHistoryEntry(value: any): ConsoleHistoryEntry | undefined {
+function sanitizeHistoryEntry(value: unknown): ConsoleHistoryEntry | undefined {
   const saved = sanitizeSavedEntry(value);
+  const record = readRecord(value);
   if (!saved) return undefined;
   return {
     ...saved,
-    status: Number.isFinite(Number(value.status)) ? Number(value.status) : 0,
-    elapsed: Number.isFinite(Number(value.elapsed)) ? Number(value.elapsed) : 0
+    status: Number.isFinite(Number(record?.status)) ? Number(record?.status) : 0,
+    elapsed: Number.isFinite(Number(record?.elapsed)) ? Number(record?.elapsed) : 0
   };
 }
 
-function sanitizeSavedEntry(value: any): ConsoleSavedEntry | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const api = typeof value.api === 'string' ? value.api : '';
-  const method = typeof value.method === 'string' ? value.method : '';
-  const path = typeof value.path === 'string' ? value.path : '';
+function sanitizeSavedEntry(value: unknown): ConsoleSavedEntry | undefined {
+  const record = readRecord(value);
+  if (!record) return undefined;
+  const api = typeof record.api === 'string' ? record.api : '';
+  const method = typeof record.method === 'string' ? record.method : '';
+  const path = typeof record.path === 'string' ? record.path : '';
   if (!api || !method || !path) return undefined;
   const entry: ConsoleSavedEntry = { api, method, path };
-  if (typeof value.name === 'string' && value.name.trim()) entry.name = value.name.trim().slice(0, 120);
+  if (typeof record.name === 'string' && record.name.trim()) entry.name = record.name.trim().slice(0, 120);
   return entry;
 }
 
@@ -226,7 +232,7 @@ function filterResponseBody(body: string, query: string): { text: string; matche
 type ConsoleTabProps = {
   active: boolean;
   environment: string;
-  seed: any;
+  seed: ConsoleSeed;
   clearSeed: () => void;
   toast: (message: string, isError?: boolean) => void;
   renderResponseBody?: (value: string) => ReactNode;
@@ -245,8 +251,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
   const [responseHeadersOpen, setResponseHeadersOpen] = useState(false);
   const [history, setHistory] = useState<ConsoleHistoryEntry[]>(readConsoleHistory);
   const [saved, setSaved] = useState<ConsoleSavedEntry[]>([]);
-  const savedHydratedRef = useRef(false);
-  const savedPersistSeqRef = useRef(0);
+  const savedDirtyRef = useRef(false);
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [responseFilter, setResponseFilter] = useState('');
@@ -294,55 +299,50 @@ export function ConsoleTab(props: ConsoleTabProps) {
   useEffect(() => {
     persistConsoleItems('pp-console-history', history, 50);
   }, [history]);
+
+  const persistSavedRequests = useCallback(
+    (entries: ConsoleSavedEntry[]) => {
+      void api('/api/ui/saved-requests', {
+        method: 'PUT',
+        body: JSON.stringify({ entries })
+      }).catch((error) => {
+        toast(error instanceof Error ? `Failed to save pinned requests: ${error.message}` : 'Failed to save pinned requests.', true);
+      });
+    },
+    [toast]
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const payload = await api<any>('/api/ui/saved-requests');
+        const payload = await api<SavedRequestsPayload>('/api/ui/saved-requests');
         const serverEntries = Array.isArray(payload.data) ? (payload.data.map(sanitizeSavedEntry).filter(Boolean) as ConsoleSavedEntry[]) : [];
         const legacy = readLegacyConsoleSaved();
         if (serverEntries.length === 0 && legacy.length) {
           try {
-            await api<any>('/api/ui/saved-requests', {
+            await api('/api/ui/saved-requests', {
               method: 'PUT',
               body: JSON.stringify({ entries: legacy })
             });
-            if (!cancelled) setSaved(legacy);
+            if (!cancelled && !savedDirtyRef.current) setSaved(legacy);
           } catch {
-            if (!cancelled) setSaved(legacy);
+            if (!cancelled && !savedDirtyRef.current) setSaved(legacy);
           }
           clearLegacyConsoleSaved();
         } else {
           if (legacy.length) clearLegacyConsoleSaved();
-          if (!cancelled) setSaved(serverEntries);
+          if (!cancelled && !savedDirtyRef.current) setSaved(serverEntries);
         }
       } catch {
         // Fall back to legacy localStorage so pins don't appear lost if the server is briefly unreachable.
-        if (!cancelled) setSaved(readLegacyConsoleSaved());
-      } finally {
-        if (!cancelled) savedHydratedRef.current = true;
+        if (!cancelled && !savedDirtyRef.current) setSaved(readLegacyConsoleSaved());
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!savedHydratedRef.current) return;
-    const seq = ++savedPersistSeqRef.current;
-    const entries = saved;
-    const handle = window.setTimeout(() => {
-      if (seq !== savedPersistSeqRef.current) return;
-      void api<any>('/api/ui/saved-requests', {
-        method: 'PUT',
-        body: JSON.stringify({ entries })
-      }).catch((error) => {
-        toast(error instanceof Error ? `Failed to save pinned requests: ${error.message}` : 'Failed to save pinned requests.', true);
-      });
-    }, 300);
-    return () => window.clearTimeout(handle);
-  }, [saved, toast]);
 
   useEffect(() => {
     if (!seed || !active) return;
@@ -358,99 +358,103 @@ export function ConsoleTab(props: ConsoleTabProps) {
     };
   }, []);
 
-  function cancelInFlight() {
+  const cancelInFlight = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
-  }
+  }, []);
 
-  async function sendRequest(options?: { fullResponse?: boolean }) {
-    if (sending) {
-      cancelInFlight();
-      return;
-    }
-    if (!environment) {
-      toast('Select an environment first.', true);
-      return;
-    }
-    if (!path.trim()) {
-      toast('Enter a request path.', true);
-      return;
-    }
-    if (bodyParseError) {
-      toast(`Request body is not valid JSON: ${bodyParseError}`, true);
-      return;
-    }
-    const query = Object.fromEntries(queryRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
-    const headers = Object.fromEntries(headerRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
-    const parsedBody = body.trim() && supportsBody ? JSON.parse(body) : undefined;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const fullResponse = !!options?.fullResponse;
-    setSending(true);
-    if (fullResponse) setLoadingFull(true);
-    const started = performance.now();
-    try {
-      const payload = await api<any>('/api/request/execute', {
-        method: 'POST',
-        body: JSON.stringify({
-          environment,
-          api: apiKey,
-          method,
-          path: path.trim(),
-          query: Object.keys(query).length ? query : undefined,
-          headers: Object.keys(headers).length ? headers : undefined,
-          body: parsedBody,
-          maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES
-        }),
-        signal: controller.signal
-      });
-      if (controller.signal.aborted) return;
-      const elapsed = Math.round(performance.now() - started);
-      const bodyValue = payload.data?.response;
-      const preview = payload.data?.responsePreview as ConsoleResponsePreview | undefined;
-      const bodyResult = consoleResponseText(bodyValue, preview);
-      setResponse({
-        status: payload.data?.status || 200,
-        elapsed: `${elapsed}ms`,
-        body: bodyResult.body,
-        headers: payload.data?.headers
-          ? Object.entries(payload.data.headers)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join('\n')
-          : '',
-        size: bodyResult.truncated ? `${formatBytes(bodyResult.bytes)} shown` : formatBytes(bodyResult.bytes),
-        ok: (payload.data?.status || 200) >= 200 && (payload.data?.status || 200) < 300,
-        truncated: bodyResult.truncated,
-        originalSize: bodyResult.truncated ? formatBytes(bodyResult.originalBytes) : undefined
-      });
-      setHistory((current) => [{ api: apiKey, method, path, status: payload.data?.status || 200, elapsed }, ...current].slice(0, 50));
-      if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
-      else if (fullResponse) toast(`Loaded full response (${formatBytes(bodyResult.bytes)}).`, false);
-    } catch (error) {
-      if (controller.signal.aborted) {
-        toast('Request cancelled.', false);
+  const sendRequest = useCallback(
+    async (options?: { fullResponse?: boolean }) => {
+      if (sending) {
+        cancelInFlight();
         return;
       }
-      const elapsed = Math.round(performance.now() - started);
-      const message = error instanceof Error ? error.message : String(error);
-      setResponse({
-        status: 'ERR',
-        elapsed: `${elapsed}ms`,
-        body: JSON.stringify({ error: message }, null, 2),
-        headers: '',
-        size: formatBytes(new Blob([message]).size),
-        ok: false
-      });
-      setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
-      toast(message, true);
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setSending(false);
-      setLoadingFull(false);
-    }
-  }
+      if (!environment) {
+        toast('Select an environment first.', true);
+        return;
+      }
+      if (!path.trim()) {
+        toast('Enter a request path.', true);
+        return;
+      }
+      if (bodyParseError) {
+        toast(`Request body is not valid JSON: ${bodyParseError}`, true);
+        return;
+      }
+      const query = Object.fromEntries(queryRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
+      const headers = Object.fromEntries(headerRows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
+      const parsedBody = body.trim() && supportsBody ? JSON.parse(body) : undefined;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const fullResponse = !!options?.fullResponse;
+      setSending(true);
+      if (fullResponse) setLoadingFull(true);
+      const started = performance.now();
+      try {
+        const payload = await api<ExecuteRequestPayload>('/api/request/execute', {
+          method: 'POST',
+          body: JSON.stringify({
+            environment,
+            api: apiKey,
+            method,
+            path: path.trim(),
+            query: Object.keys(query).length ? query : undefined,
+            headers: Object.keys(headers).length ? headers : undefined,
+            body: parsedBody,
+            maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES
+          }),
+          signal: controller.signal
+        });
+        if (controller.signal.aborted) return;
+        const elapsed = Math.round(performance.now() - started);
+        const bodyValue = payload.data.response;
+        const preview = payload.data.responsePreview;
+        const bodyResult = consoleResponseText(bodyValue, preview);
+        const status = payload.data.status || 200;
+        setResponse({
+          status,
+          elapsed: `${elapsed}ms`,
+          body: bodyResult.body,
+          headers: payload.data.headers
+            ? Object.entries(payload.data.headers)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n')
+            : '',
+          size: bodyResult.truncated ? `${formatBytes(bodyResult.bytes)} shown` : formatBytes(bodyResult.bytes),
+          ok: status >= 200 && status < 300,
+          truncated: bodyResult.truncated,
+          originalSize: bodyResult.truncated ? formatBytes(bodyResult.originalBytes) : undefined
+        });
+        setHistory((current) => [{ api: apiKey, method, path, status, elapsed }, ...current].slice(0, 50));
+        if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
+        else if (fullResponse) toast(`Loaded full response (${formatBytes(bodyResult.bytes)}).`, false);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          toast('Request cancelled.', false);
+          return;
+        }
+        const elapsed = Math.round(performance.now() - started);
+        const message = error instanceof Error ? error.message : String(error);
+        setResponse({
+          status: 'ERR',
+          elapsed: `${elapsed}ms`,
+          body: JSON.stringify({ error: message }, null, 2),
+          headers: '',
+          size: formatBytes(new Blob([message]).size),
+          ok: false
+        });
+        setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
+        toast(message, true);
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        setSending(false);
+        setLoadingFull(false);
+      }
+    },
+    [apiKey, body, bodyParseError, cancelInFlight, environment, headerRows, method, path, queryRows, sending, supportsBody, toast]
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -471,19 +475,22 @@ export function ConsoleTab(props: ConsoleTabProps) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, sending, environment, apiKey, method, path, body, queryRows, headerRows, bodyParseError]);
+  }, [active, cancelInFlight, sendRequest, sending]);
 
   function togglePinHistory(entry: ConsoleHistoryEntry) {
-    setSaved((current) => {
-      const existingIndex = current.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
-      if (existingIndex >= 0) return current.filter((_, itemIndex) => itemIndex !== existingIndex);
-      return [{ api: entry.api, method: entry.method, path: entry.path }, ...current];
-    });
+    const existingIndex = saved.findIndex((item) => item.api === entry.api && item.method === entry.method && item.path === entry.path);
+    const next = existingIndex >= 0 ? saved.filter((_, itemIndex) => itemIndex !== existingIndex) : [{ api: entry.api, method: entry.method, path: entry.path }, ...saved];
+    savedDirtyRef.current = true;
+    setSaved(next);
+    persistSavedRequests(next);
   }
 
   function commitRename(index: number) {
     const trimmed = renameDraft.trim();
-    setSaved((current) => current.map((item, i) => (i === index ? { ...item, name: trimmed || undefined } : item)));
+    const next = saved.map((item, i) => (i === index ? { ...item, name: trimmed || undefined } : item));
+    savedDirtyRef.current = true;
+    setSaved(next);
+    persistSavedRequests(next);
     setRenameIndex(null);
     setRenameDraft('');
   }
@@ -511,7 +518,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
                 if (!preset) return;
                 setMethod(preset.method);
                 setPath(preset.path);
-                setBody('body' in preset ? String((preset as any).body || '') : '');
+                setBody('');
               }}
               options={currentApi.presets.map((preset) => ({
                 value: preset.label,
@@ -900,7 +907,12 @@ export function ConsoleTab(props: ConsoleTabProps) {
                         className="pin-btn pinned"
                         title="Unpin"
                         aria-label="Unpin saved request"
-                        onClick={() => setSaved((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        onClick={() => {
+                          const next = saved.filter((_, itemIndex) => itemIndex !== index);
+                          savedDirtyRef.current = true;
+                          setSaved(next);
+                          persistSavedRequests(next);
+                        }}
                       >
                         ✖
                       </button>

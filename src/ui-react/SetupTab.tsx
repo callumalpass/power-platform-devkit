@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { AccountSummary, EnvironmentSummary, ShellState, ToastFn } from './ui-types.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { AccountSummary, ApiEnvelope, EnvironmentSummary, ShellState, ToastFn } from './ui-types.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { useAuthSession, LoginProgress } from './setup/login.js';
 import { OnboardingFlow } from './setup/OnboardingFlow.js';
@@ -10,7 +10,7 @@ import { AccessPanel } from './setup/AccessPanel.js';
 import { ToolsPanel } from './setup/ToolsPanel.js';
 import { summarizeHealthFailure } from './setup/health.js';
 import { api } from './utils.js';
-import { HEALTH_APIS, SETUP_SUB_TAB_LABELS, type HealthEntry, type SetupSubTab } from './setup/types.js';
+import { HEALTH_APIS, SETUP_SUB_TAB_LABELS, type HealthMap, type SetupSubTab, type TokenEntry, type TokenStatusMap } from './setup/types.js';
 
 type SetupTabProps = {
   active: boolean;
@@ -23,8 +23,8 @@ type SetupTabProps = {
 export function SetupTab(props: SetupTabProps) {
   const { active, shellData, globalEnvironment, refreshState, toast } = props;
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>('accounts');
-  const [tokenStatus, setTokenStatus] = useState<Record<string, any>>({});
-  const [health, setHealth] = useState<Record<string, Record<string, HealthEntry>>>({});
+  const [tokenStatus, setTokenStatus] = useState<TokenStatusMap>({});
+  const [health, setHealth] = useState<HealthMap>({});
   const [selectedApis, setSelectedApis] = useState<Record<string, boolean>>({
     dv: true,
     flow: true,
@@ -37,8 +37,90 @@ export function SetupTab(props: SetupTabProps) {
   const confirm = useConfirm();
   const tokenStatusRunRef = useRef(0);
   const healthRunRef = useRef(0);
-  const accounts: AccountSummary[] = shellData?.accounts || [];
-  const environments: EnvironmentSummary[] = shellData?.environments || [];
+  const accounts: AccountSummary[] = useMemo(() => shellData?.accounts || [], [shellData]);
+  const environments: EnvironmentSummary[] = useMemo(() => shellData?.environments || [], [shellData]);
+
+  const beginTokenStatusRun = useCallback((): number => {
+    tokenStatusRunRef.current += 1;
+    return tokenStatusRunRef.current;
+  }, []);
+
+  const beginHealthRun = useCallback((): number => {
+    healthRunRef.current += 1;
+    return healthRunRef.current;
+  }, []);
+
+  const isCurrentTokenStatusRun = useCallback((runId: number): boolean => {
+    return tokenStatusRunRef.current === runId;
+  }, []);
+
+  const isCurrentHealthRun = useCallback((runId: number): boolean => {
+    return healthRunRef.current === runId;
+  }, []);
+
+  const checkTokenStatuses = useCallback(
+    async (accountList: AccountSummary[], runId: number) => {
+      await Promise.all(
+        accountList.map(async (account) => {
+          try {
+            const data = await api<ApiEnvelope<NonNullable<TokenEntry>>>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
+            if (!isCurrentTokenStatusRun(runId)) return;
+            setTokenStatus((current) => ({
+              ...current,
+              [account.name]: data.success && data.data ? data.data : { authenticated: false }
+            }));
+          } catch {
+            if (!isCurrentTokenStatusRun(runId)) return;
+            setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
+          }
+        })
+      );
+    },
+    [isCurrentTokenStatusRun]
+  );
+
+  const pingApi = useCallback(
+    async (alias: string, apiName: string, runId: number) => {
+      if (!isCurrentHealthRun(runId)) return;
+      setHealth((current) => ({
+        ...current,
+        [alias]: {
+          ...(current[alias] || {}),
+          [apiName]: { status: 'pending', summary: 'Checking...' }
+        }
+      }));
+      try {
+        const payload = await api<ApiEnvelope<unknown>>('/api/checks/ping', {
+          method: 'POST',
+          body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
+          allowFailure: true
+        });
+        const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
+        if (!isCurrentHealthRun(runId)) return;
+        setHealth((current) => ({
+          ...current,
+          [alias]: { ...(current[alias] || {}), [apiName]: value }
+        }));
+      } catch {
+        if (!isCurrentHealthRun(runId)) return;
+        setHealth((current) => ({
+          ...current,
+          [alias]: {
+            ...(current[alias] || {}),
+            [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' }
+          }
+        }));
+      }
+    },
+    [isCurrentHealthRun]
+  );
+
+  const checkHealth = useCallback(
+    async (environmentList: EnvironmentSummary[], runId: number) => {
+      await Promise.all(environmentList.flatMap((environment) => HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))));
+    },
+    [pingApi]
+  );
 
   useEffect(() => {
     if (!active || !shellData) return;
@@ -50,80 +132,7 @@ export function SetupTab(props: SetupTabProps) {
       tokenStatusRunRef.current += 1;
       healthRunRef.current += 1;
     };
-  }, [active, shellData]);
-
-  function beginTokenStatusRun(): number {
-    tokenStatusRunRef.current += 1;
-    return tokenStatusRunRef.current;
-  }
-
-  function beginHealthRun(): number {
-    healthRunRef.current += 1;
-    return healthRunRef.current;
-  }
-
-  function isCurrentTokenStatusRun(runId: number): boolean {
-    return tokenStatusRunRef.current === runId;
-  }
-
-  function isCurrentHealthRun(runId: number): boolean {
-    return healthRunRef.current === runId;
-  }
-
-  async function checkTokenStatuses(accountList: AccountSummary[], runId: number) {
-    await Promise.all(
-      accountList.map(async (account) => {
-        try {
-          const data = await api<any>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
-          if (!isCurrentTokenStatusRun(runId)) return;
-          setTokenStatus((current) => ({
-            ...current,
-            [account.name]: data.success && data.data ? data.data : { authenticated: false }
-          }));
-        } catch {
-          if (!isCurrentTokenStatusRun(runId)) return;
-          setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
-        }
-      })
-    );
-  }
-
-  async function pingApi(alias: string, apiName: string, runId: number) {
-    if (!isCurrentHealthRun(runId)) return;
-    setHealth((current) => ({
-      ...current,
-      [alias]: {
-        ...(current[alias] || {}),
-        [apiName]: { status: 'pending', summary: 'Checking...' }
-      }
-    }));
-    try {
-      const payload = await api<any>('/api/checks/ping', {
-        method: 'POST',
-        body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
-        allowFailure: true
-      });
-      const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
-      if (!isCurrentHealthRun(runId)) return;
-      setHealth((current) => ({
-        ...current,
-        [alias]: { ...(current[alias] || {}), [apiName]: value }
-      }));
-    } catch {
-      if (!isCurrentHealthRun(runId)) return;
-      setHealth((current) => ({
-        ...current,
-        [alias]: {
-          ...(current[alias] || {}),
-          [apiName]: { status: 'error', summary: 'Request failed', detail: 'The health check request did not complete.' }
-        }
-      }));
-    }
-  }
-
-  async function checkHealth(environmentList: EnvironmentSummary[], runId: number) {
-    await Promise.all(environmentList.flatMap((environment) => HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))));
-  }
+  }, [accounts, active, beginHealthRun, beginTokenStatusRun, checkHealth, checkTokenStatuses, environments, shellData]);
 
   function recheckHealth() {
     void checkHealth(environments, beginHealthRun());

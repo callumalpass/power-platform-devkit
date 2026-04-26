@@ -1,10 +1,10 @@
-import type { ToastFn } from '../ui-types.js';
+import type { ShellState, ToastFn } from '../ui-types.js';
 import { AddAccountForm } from './AccountsPanel.js';
 import { AddEnvironmentForm } from './EnvironmentsPanel.js';
 import { LoginProgress, useAuthSession } from './login.js';
 
 export function OnboardingFlow(props: {
-  shellData: any;
+  shellData: ShellState | null;
   globalEnvironment: string;
   selectedApis: Record<string, boolean>;
   setSelectedApis: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;

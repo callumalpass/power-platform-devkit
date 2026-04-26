@@ -56,7 +56,8 @@ test('setup server routes authorized API calls through the shared app API', asyn
     headers: { 'x-pp-setup-token': running.token }
   });
   assert.equal(response.status, 200);
-  const body = (await response.json()) as any;
+  const body = (await response.json()) as { success?: boolean; data?: { kind?: string } };
   assert.equal(body.success, true);
+  assert.ok(body.data);
   assert.equal(body.data.kind, 'pp-setup');
 });

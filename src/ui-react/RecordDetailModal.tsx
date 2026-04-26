@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from './utils.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, readRecord } from './utils.js';
 import { CopyButton } from './CopyButton.js';
-import type { ToastFn } from './ui-types.js';
+import type { ApiEnvelope, ApiExecuteResponse, ToastFn } from './ui-types.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,7 +27,9 @@ export function formatCellValue(value: unknown) {
   return { display: str, isNull: false, isGuid: GUID_RE.test(str), isObject: false } as const;
 }
 
-export function getLookupInfo(row: any, column: string) {
+type RecordRequestPayload = ApiEnvelope<ApiExecuteResponse<Record<string, unknown>> | Record<string, unknown>>;
+
+export function getLookupInfo(row: Record<string, unknown>, column: string) {
   if (!LOOKUP_RE.test(column)) return null;
   return {
     targetEntity: row[`${column}@Microsoft.Dynamics.CRM.lookuplogicalname`] as string | undefined,
@@ -95,38 +97,43 @@ export function RecordDetailModal(props: {
 
   useEffect(() => {
     setStack([initial]);
-  }, [initial.entity, initial.entitySetName, initial.id]);
+  }, [initial]);
 
-  function fetchRecord(target: RecordDetailTarget) {
-    setLoading(true);
-    setError(null);
-    setRecord(null);
-    setEditing(false);
-    setEdits({});
-    api<any>('/api/request/execute', {
-      method: 'POST',
-      body: JSON.stringify({
-        environment,
-        api: 'dv',
-        method: 'GET',
-        path: `/${target.entitySetName}(${target.id})`,
-        headers: { Prefer: 'odata.include-annotations="*"' }
+  const fetchRecord = useCallback(
+    (target: RecordDetailTarget) => {
+      setLoading(true);
+      setError(null);
+      setRecord(null);
+      setEditing(false);
+      setEdits({});
+      api<RecordRequestPayload>('/api/request/execute', {
+        method: 'POST',
+        body: JSON.stringify({
+          environment,
+          api: 'dv',
+          method: 'GET',
+          path: `/${target.entitySetName}(${target.id})`,
+          headers: { Prefer: 'odata.include-annotations="*"' }
+        })
       })
-    })
-      .then((payload) => {
-        setRecord(payload.data?.response || payload.data);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }
+        .then((payload) => {
+          const dataRecord = readRecord(payload.data);
+          const response = dataRecord && 'response' in dataRecord ? dataRecord.response : payload.data;
+          setRecord(readRecord(response) ?? {});
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    },
+    [environment]
+  );
 
   useEffect(() => {
     fetchRecord(current);
-  }, [environment, current.entitySetName, current.id]);
+  }, [current, fetchRecord]);
 
   function navigateToLookup(targetEntity: string, id: string) {
     const esn = entityMap?.get(targetEntity);
@@ -159,7 +166,7 @@ export function RecordDetailModal(props: {
     }
     setSaving(true);
     try {
-      await api<any>('/api/request/execute', {
+      await api('/api/request/execute', {
         method: 'POST',
         body: JSON.stringify({
           environment,

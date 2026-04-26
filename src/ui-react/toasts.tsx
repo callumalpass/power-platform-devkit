@@ -34,9 +34,10 @@ export function useToasts() {
   }
 
   useEffect(() => {
+    const timers = timersRef.current;
     return () => {
-      for (const timer of timersRef.current.values()) window.clearTimeout(timer);
-      timersRef.current.clear();
+      for (const timer of timers.values()) window.clearTimeout(timer);
+      timers.clear();
     };
   }, []);
 

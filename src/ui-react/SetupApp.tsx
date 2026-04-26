@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './utils.js';
 import { SetupTab } from './SetupTab.js';
 import { EnvironmentPickerModal } from './EnvironmentPickerModal.js';
@@ -34,27 +34,30 @@ export function SetupApp() {
     localStorage.setItem('pp-theme', theme);
   }, [theme]);
 
-  async function refreshState(silent = false) {
-    setStateLoading(true);
-    try {
-      const payload = await api<ApiEnvelope<ShellState>>('/api/state');
-      setShellData(payload.data);
-      const environments = payload.data.environments.map((item) => item.alias);
-      setGlobalEnvironment((current) => {
-        if (current && environments.includes(current)) return current;
-        return environments[0] || '';
-      });
-      if (!silent) pushToast('State refreshed');
-    } catch (error) {
-      pushToast(error instanceof Error ? error.message : String(error), true);
-    } finally {
-      setStateLoading(false);
-    }
-  }
+  const refreshState = useCallback(
+    async (silent = false) => {
+      setStateLoading(true);
+      try {
+        const payload = await api<ApiEnvelope<ShellState>>('/api/state');
+        setShellData(payload.data);
+        const environments = payload.data.environments.map((item) => item.alias);
+        setGlobalEnvironment((current) => {
+          if (current && environments.includes(current)) return current;
+          return environments[0] || '';
+        });
+        if (!silent) pushToast('State refreshed');
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : String(error), true);
+      } finally {
+        setStateLoading(false);
+      }
+    },
+    [pushToast]
+  );
 
   useEffect(() => {
     void refreshState(true);
-  }, []);
+  }, [refreshState]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
