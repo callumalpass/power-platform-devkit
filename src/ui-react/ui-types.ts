@@ -45,6 +45,7 @@ export type ShellState = {
   configDir: string;
   configPath: string;
   msalCacheDir: string;
+  credentialStore?: string;
   allowInteractiveAuth: boolean;
   accounts: AccountSummary[];
   environments: EnvironmentSummary[];

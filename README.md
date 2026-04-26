@@ -119,7 +119,7 @@ pp dv /accounts --env dev
 | `pp update [--check]`                   | Check GitHub releases for a newer version          |
 | `pp completion [zsh\|bash\|powershell]` | Print shell completion script                      |
 
-All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location and `--no-interactive-auth` to disable browser-based auth prompts.
+All commands accept `--help` for usage details. Most commands accept `--config-dir DIR` to override the config location, `--credential-store auto|os|file` to choose where interactive auth caches are kept, and `--no-interactive-auth` to disable browser-based auth prompts.
 
 `pp update` checks the latest GitHub Release and prints the appropriate download instructions for your current install path.
 
@@ -132,6 +132,8 @@ The `pp auth login` command supports multiple authentication methods:
 - `--client-secret` -- Service principal auth (`--tenant-id`, `--client-id`, `--client-secret-env` required)
 - `--env-token` -- Read a token from an environment variable (`--env-var` required)
 - `--static-token` -- Use a fixed token string (`--token` required)
+
+Interactive `user` and `device-code` accounts store their MSAL token cache in the OS credential store when available. `--credential-store auto` is the default: macOS uses Keychain, Windows uses DPAPI-protected storage, Linux uses Secret Service when available, and headless/CI environments fall back to the existing `0600` file cache. Use `--credential-store os` to require OS-backed storage or `--credential-store file` for deterministic local test/config directories.
 
 ### API shortcuts
 

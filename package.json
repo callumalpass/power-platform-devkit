@@ -1,6 +1,6 @@
 {
   "name": "pp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "CLI, setup manager, MCP server, and desktop app for working with Microsoft Power Platform.",
   "type": "module",
   "license": "MIT",
@@ -147,6 +147,7 @@
     "prettier": "^3.8.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "tar": "^7.5.13",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.59.0"

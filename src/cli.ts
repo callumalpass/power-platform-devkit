@@ -93,7 +93,7 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
         return 0;
       }
       await startPpMcpServer({
-        configDir: readFlag(rest, '--config-dir'),
+        ...readConfigOptions(rest),
         allowInteractiveAuth: hasFlag(rest, '--allow-interactive-auth')
       });
       return 0;
@@ -973,7 +973,7 @@ function printAuthLoginHelp(): void {
       'Create or update an account and run the appropriate login flow.',
       '',
       'Usage:',
-      '  pp auth login <account> [--browser|--device-code|--client-secret|--env-token|--static-token] [--description TEXT] [--tenant-id TENANT] [--client-id CLIENT] [--login-hint USER] [--prompt select_account|login|consent|none] [--device-code-fallback] [--client-secret-env ENV_VAR] [--env-var ENV_VAR] [--token TOKEN] [--force-prompt] [--no-interactive-auth]'
+      '  pp auth login <account> [--browser|--device-code|--client-secret|--env-token|--static-token] [--description TEXT] [--tenant-id TENANT] [--client-id CLIENT] [--login-hint USER] [--prompt select_account|login|consent|none] [--device-code-fallback] [--client-secret-env ENV_VAR] [--env-var ENV_VAR] [--token TOKEN] [--force-prompt] [--credential-store auto|os|file] [--no-interactive-auth]'
     ].join('\n') + '\n'
   );
 }

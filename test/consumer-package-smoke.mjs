@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import * as tar from 'tar';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const packageJson = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
@@ -35,7 +36,6 @@ assert.equal(
 );
 assert.ok(packed.unpackedSize < 3_500_000, `packed package is unexpectedly large: ${packed.unpackedSize}`);
 
-const tar = await loadNpmTar();
 await tar.x({ file: join(packDir, packed.filename), cwd: consumerNodeModules });
 await rename(join(consumerNodeModules, 'package'), join(consumerNodeModules, 'pp'));
 await linkDependencies(Object.keys(packageJson.dependencies ?? {}));
@@ -228,13 +228,6 @@ async function linkDependencies(names) {
     await mkdir(dirname(target), { recursive: true });
     await symlink(source, target, process.platform === 'win32' ? 'junction' : 'dir');
   }
-}
-
-async function loadNpmTar() {
-  const tarPath = join(dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'node_modules', 'tar', 'index.js');
-  if (!existsSync(tarPath)) throw new Error(`Could not find npm tar library at ${tarPath}`);
-  const module = await import(pathToFileURL(tarPath).href);
-  return module.default ?? module;
 }
 
 async function captureOutput(fn) {

@@ -119,7 +119,10 @@ export class PpClient {
   }
 
   private get configOptions(): ConfigStoreOptions {
-    return this.options.configDir ? { configDir: this.options.configDir } : {};
+    return {
+      ...(this.options.configDir ? { configDir: this.options.configDir } : {}),
+      ...(this.options.credentialStore ? { credentialStore: this.options.credentialStore } : {})
+    };
   }
 
   private loginOptions(overrides?: PublicClientLoginOptions): PublicClientLoginOptions {

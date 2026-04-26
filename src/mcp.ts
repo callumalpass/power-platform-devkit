@@ -9,8 +9,7 @@ import { VERSION } from './version.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
-export interface PpMcpServerOptions {
-  configDir?: string;
+export interface PpMcpServerOptions extends ConfigStoreOptions {
   allowInteractiveAuth?: boolean;
   toolNameStyle?: 'dotted' | 'underscore';
 }
@@ -387,7 +386,11 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
 }
 
 function config(configDir: string | undefined, defaults: PpMcpServerOptions): ConfigStoreOptions {
-  return configDir ? { configDir } : defaults.configDir ? { configDir: defaults.configDir } : {};
+  const resolvedConfigDir = configDir ?? defaults.configDir;
+  return {
+    ...(resolvedConfigDir ? { configDir: resolvedConfigDir } : {}),
+    ...(defaults.credentialStore ? { credentialStore: defaults.credentialStore } : {})
+  };
 }
 
 function toolName(name: string, options: PpMcpServerOptions): string {

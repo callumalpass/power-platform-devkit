@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { summarizeAccount } from './auth.js';
 import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
-import { getConfigDir, getConfigPath, getEnvironment, getMsalCacheDir, saveAccount, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
+import { getConfigDir, getConfigPath, getCredentialStoreMode, getEnvironment, getMsalCacheDir, saveAccount, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { FlowLanguageService } from './flow-language-service.js';
@@ -201,6 +201,7 @@ async function loadDesktopState(context: DesktopApiContext): Promise<OperationRe
     configDir: getConfigDir(context.configOptions),
     configPath: getConfigPath(context.configOptions),
     msalCacheDir: getMsalCacheDir(context.configOptions),
+    credentialStore: getCredentialStoreMode(context.configOptions),
     allowInteractiveAuth: context.allowInteractiveAuth,
     accounts: accounts.data ?? [],
     environments: environments.data ?? [],

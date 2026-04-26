@@ -20,6 +20,8 @@ export {
   getCanvasSessionsPath,
   getConfigDir,
   getConfigPath,
+  getCredentialStoreDir,
+  getCredentialStoreMode,
   getDefaultConfigDir,
   getEnvironment,
   getAccount,
@@ -37,6 +39,7 @@ export {
   type AccountKind,
   type BrowserProfile,
   type ConfigStoreOptions,
+  type CredentialStoreMode,
   type Environment,
   type EnvironmentAccessMode,
   type GlobalConfig

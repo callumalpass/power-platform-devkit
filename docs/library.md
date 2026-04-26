@@ -75,7 +75,7 @@ await executeApiRequest({ environmentAlias: 'dev', api: 'dv', path: '/WhoAmI', r
 
 ## Auth
 
-The library uses the same config and MSAL cache as the CLI. To isolate a tool or test suite, pass `configDir`.
+The library uses the same config and MSAL cache as the CLI. Interactive account caches use OS credential storage by default with file fallback; to isolate a tool or test suite, pass `configDir`, and use `credentialStore: 'file'` when you need fully local deterministic cache files.
 
 ```ts
 import { loginAccount } from 'pp/accounts';

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, win32 as win32Path } from 'node:path';
-import { ensureEnvironmentAccess, getDefaultConfigDir, loadConfig, removeAccount, saveAccount, saveEnvironment, type Account, type Environment } from '../src/config.js';
+import { ensureEnvironmentAccess, getCredentialStoreMode, getDefaultConfigDir, loadConfig, removeAccount, saveAccount, saveEnvironment, type Account, type Environment } from '../src/config.js';
 
 function tempConfigDir() {
   return mkdtemp(join(tmpdir(), 'pp-config-test-'));
@@ -85,4 +85,20 @@ test('getDefaultConfigDir follows platform conventions', () => {
   assert.equal(getDefaultConfigDir('linux', { XDG_CONFIG_HOME: '/xdg' }, '/home/alex'), '/xdg/pp');
   assert.equal(getDefaultConfigDir('linux', {}, '/home/alex'), '/home/alex/.config/pp');
   assert.equal(getDefaultConfigDir('win32', { APPDATA: 'C:\\Users\\Alex\\AppData\\Roaming' }, 'C:\\Users\\Alex'), win32Path.resolve('C:\\Users\\Alex\\AppData\\Roaming\\pp'));
+});
+
+test('getCredentialStoreMode accepts explicit and environment modes', () => {
+  const previous = process.env.PP_CREDENTIAL_STORE;
+  try {
+    delete process.env.PP_CREDENTIAL_STORE;
+    assert.equal(getCredentialStoreMode(), 'auto');
+    assert.equal(getCredentialStoreMode({ credentialStore: 'file' }), 'file');
+    process.env.PP_CREDENTIAL_STORE = 'os';
+    assert.equal(getCredentialStoreMode(), 'os');
+    process.env.PP_CREDENTIAL_STORE = 'invalid';
+    assert.equal(getCredentialStoreMode(), 'auto');
+  } finally {
+    if (previous === undefined) delete process.env.PP_CREDENTIAL_STORE;
+    else process.env.PP_CREDENTIAL_STORE = previous;
+  }
 });

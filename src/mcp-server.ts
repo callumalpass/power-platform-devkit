@@ -29,6 +29,7 @@ async function main(): Promise<void> {
 function readOptions(args: string[]): PpMcpServerOptions {
   return {
     configDir: readFlag(args, '--config-dir'),
+    credentialStore: readCredentialStore(args),
     allowInteractiveAuth: args.includes('--allow-interactive-auth'),
     toolNameStyle: readToolNameStyle(args)
   };
@@ -44,6 +45,13 @@ function readToolNameStyle(args: string[]): PpMcpServerOptions['toolNameStyle'] 
   if (value === undefined) return undefined;
   if (value === 'dotted' || value === 'underscore') return value;
   throw new Error(`Invalid --tool-name-style value "${value}". Expected "dotted" or "underscore".`);
+}
+
+function readCredentialStore(args: string[]): PpMcpServerOptions['credentialStore'] {
+  const value = readFlag(args, '--credential-store');
+  if (value === undefined) return undefined;
+  if (value === 'auto' || value === 'os' || value === 'file') return value;
+  throw new Error(`Invalid --credential-store value "${value}". Expected "auto", "os", or "file".`);
 }
 
 void main().catch((error) => {

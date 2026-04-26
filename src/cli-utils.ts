@@ -49,8 +49,11 @@ export function positionalArgs(args: string[]): string[] {
 
 export function readConfigOptions(args: string[]): ConfigStoreOptions {
   const configDir = readFlag(args, '--config-dir');
-  if (!configDir) return {};
-  return { configDir: isAbsolute(configDir) ? configDir : resolvePath(process.cwd(), configDir) };
+  const credentialStore = readFlag(args, '--credential-store');
+  return {
+    ...(configDir ? { configDir: isAbsolute(configDir) ? configDir : resolvePath(process.cwd(), configDir) } : {}),
+    ...(credentialStore === 'auto' || credentialStore === 'os' || credentialStore === 'file' ? { credentialStore } : {})
+  };
 }
 
 export function readOutputFormat(args: string[], fallback: OutputFormat = 'json'): OutputFormat {

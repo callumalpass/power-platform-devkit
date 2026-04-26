@@ -75,6 +75,9 @@ importers:
       react-dom:
         specifier: ^19.2.5
         version: 19.2.5(react@19.2.5)
+      tar:
+        specifier: ^7.5.13
+        version: 7.5.13
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(jiti@2.6.1)(typescript@5.9.3)(yaml@2.8.3)

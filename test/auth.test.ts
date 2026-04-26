@@ -9,9 +9,10 @@ import { getMsalCacheDir, loadConfig, saveAccount } from '../src/config.js';
 
 test('AuthService.removeAccount deletes MSAL caches for account cache keys', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-remove-'));
-  const msalDir = getMsalCacheDir({ configDir });
+  const configOptions = { configDir, credentialStore: 'file' as const };
+  const msalDir = getMsalCacheDir(configOptions);
   await mkdir(msalDir, { recursive: true });
-  await saveAccount({ name: 'work', kind: 'user', tokenCacheKey: 'work-cache' }, { configDir });
+  await saveAccount({ name: 'work', kind: 'user', tokenCacheKey: 'work-cache' }, configOptions);
 
   const removedCachePaths = [join(msalDir, 'work.json'), join(msalDir, 'work-canvas-authoring.json'), join(msalDir, 'work-cache.json'), join(msalDir, 'work-cache-canvas-authoring.json')];
   const retainedCachePath = join(msalDir, 'other.json');
@@ -19,7 +20,7 @@ test('AuthService.removeAccount deletes MSAL caches for account cache keys', asy
     await writeFile(path, '{}\n', 'utf8');
   }
 
-  const removed = await new AuthService({ configDir }).removeAccount('work');
+  const removed = await new AuthService(configOptions).removeAccount('work');
   assert.equal(removed.success, true);
   assert.equal(removed.data, true);
 
@@ -28,7 +29,7 @@ test('AuthService.removeAccount deletes MSAL caches for account cache keys', asy
   }
   assert.equal(existsSync(retainedCachePath), true);
 
-  const config = await loadConfig({ configDir });
+  const config = await loadConfig(configOptions);
   assert.equal(config.success, true);
   assert.equal(config.data?.accounts.work, undefined);
 });

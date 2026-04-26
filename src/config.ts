@@ -6,6 +6,7 @@ import YAML from 'yaml';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 
 export type AccountKind = 'user' | 'device-code' | 'client-secret' | 'environment-token' | 'static-token';
+export type CredentialStoreMode = 'auto' | 'os' | 'file';
 export type EnvironmentAccessMode = 'read-write' | 'read-only';
 
 export interface AccountBase {
@@ -124,6 +125,7 @@ const globalConfigSchema = z.object({
 
 export interface ConfigStoreOptions {
   configDir?: string;
+  credentialStore?: CredentialStoreMode;
 }
 
 const configWriteQueue = new Map<string, Promise<void>>();
@@ -148,6 +150,15 @@ export function getConfigPath(options: ConfigStoreOptions = {}): string {
 
 export function getMsalCacheDir(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'msal');
+}
+
+export function getCredentialStoreDir(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'credentials');
+}
+
+export function getCredentialStoreMode(options: ConfigStoreOptions = {}): CredentialStoreMode {
+  const value = options.credentialStore ?? process.env.PP_CREDENTIAL_STORE;
+  return value === 'os' || value === 'file' || value === 'auto' ? value : 'auto';
 }
 
 export function getSavedRequestsPath(options: ConfigStoreOptions = {}): string {
