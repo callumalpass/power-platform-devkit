@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { formatUpdateNotice, getCachedUpdateCheck, shouldRunBackgroundUpdateCheck, type UpdateCheckResult } from '../src/update.js';
+import { checkForUpdate, formatUpdateNotice, getCachedUpdateCheck, shouldRunBackgroundUpdateCheck, type UpdateCheckResult } from '../src/update.js';
 
 function tempConfigDir() {
   return mkdtemp(join(tmpdir(), 'pp-update-test-'));
@@ -38,6 +38,41 @@ test('getCachedUpdateCheck ignores stale release data', async () => {
   const result = await getCachedUpdateCheck(configDir);
 
   assert.equal(result, null);
+});
+
+test('checkForUpdate aborts slow response bodies', async () => {
+  const originalFetch = globalThis.fetch;
+  const keepAlive = setTimeout(() => undefined, 1000);
+  let aborted = false;
+
+  globalThis.fetch = (async (_input, init) => {
+    const signal = init?.signal;
+    assert.ok(signal instanceof AbortSignal);
+
+    return {
+      ok: true,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              aborted = true;
+              reject(new Error('aborted'));
+            },
+            { once: true }
+          );
+        })
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const result = await checkForUpdate({ timeoutMs: 20 });
+    assert.equal(result, null);
+    assert.equal(aborted, true);
+  } finally {
+    clearTimeout(keepAlive);
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('shouldRunBackgroundUpdateCheck only runs for notice-eligible commands without a fresh cache', () => {

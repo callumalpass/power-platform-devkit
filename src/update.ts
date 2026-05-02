@@ -28,6 +28,10 @@ export interface UpdateCheckResult {
   checkedAt: string;
 }
 
+export interface UpdateCheckOptions {
+  timeoutMs?: number;
+}
+
 export function getInstallKind(): 'sea' | 'npm' {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -54,15 +58,15 @@ function cachePath(configDir?: string): string {
   return join(configDir ?? getDefaultConfigDir(), 'update-check.json');
 }
 
-export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
+export async function checkForUpdate(options: UpdateCheckOptions = {}): Promise<UpdateCheckResult | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? FETCH_TIMEOUT_MS);
+  timeout.unref?.();
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const response = await fetch(GITHUB_RELEASES_URL, {
       signal: controller.signal,
       headers: { 'user-agent': `pp/${VERSION}` }
     });
-    clearTimeout(timeout);
     if (!response.ok) return null;
     const data = (await response.json()) as { tag_name?: string; html_url?: string };
     const latest = (data.tag_name ?? '').replace(/^v/, '');
@@ -76,6 +80,8 @@ export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

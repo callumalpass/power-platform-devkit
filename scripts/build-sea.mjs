@@ -20,7 +20,7 @@ const outputDir = path.join(repoRoot, 'release', `${platform}-${arch}`);
 const sentinelFuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 
 const entries = [
-  { name: 'pp', main: path.join(repoRoot, 'src', 'index.ts'), plugins: [setupRendererEmbedPlugin()] },
+  { name: 'pp', main: path.join(repoRoot, 'src', 'cli.ts'), plugins: [setupRendererEmbedPlugin()] },
   { name: 'pp-mcp', main: path.join(distDir, 'mcp-server.cjs') },
   {
     name: 'pp-setup',

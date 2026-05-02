@@ -1,6 +1,6 @@
 {
   "name": "pp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "CLI, setup manager, MCP server, and desktop app for working with Microsoft Power Platform.",
   "type": "module",
   "license": "MIT",
