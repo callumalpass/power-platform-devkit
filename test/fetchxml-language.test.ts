@@ -47,10 +47,7 @@ test('FetchXML nested attribute completions follow the entity named in the XML',
   const cursor = source.indexOf('" /></entity>');
   const result = analyzeFetchXml(source, cursor, {
     rootEntityName: 'account',
-    entities: [
-      entity('account', ['accountid', 'name']),
-      entity('contact', ['contactid', 'fullname'])
-    ]
+    entities: [entity('account', ['accountid', 'name']), entity('contact', ['contactid', 'fullname'])]
   });
 
   assert.equal(result.context.entityScope, 'contact');
@@ -62,10 +59,7 @@ test('FetchXML nested attribute completions read single-quoted entity names', ()
   const cursor = source.indexOf("' /></entity>");
   const result = analyzeFetchXml(source, cursor, {
     rootEntityName: 'account',
-    entities: [
-      entity('account', ['accountid', 'name']),
-      entity('contact', ['contactid', 'fullname'])
-    ]
+    entities: [entity('account', ['accountid', 'name']), entity('contact', ['contactid', 'fullname'])]
   });
 
   assert.equal(result.context.entityScope, 'contact');
@@ -77,10 +71,7 @@ test('FetchXML nested attribute completions read unquoted entity names while edi
   const cursor = source.indexOf('" /></entity>');
   const result = analyzeFetchXml(source, cursor, {
     rootEntityName: 'account',
-    entities: [
-      entity('account', ['accountid', 'name']),
-      entity('contact', ['contactid', 'fullname'])
-    ]
+    entities: [entity('account', ['accountid', 'name']), entity('contact', ['contactid', 'fullname'])]
   });
 
   assert.equal(result.context.entityScope, 'contact');
@@ -116,10 +107,7 @@ test('FetchXML condition attribute and operator completions follow the entity na
 test('FetchXML link-entity completions use linked and parent entity scopes correctly', () => {
   const metadata = {
     rootEntityName: 'account',
-    entities: [
-      entity('account', ['accountid', 'name', 'primarycontactid']),
-      entity('contact', ['contactid', 'fullname', 'parentcustomerid'])
-    ]
+    entities: [entity('account', ['accountid', 'name', 'primarycontactid']), entity('contact', ['contactid', 'fullname', 'parentcustomerid'])]
   };
 
   const fromSource = '<fetch><entity name="account"><link-entity name="contact" from="" to="primarycontactid"></link-entity></entity></fetch>';

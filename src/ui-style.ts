@@ -971,7 +971,7 @@ export const UI_CSS = String.raw`
       .console-rail-list { max-height: 320px; }
     }
 
-    .console-bar { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 16px; transition: border-color 200ms; font-family: var(--mono); }
+    .console-bar { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: visible; margin-bottom: 16px; transition: border-color 200ms; font-family: var(--mono); }
     .console-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .console-bar select { border: none; border-right: 1px solid var(--border); border-radius: 0; padding: 10px 30px 10px 14px; font-weight: 600; font-size: 0.8125rem; background-color: var(--bg); min-width: 0; background-position: right 10px center; }
     .console-bar select:hover:not(:disabled) { background-color: color-mix(in srgb, var(--ink) 5%, var(--bg)); border-color: transparent; }

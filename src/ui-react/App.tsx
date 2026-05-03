@@ -264,7 +264,8 @@ export function App() {
       if (!select.length) {
         setDataverse((current) => ({
           ...current,
-          recordPreview: current.currentEntity?.logicalName === detail.logicalName ? { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] } : current.recordPreview
+          recordPreview:
+            current.currentEntity?.logicalName === detail.logicalName ? { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] } : current.recordPreview
         }));
         return;
       }
