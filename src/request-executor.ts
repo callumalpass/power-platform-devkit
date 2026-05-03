@@ -401,8 +401,9 @@ function normalizeDataversePath(path: string): string {
 
 function normalizeFlowPath(path: string, makerEnvironmentId: string): string {
   const trimmed = path.startsWith('/') ? path : `/${path}`;
-  if (trimmed.startsWith('/providers/Microsoft.ProcessSimple/')) return trimmed;
-  return `/providers/Microsoft.ProcessSimple/environments/${encodeURIComponent(makerEnvironmentId)}${trimmed}`;
+  const withEnvironment = trimmed.replaceAll('{environment}', encodeURIComponent(makerEnvironmentId));
+  if (withEnvironment.startsWith('/providers/Microsoft.ProcessSimple/')) return withEnvironment;
+  return `/providers/Microsoft.ProcessSimple/environments/${encodeURIComponent(makerEnvironmentId)}${withEnvironment}`;
 }
 
 function normalizeGraphPath(path: string): string {

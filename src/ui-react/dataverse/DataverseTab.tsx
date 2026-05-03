@@ -6,11 +6,13 @@ import { CopyButton } from '../CopyButton.js';
 import { RecordDetailModal, useRecordDetail } from '../RecordDetailModal.js';
 import { EmptyState } from '../EmptyState.js';
 import { Icon } from '../Icon.js';
+import { Select } from '../Select.js';
 import { api } from '../utils.js';
 import { CreateRecordModal } from './CreateRecordModal.js';
 import type { ApiEnvelope, DataverseAttribute, DataverseEntityDetail, DataverseEntitySummary, DataverseRecordPage, DataverseState, DiagnosticItem } from '../ui-types.js';
 
 type DataverseSubTab = 'dv-explorer' | 'dv-query' | 'dv-fetchxml' | 'dv-relationships';
+const RECORD_PREVIEW_TOP_OPTIONS = [5, 10, 25, 50, 100, 250] as const;
 
 export function DataverseTab(props: {
   dataverse: DataverseState;
@@ -19,13 +21,14 @@ export function DataverseTab(props: {
   environmentUrl: string;
   loadEntities: () => Promise<void>;
   loadEntityDetail: (logicalName: string) => Promise<void>;
-  loadRecordPreview: () => Promise<void>;
+  loadRecordPreview: (detail?: DataverseEntityDetail | null, selectedColumns?: string[], top?: number) => Promise<void>;
   toast: (message: string, isError?: boolean) => void;
 }) {
   const { dataverse, setDataverse, environment, environmentUrl, loadEntities, loadEntityDetail, loadRecordPreview, toast } = props;
   const [showCreateRecord, setShowCreateRecord] = useState(false);
   const [createdRecordId, setCreatedRecordId] = useState<string | null>(null);
   const detail = useRecordDetail();
+  const selectedEntityLabel = dataverse.currentEntity ? dataverse.currentEntity.displayName || dataverse.currentEntity.logicalName : '';
   const [queryForm, setQueryForm] = useState({
     entitySetName: '',
     top: '10',
@@ -137,6 +140,13 @@ export function DataverseTab(props: {
     }
   }
 
+  function updateRecordPreviewTop(value: string) {
+    const top = Number(value);
+    if (!Number.isFinite(top)) return;
+    setDataverse((current) => ({ ...current, recordPreviewTop: top }));
+    if (dataverse.currentEntityDetail) void loadRecordPreview(dataverse.currentEntityDetail, dataverse.selectedColumns, top);
+  }
+
   return (
     <>
       <div className="entity-sidebar">
@@ -223,8 +233,29 @@ export function DataverseTab(props: {
         </div>
 
         <div className={`dv-subpanel ${dataverse.dvSubTab === 'dv-explorer' ? 'active' : ''}`} id="dv-subpanel-dv-explorer">
-          <div className="panel" id="entity-detail-panel">
-            {!dataverse.currentEntityDetail ? (
+          <div className="panel" id="entity-detail-panel" aria-busy={dataverse.currentEntityLoading || undefined}>
+            {dataverse.currentEntityLoading && !dataverse.currentEntityDetail ? (
+              <div id="entity-detail-loading" className="workspace-loading" role="status" aria-live="polite">
+                <span className="spinner" aria-hidden="true" />
+                <span>Loading {selectedEntityLabel || 'entity'} metadata...</span>
+              </div>
+            ) : dataverse.currentEntityLoadError && !dataverse.currentEntityDetail ? (
+              <div className="error-banner" role="alert">
+                <div className="error-banner-header">
+                  <Icon name="circle" size={14} />
+                  <span>Could not load {selectedEntityLabel || 'entity'} metadata</span>
+                </div>
+                <div className="error-banner-body">{dataverse.currentEntityLoadError}</div>
+                <div className="error-banner-actions">
+                  {dataverse.currentEntity?.logicalName ? (
+                    <button className="btn btn-sm btn-secondary" type="button" onClick={() => void loadEntityDetail(dataverse.currentEntity!.logicalName)}>
+                      Retry
+                    </button>
+                  ) : null}
+                  <CopyButton value={dataverse.currentEntityLoadError} label="Copy error" title="Copy error message" toast={toast} />
+                </div>
+              </div>
+            ) : !dataverse.currentEntityDetail ? (
               <div id="entity-detail-empty">
                 <EmptyState icon={<Icon name="circle-dashed" size={18} />} title="Entity Detail" description="Select an entity from the list to inspect its metadata and preview records." />
               </div>
@@ -369,7 +400,16 @@ export function DataverseTab(props: {
                 <div className={`sub-panel ${dataverse.explorerSubTab === 'records' ? 'active' : ''}`} id="subpanel-records">
                   <div className="toolbar-row">
                     <h2>Record Preview</h2>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ width: 112 }}>
+                        <Select
+                          id="record-preview-top"
+                          aria-label="Preview row count"
+                          value={String(dataverse.recordPreviewTop)}
+                          onChange={updateRecordPreviewTop}
+                          options={RECORD_PREVIEW_TOP_OPTIONS.map((top) => ({ value: String(top), label: `${top} rows` }))}
+                        />
+                      </div>
                       <button className="btn btn-primary btn-sm" type="button" onClick={() => setShowCreateRecord(true)}>
                         Add Record
                       </button>
@@ -392,6 +432,7 @@ export function DataverseTab(props: {
                     entityMap={entityMap}
                     highlightedRecordId={createdRecordId ?? undefined}
                     placeholder="Select an entity to preview records."
+                    expandTable
                     toast={toast}
                   />
                   {showCreateRecord && dataverse.currentEntityDetail && (
@@ -547,6 +588,7 @@ export function DataverseTab(props: {
               environmentUrl={environmentUrl}
               entityMap={entityMap}
               placeholder="Run a query to see the response."
+              expandTable
               toast={toast}
             />
           </div>

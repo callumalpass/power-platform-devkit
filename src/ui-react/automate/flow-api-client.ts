@@ -2,14 +2,14 @@ import { api } from '../utils.js';
 import type { ApiEnvelope, ApiExecuteResponse } from '../ui-types.js';
 
 export const DATAVERSE_FLOW_FALLBACK_PATH =
-  '/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200';
+  '/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata,ismanaged,iscustomizable&$orderby=modifiedon desc&$top=200';
 export const CONNECTIONS_FOR_ENVIRONMENT_PATH = '/connections?$filter=environment%20eq%20%27{environment}%27';
 
 export async function executeFlowUiRequest<T>(
   environment: string,
   apiKind: string,
   path: string,
-  allowInteractive = true,
+  allowInteractive = false,
   method = 'GET',
   body?: unknown,
   query?: Record<string, string>,

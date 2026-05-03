@@ -24,6 +24,7 @@ export type DesktopApiMockRule = {
   path: string;
   bodyApi?: string;
   bodyPath?: string;
+  delayMs?: number;
   status?: number;
   body: unknown;
 };
@@ -270,6 +271,7 @@ export async function installDesktopApiMocks(page: Page, rules: DesktopApiMockRu
           return true;
         });
         if (!match) return undefined;
+        if (match.delayMs) await new Promise((resolve) => window.setTimeout(resolve, match.delayMs));
         return { status: match.status ?? 200, body: match.body };
       }
     };

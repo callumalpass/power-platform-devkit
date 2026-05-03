@@ -20,6 +20,9 @@ import type { ApiEnvelope, ApiExecuteResponse, DataverseEntityDetail, DataverseE
 
 type ConsoleSeed = { api: string; method: string; path: string };
 
+const DEFAULT_RECORD_PREVIEW_TOP = 5;
+const MAX_RECORD_PREVIEW_TOP = 500;
+
 export function App() {
   const appMode = getAppMode();
   const appName = getAppDisplayName();
@@ -42,6 +45,7 @@ export function App() {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const envPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const envPickerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const dataverseEntityDetailRequestSeqRef = useRef(0);
   const confirm = useConfirm();
 
   const [consoleSeed, setConsoleSeed] = useState<ConsoleSeed | null>(null);
@@ -52,8 +56,11 @@ export function App() {
     entitiesLoadError: '',
     currentEntity: null,
     currentEntityDetail: null,
+    currentEntityLoading: false,
+    currentEntityLoadError: '',
     currentEntityDiagnostics: [],
     selectedColumns: [] as string[],
+    recordPreviewTop: DEFAULT_RECORD_PREVIEW_TOP,
     recordPreview: null,
     entityFilter: '',
     attrFilter: '',
@@ -156,6 +163,7 @@ export function App() {
   }, [availableTabs]);
 
   useEffect(() => {
+    dataverseEntityDetailRequestSeqRef.current += 1;
     setDataverse((current) => ({
       ...current,
       entitiesEnvironment: '',
@@ -163,7 +171,11 @@ export function App() {
       entitiesLoadError: '',
       currentEntity: null,
       currentEntityDetail: null,
+      currentEntityLoading: false,
+      currentEntityLoadError: '',
+      currentEntityDiagnostics: [],
       selectedColumns: [],
+      attrFilter: '',
       recordPreview: null,
       queryPreview: 'Preview a Dataverse path here.',
       queryResult: null
@@ -201,6 +213,8 @@ export function App() {
           entitiesLoadError: summarizeError(payload),
           currentEntity: null,
           currentEntityDetail: null,
+          currentEntityLoading: false,
+          currentEntityLoadError: '',
           currentEntityDiagnostics: payload.diagnostics || [],
           selectedColumns: [],
           recordPreview: null
@@ -215,6 +229,8 @@ export function App() {
         entitiesLoadError: '',
         currentEntity: null,
         currentEntityDetail: null,
+        currentEntityLoading: false,
+        currentEntityLoadError: '',
         currentEntityDiagnostics: [],
         selectedColumns: [],
         recordPreview: null
@@ -228,6 +244,8 @@ export function App() {
         entitiesLoadError: error instanceof Error ? error.message : String(error),
         currentEntity: null,
         currentEntityDetail: null,
+        currentEntityLoading: false,
+        currentEntityLoadError: '',
         currentEntityDiagnostics: [],
         selectedColumns: [],
         recordPreview: null
@@ -236,30 +254,31 @@ export function App() {
   }, [globalEnvironment, pushToast]);
 
   const loadRecordPreview = useCallback(
-    async (detail = dataverse.currentEntityDetail, selectedColumns = dataverse.selectedColumns) => {
+    async (detail = dataverse.currentEntityDetail, selectedColumns = dataverse.selectedColumns, top = dataverse.recordPreviewTop) => {
       if (!detail?.entitySetName || !globalEnvironment) {
         setDataverse((current) => ({ ...current, recordPreview: null }));
         return;
       }
       const select = selectedColumns.length ? selectedColumns : getDefaultSelectedColumns(detail, 3);
+      const previewTop = normalizeRecordPreviewTop(top);
       if (!select.length) {
         setDataverse((current) => ({
           ...current,
-          recordPreview: { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] }
+          recordPreview: current.currentEntity?.logicalName === detail.logicalName ? { entitySetName: detail.entitySetName, logicalName: detail.logicalName, path: '', records: [] } : current.recordPreview
         }));
         return;
       }
       try {
         const payload = await api<ApiEnvelope<DataverseRecordPage>>('/api/dv/query/execute', {
           method: 'POST',
-          body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: 5 })
+          body: JSON.stringify({ environmentAlias: globalEnvironment, entitySetName: detail.entitySetName, select, top: previewTop })
         });
-        setDataverse((current) => ({ ...current, recordPreview: payload.data }));
+        setDataverse((current) => (current.currentEntity?.logicalName === detail.logicalName ? { ...current, recordPreview: payload.data } : current));
       } catch (error) {
         pushToast(error instanceof Error ? error.message : String(error), true);
       }
     },
-    [dataverse.currentEntityDetail, dataverse.selectedColumns, globalEnvironment, pushToast]
+    [dataverse.currentEntityDetail, dataverse.recordPreviewTop, dataverse.selectedColumns, globalEnvironment, pushToast]
   );
 
   const loadEntityDetail = useCallback(
@@ -268,22 +287,53 @@ export function App() {
         pushToast('Select an environment first.', true);
         return;
       }
+      const requestSeq = dataverseEntityDetailRequestSeqRef.current + 1;
+      dataverseEntityDetailRequestSeqRef.current = requestSeq;
+      const currentEntity = dataverse.entities.find((item) => item.logicalName === logicalName) || { logicalName };
+      setDataverse((current) => ({
+        ...current,
+        currentEntity,
+        currentEntityDetail: current.currentEntityDetail?.logicalName === logicalName ? current.currentEntityDetail : null,
+        currentEntityLoading: true,
+        currentEntityLoadError: '',
+        currentEntityDiagnostics: [],
+        selectedColumns: [],
+        recordPreview: null,
+        attrFilter: ''
+      }));
       try {
         const payload = await api<ApiEnvelope<DataverseEntityDetail>>(`/api/dv/entities/${encodeURIComponent(logicalName)}?environment=${encodeURIComponent(globalEnvironment)}`);
+        if (dataverseEntityDetailRequestSeqRef.current !== requestSeq) return;
         const detail = payload.data;
-        const currentEntity = dataverse.entities.find((item) => item.logicalName === logicalName) || { logicalName };
         const selectedColumns = getDefaultSelectedColumns(detail, 0);
         setDataverse((current) => ({
           ...current,
           currentEntity,
           currentEntityDetail: detail,
+          currentEntityLoading: false,
+          currentEntityLoadError: '',
           currentEntityDiagnostics: payload.diagnostics || [],
           selectedColumns,
           attrFilter: ''
         }));
         void loadRecordPreview(detail, selectedColumns);
       } catch (error) {
-        pushToast(error instanceof Error ? error.message : String(error), true);
+        if (dataverseEntityDetailRequestSeqRef.current !== requestSeq) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setDataverse((current) =>
+          current.currentEntity?.logicalName === logicalName
+            ? {
+                ...current,
+                currentEntityLoading: false,
+                currentEntityLoadError: message,
+                currentEntityDetail: null,
+                currentEntityDiagnostics: [],
+                selectedColumns: [],
+                recordPreview: null
+              }
+            : current
+        );
+        pushToast(message, true);
       }
     },
     [dataverse.entities, globalEnvironment, loadRecordPreview, pushToast]
@@ -560,4 +610,9 @@ export function App() {
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </>
   );
+}
+
+function normalizeRecordPreviewTop(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_RECORD_PREVIEW_TOP;
+  return Math.min(MAX_RECORD_PREVIEW_TOP, Math.max(1, Math.trunc(value)));
 }

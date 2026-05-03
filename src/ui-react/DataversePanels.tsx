@@ -100,6 +100,7 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
   const [rawXml, setRawXml] = useState('');
   const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
   const [result, setResult] = useState<DataverseRecordPage | null>(null);
+  const diagnosticsRequestSeqRef = useRef(0);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [vimEnabled, setVimEnabled] = useMonacoVimPreference();
@@ -138,9 +139,12 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
 
   useEffect(() => {
     if (!rawXml.trim()) {
+      diagnosticsRequestSeqRef.current += 1;
       setDiagnostics([]);
       return;
     }
+    const requestSeq = diagnosticsRequestSeqRef.current + 1;
+    diagnosticsRequestSeqRef.current = requestSeq;
     const timer = window.setTimeout(() => {
       setIsAnalyzing(true);
       void analyzeFetchXml({
@@ -148,9 +152,15 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
         source: rawXml,
         rootEntityName: entityName || undefined
       })
-        .then((analysis) => setDiagnostics(analysis.diagnostics))
-        .catch(() => setDiagnostics([]))
-        .finally(() => setIsAnalyzing(false));
+        .then((analysis) => {
+          if (diagnosticsRequestSeqRef.current === requestSeq) setDiagnostics(analysis.diagnostics);
+        })
+        .catch(() => {
+          if (diagnosticsRequestSeqRef.current === requestSeq) setDiagnostics([]);
+        })
+        .finally(() => {
+          if (diagnosticsRequestSeqRef.current === requestSeq) setIsAnalyzing(false);
+        });
     }, 250);
     return () => window.clearTimeout(timer);
   }, [entityName, environment, rawXml]);
@@ -422,6 +432,7 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
           environmentUrl={environmentUrl}
           entityMap={entityMap}
           placeholder="Run FetchXML to see the response."
+          expandTable
           toast={toast}
         />
       </div>
@@ -538,6 +549,7 @@ function FetchXmlCodeEditor(props: {
       try {
         const cursor = activeModel.getOffsetAt(activeEditor.getPosition() || new monaco.Position(1, 1));
         const analysis = await analyze(source, cursor);
+        if (activeModel.getValue() !== source) return;
         onAnalysisRef.current(analysis);
         updateFetchXmlEditorMarkers(activeModel, analysis.diagnostics);
       } catch {
@@ -565,9 +577,12 @@ function FetchXmlCodeEditor(props: {
           return { suggestions: [] };
         }
         try {
-          const analysis = await analyze(completionModel.getValue(), cursor);
-          onAnalysisRef.current(analysis);
-          updateFetchXmlEditorMarkers(completionModel, analysis.diagnostics);
+          const source = completionModel.getValue();
+          const analysis = await analyze(source, cursor);
+          if (completionModel.getValue() === source) {
+            onAnalysisRef.current(analysis);
+            updateFetchXmlEditorMarkers(completionModel, analysis.diagnostics);
+          }
           return {
             suggestions: analysis.completions.map((item) => toMonacoFetchXmlCompletion(item, completionModel, analysis, position))
           };
@@ -584,6 +599,8 @@ function FetchXmlCodeEditor(props: {
       const next = model.getValue();
       valueRef.current = next;
       onChangeRef.current(next);
+      monaco.editor.setModelMarkers(model, 'pp-fetchxml', []);
+      onAnalysisRef.current({ diagnostics: [], completions: [] });
       scheduleAnalysis();
     });
 

@@ -20,6 +20,7 @@ export type ResultViewProps = {
   entityMap?: Map<string, string>;
   highlightedRecordId?: string;
   placeholder?: string;
+  expandTable?: boolean;
   toast?: ToastFn;
 };
 
@@ -140,9 +141,10 @@ function ResultTable(props: {
   totalCount?: number;
   highlightedRecordId?: string;
   onRecordClick?: (entity: string, id: string) => void;
+  expand?: boolean;
   toast?: ToastFn;
 }) {
-  const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, toast } = props;
+  const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, expand, toast } = props;
   const [sort, setSort] = useState<SortState>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
@@ -190,7 +192,7 @@ function ResultTable(props: {
 
   return (
     <div className="rt-wrap">
-      <div className="rt-scroll">
+      <div className={`rt-scroll ${expand ? 'rt-scroll-expanded' : ''}`}>
         <table className="rt-table" style={{ tableLayout: Object.keys(colWidths).length ? 'fixed' : undefined }}>
           <thead>
             <tr>
@@ -253,7 +255,7 @@ function ResultTable(props: {
 // ---------------------------------------------------------------------------
 
 export function ResultView(props: ResultViewProps) {
-  const { result, entityLogicalName, entitySetName, primaryIdAttribute, environment, environmentUrl, entityMap, highlightedRecordId, placeholder, toast } = props;
+  const { result, entityLogicalName, entitySetName, primaryIdAttribute, environment, environmentUrl, entityMap, highlightedRecordId, placeholder, expandTable, toast } = props;
   const [view, setView] = useState<'table' | 'json'>('table');
   const [detailTarget, setDetailTarget] = useState<RecordDetailTarget | null>(null);
 
@@ -298,6 +300,7 @@ export function ResultView(props: ResultViewProps) {
           totalCount={totalCount}
           highlightedRecordId={highlightedRecordId}
           onRecordClick={environment ? handleRecordClick : undefined}
+          expand={expandTable}
           toast={toast}
         />
       ) : (

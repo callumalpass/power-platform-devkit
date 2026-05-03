@@ -19,9 +19,13 @@ export { flowValidationFromError, type FlowValidationItem, type FlowValidationKi
 
 const connectionNameCache = new Map<string, Promise<Map<string, string>>>();
 
+export type FlowListMode = 'mine' | 'admin' | 'dataverse';
+export type FlowListSource = 'flow' | 'flow-admin' | 'dv';
+
 export type FlowListResult = {
   flows: FlowItem[];
-  source: 'flow' | 'dv';
+  source: FlowListSource;
+  mode: FlowListMode;
   usedFallback: boolean;
 };
 
@@ -39,19 +43,41 @@ export type FlowLifecycleRequest = {
   responseType?: 'json' | 'text' | 'void';
 };
 
-export async function loadFlowList(environment: string): Promise<FlowListResult> {
+const ADMIN_FLOW_LIST_PATH = '/providers/Microsoft.ProcessSimple/scopes/admin/environments/{environment}/v2/flows';
+const DATAVERSE_FLOW_SELECT = 'name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata,ismanaged,iscustomizable';
+
+export async function loadFlowList(environment: string, mode: FlowListMode = 'mine'): Promise<FlowListResult> {
+  if (mode === 'admin') {
+    const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', ADMIN_FLOW_LIST_PATH, false);
+    return {
+      flows: (result.response?.value || []).map(normalizeFlowApiItem),
+      source: 'flow-admin',
+      mode,
+      usedFallback: false
+    };
+  }
+  if (mode === 'dataverse') {
+    const result = await executeRequest<{ value?: unknown[] }>(environment, 'dv', DATAVERSE_FLOW_FALLBACK_PATH, false);
+    return {
+      flows: (result.response?.value || []).map(normalizeDataverseFlow),
+      source: 'dv',
+      mode,
+      usedFallback: false
+    };
+  }
   try {
     const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', '/flows', false);
     return {
       flows: (result.response?.value || []).map(normalizeFlowApiItem),
       source: 'flow',
+      mode,
       usedFallback: false
     };
   } catch (error) {
     const result = await executeRequest<{ value?: unknown[] }>(environment, 'dv', DATAVERSE_FLOW_FALLBACK_PATH, false);
     const flows = (result.response?.value || []).map(normalizeDataverseFlow);
     if (!flows.length) throw error;
-    return { flows, source: 'dv', usedFallback: true };
+    return { flows, source: 'dv', mode, usedFallback: true };
   }
 }
 
@@ -63,6 +89,17 @@ export async function loadFlowDefinitionDocument(environment: string, flow: Flow
       detail = result.response || flow;
     } catch {
       detail = flow;
+    }
+    if (!flowHasDefinition(detail)) {
+      const workflowId = flowWorkflowId(flow);
+      if (workflowId) {
+        try {
+          const result = await executeRequest<unknown>(environment, 'dv', `/workflows(${encodeURIComponent(workflowId)})?$select=${DATAVERSE_FLOW_SELECT}`, false);
+          detail = result.response ? normalizeDataverseFlow(result.response) : detail;
+        } catch {
+          /* keep Flow API detail */
+        }
+      }
     }
   }
   return buildFlowDocument(detail as FlowItem);
@@ -250,7 +287,7 @@ function isSignedTriggerUrl(value: string): boolean {
 }
 
 export async function loadFlowApiOperations(environment: string, search: string, kind: FlowApiOperationKind = 'action'): Promise<FlowApiOperation[]> {
-  const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', '/operations?api-version=2016-11-01&$top=250', true, 'POST', buildFlowOperationSearchBody(search, kind));
+  const result = await executeRequest<{ value?: unknown[] }>(environment, 'flow', '/operations?api-version=2016-11-01&$top=250', false, 'POST', buildFlowOperationSearchBody(search, kind));
   return (result.response?.value || []).map(normalizeFlowApiOperation);
 }
 
@@ -264,7 +301,7 @@ export function buildFlowOperationSearchBody(search: string, kind: FlowApiOperat
 }
 
 export async function loadFlowApiConnections(environment: string): Promise<FlowEnvironmentConnection[]> {
-  const result = await executeRequest<{ value?: unknown[] }>(environment, 'powerapps', CONNECTIONS_FOR_ENVIRONMENT_PATH, true);
+  const result = await executeRequest<{ value?: unknown[] }>(environment, 'powerapps', CONNECTIONS_FOR_ENVIRONMENT_PATH, false);
   const connections = (result.response?.value || []).map(normalizeFlowApiConnection).filter((connection) => connection.name);
   try {
     const refs = await loadSolutionConnectionReferences(environment);
@@ -322,7 +359,7 @@ export async function loadFlowApiOperationSchema(environment: string, apiRef: st
       environment,
       'powerautomate',
       `/apis/${encodeURIComponent(apiName)}/apiOperations/${encodeURIComponent(operationId)}?$expand=properties%2FinputsDefinition,properties%2FresponsesDefinition,properties%2Fconnector`,
-      true
+      false
     );
     const detailSchema = normalizeFlowApiOperationSchema(apiName, apiRef, operationId, detail.response);
     if (detailSchema?.fields.length) return detailSchema;
@@ -330,13 +367,13 @@ export async function loadFlowApiOperationSchema(environment: string, apiRef: st
     // The environment-scoped designer API is richer, but not present for every tenant/connector.
   }
   try {
-    const detail = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}/apiOperations/${encodeURIComponent(operationId)}`, true);
+    const detail = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}/apiOperations/${encodeURIComponent(operationId)}`, false);
     const detailSchema = normalizeFlowApiOperationSchema(apiName, apiRef, operationId, detail.response);
     if (detailSchema?.fields.length) return detailSchema;
   } catch {
     // Some environments do not expose the per-operation route. The full connector swagger is the durable fallback.
   }
-  const result = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}`, true);
+  const result = await executeRequest<Record<string, unknown>>(environment, 'flow', `/apis/${encodeURIComponent(apiName)}`, false);
   return normalizeFlowApiOperationSchema(apiName, apiRef, operationId, result.response);
 }
 
@@ -359,7 +396,7 @@ export async function loadFlowDynamicEnum(
     environment,
     'powerautomate',
     `/apis/${encodeURIComponent(resolvedApiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listEnum`,
-    true,
+    false,
     'POST',
     {
       parameters: dynamicInvocationParameters(dynamicInvocationDefinition, parameters),
@@ -388,7 +425,7 @@ export async function loadFlowDynamicProperties(
     environment,
     'powerautomate',
     `/apis/${encodeURIComponent(resolvedApiName)}/connections/${encodeURIComponent(resolvedConnectionName)}/listDynamicProperties`,
-    true,
+    false,
     'POST',
     {
       parameters: dynamicInvocationParameters(dynamicInvocationDefinition, parameters),
@@ -545,6 +582,10 @@ export function buildFlowDocument(detail: FlowItem | Record<string, unknown>) {
   return JSON.stringify(detail || {}, null, 2);
 }
 
+function flowHasDefinition(detail: unknown): boolean {
+  return Boolean(prop(detail, 'properties.definition') || prop(detail, 'definition'));
+}
+
 function normalizeFlowApiItem(value: unknown): FlowItem {
   const flow = value as FlowItem;
   const workflowEntityId = firstString(prop(flow, 'properties.workflowEntityId'), flow.workflowid);
@@ -585,6 +626,7 @@ export function normalizeDataverseFlow(value: unknown): FlowItem {
       state: flow.statecode === 1 ? 'Started' : flow.statecode === 0 ? 'Stopped' : 'Unknown',
       createdTime: typeof flow.createdon === 'string' ? flow.createdon : undefined,
       lastModifiedTime: typeof flow.modifiedon === 'string' ? flow.modifiedon : undefined,
+      isManaged: flow.ismanaged === true,
       creator: { objectId: String(flow._ownerid_value || '') },
       workflowEntityId: String(flow.workflowid || ''),
       workflowUniqueId: typeof flow.workflowidunique === 'string' ? flow.workflowidunique : undefined,

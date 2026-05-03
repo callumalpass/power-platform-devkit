@@ -20,6 +20,8 @@ import {
   loadRunDetail,
   setFlowActivationState,
   saveFlowDefinition,
+  type FlowListMode,
+  type FlowListSource,
   type FlowValidationKind,
   type FlowValidationResult
 } from './automate-data.js';
@@ -76,8 +78,10 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
   const confirm = useConfirm();
   const apiPreview = useApiPreview();
   const [flows, setFlows] = useState<FlowItem[]>([]);
-  const [flowSource, setFlowSource] = useState<'flow' | 'dv'>('flow');
+  const [flowListMode, setFlowListMode] = useState<FlowListMode>('mine');
+  const [flowSource, setFlowSource] = useState<FlowListSource>('flow');
   const [loadedEnvironment, setLoadedEnvironment] = useState('');
+  const [loadedFlowListMode, setLoadedFlowListMode] = useState<FlowListMode>('mine');
   const [filter, setFilter] = useState('');
   const [currentFlow, setCurrentFlow] = useState<FlowItem | null>(null);
   const [flowSubTab, setFlowSubTab] = useState<AutomateSubTab>('definition');
@@ -114,6 +118,7 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
   const [loadingActions, setLoadingActions] = useState(false);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const selectedFlowRequestRef = useRef(0);
   const selectedRunRef = useRef<string | undefined>(undefined);
   const selectedActionRequestRef = useRef(0);
   const callbackUrlRequestRef = useRef(0);
@@ -142,7 +147,7 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
     });
   }, [filter, flows]);
 
-  const isFlowEditable = currentFlow?.source === 'flow';
+  const isFlowEditable = currentFlow?.source === 'flow' && prop(currentFlow, 'properties.isManaged') !== true;
   const isFlowDirty = Boolean(currentFlow && flowDocument !== loadedFlowDocument);
   const flowBusy = flowOperation !== null;
   const connectionModel = useMemo(() => buildFlowConnectionModel(flowDocument, environmentConnections), [environmentConnections, flowDocument]);
@@ -164,19 +169,21 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
   const loadFlows = useCallback(
     async (force: boolean) => {
       if (!environment) return;
-      if (!force && environment === loadedEnvironment && flows.length) return;
+      if (!force && environment === loadedEnvironment && flowListMode === loadedFlowListMode) return;
       setLoadingFlows(true);
       try {
-        const result = await loadFlowList(environment);
+        const result = await loadFlowList(environment, flowListMode);
         setFlows(result.flows);
         setFlowSource(result.source);
         if (result.usedFallback) toast('Flow list API failed for this environment. Showing Dataverse workflow fallback instead.', true);
         setLoadedEnvironment(environment);
+        setLoadedFlowListMode(flowListMode);
         setCurrentFlow(null);
         resetFlowCallbackUrl(null);
         setRuns([]);
         setCurrentRun(null);
         setActions([]);
+        selectedFlowRequestRef.current += 1;
         selectedActionRequestRef.current += 1;
         setCurrentAction(null);
         setActionDetail(null);
@@ -191,11 +198,12 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
         toast(error instanceof Error ? error.message : String(error), true);
         setFlows([]);
         setLoadedEnvironment(environment);
+        setLoadedFlowListMode(flowListMode);
       } finally {
         setLoadingFlows(false);
       }
     },
-    [environment, flows.length, loadedEnvironment, toast]
+    [environment, flowListMode, loadedEnvironment, loadedFlowListMode, toast]
   );
 
   const loadEnvironmentConnections = useCallback(
@@ -220,9 +228,9 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
 
   useEffect(() => {
     if (!active || !environment) return;
-    if (environment === loadedEnvironment && flows.length) return;
+    if (environment === loadedEnvironment && flowListMode === loadedFlowListMode) return;
     void loadFlows(false);
-  }, [active, environment, flows.length, loadFlows, loadedEnvironment]);
+  }, [active, environment, flowListMode, loadFlows, loadedEnvironment, loadedFlowListMode]);
 
   useEffect(() => {
     if (!active || !environment) return;
@@ -231,6 +239,8 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
   }, [active, connectionsEnvironment, environment, loadEnvironmentConnections]);
 
   async function selectFlow(flow: FlowItem) {
+    const requestId = selectedFlowRequestRef.current + 1;
+    selectedFlowRequestRef.current = requestId;
     setCurrentFlow(flow);
     resetFlowCallbackUrl(flow);
     setCurrentRun(null);
@@ -244,14 +254,18 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
     setLoadingRuns(true);
     try {
       const [document, loadedRuns] = await Promise.all([loadFlowDefinitionDocument(environment, flow), loadFlowRuns(environment, flow).catch(() => [])]);
-      setFlowDocument(document);
-      setLoadedFlowDocument(document);
-      setFlowValidation(null);
-      setRuns(loadedRuns);
+      if (selectedFlowRequestRef.current === requestId) {
+        setFlowDocument(document);
+        setLoadedFlowDocument(document);
+        setFlowValidation(null);
+        setRuns(loadedRuns);
+      }
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
+      if (selectedFlowRequestRef.current === requestId) {
+        toast(error instanceof Error ? error.message : String(error), true);
+      }
     } finally {
-      setLoadingRuns(false);
+      if (selectedFlowRequestRef.current === requestId) setLoadingRuns(false);
     }
   }
 
@@ -586,18 +600,22 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
         const expectedState = action === 'start' ? 'Started' : 'Stopped';
         for (let attempt = 0; attempt < 10; attempt++) {
           await new Promise((r) => setTimeout(r, 800));
-          const refreshed = await loadFlowList(environment);
+          const refreshed = await loadFlowList(environment, flowListMode);
           const updated = refreshed.flows.find((flow: FlowItem) => sameFlowIdentity(flow, currentFlow));
           if (updated && String(prop(updated, 'properties.state')) === expectedState) {
             setFlows(refreshed.flows);
+            setFlowSource(refreshed.source);
+            setLoadedFlowListMode(refreshed.mode);
             setCurrentFlow(updated);
             return;
           }
         }
       }
       // Fallback / run action: just refresh once
-      const refreshed = await loadFlowList(environment);
+      const refreshed = await loadFlowList(environment, flowListMode);
       setFlows(refreshed.flows);
+      setFlowSource(refreshed.source);
+      setLoadedFlowListMode(refreshed.mode);
       const updated = refreshed.flows.find((flow: FlowItem) => sameFlowIdentity(flow, currentFlow));
       if (updated) setCurrentFlow(updated);
     } catch (err) {
@@ -720,11 +738,13 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
       <FlowInventorySidebar
         flows={flows}
         filteredFlows={filteredFlows}
+        flowListMode={flowListMode}
         flowSource={flowSource}
         filter={filter}
         loading={loadingFlows}
         currentFlow={currentFlow}
         onFilterChange={setFilter}
+        onFlowListModeChange={setFlowListMode}
         onRefresh={() => {
           void loadFlows(true);
         }}
@@ -735,6 +755,7 @@ export function AutomateTab(props: { active: boolean; environment: string; openC
       <div className="detail-area">
         <FlowDetailHeader
           currentFlow={currentFlow}
+          flowSource={flowSource}
           callbackUrl={flowCallbackUrl.flowId === flowIdentifier(currentFlow) ? flowCallbackUrl : EMPTY_CALLBACK_URL_STATE}
           toast={toast}
           onOpenRecord={detail.open}

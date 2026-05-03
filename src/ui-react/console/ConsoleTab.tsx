@@ -172,8 +172,8 @@ function sanitizeSavedEntry(value: unknown): ConsoleSavedEntry | undefined {
   return entry;
 }
 
-function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
-  if (preview && typeof preview.text === 'string') {
+function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview, options: { fullResponse?: boolean } = {}): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
+  if (!options.fullResponse && preview && typeof preview.text === 'string') {
     const notice = preview.truncated
       ? `\n\n/* pp preview: response truncated to ${formatBytes(preview.shownBytes)} of ${formatBytes(preview.originalBytes)}. Use “Load full response” to fetch everything, or narrow with $top/$select. */`
       : '';
@@ -186,7 +186,13 @@ function consoleResponseText(value: unknown, preview?: ConsoleResponsePreview): 
   }
 
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  if (options.fullResponse) return fullConsoleText(text || '');
   return truncateConsoleText(text || '');
+}
+
+function fullConsoleText(text: string): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
+  const bytes = new TextEncoder().encode(text).byteLength;
+  return { body: text, bytes, truncated: false, originalBytes: bytes };
 }
 
 function truncateConsoleText(text: string): { body: string; bytes: number; truncated: boolean; originalBytes: number } {
@@ -258,6 +264,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
   const [sending, setSending] = useState(false);
   const [loadingFull, setLoadingFull] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const requestSeqRef = useRef(0);
   const [response, setResponse] = useState<ConsoleResponseState>({
     status: '',
     elapsed: '',
@@ -354,16 +361,22 @@ export function ConsoleTab(props: ConsoleTabProps) {
 
   useEffect(() => {
     return () => {
+      requestSeqRef.current += 1;
       abortRef.current?.abort();
+      abortRef.current = null;
     };
   }, []);
 
   const cancelInFlight = useCallback(() => {
     if (abortRef.current) {
+      requestSeqRef.current += 1;
       abortRef.current.abort();
       abortRef.current = null;
+      setSending(false);
+      setLoadingFull(false);
+      toast('Request cancelled.', false);
     }
-  }, []);
+  }, [toast]);
 
   const sendRequest = useCallback(
     async (options?: { fullResponse?: boolean }) => {
@@ -388,6 +401,8 @@ export function ConsoleTab(props: ConsoleTabProps) {
       const parsedBody = body.trim() && supportsBody ? JSON.parse(body) : undefined;
       const controller = new AbortController();
       abortRef.current = controller;
+      const requestSeq = requestSeqRef.current + 1;
+      requestSeqRef.current = requestSeq;
       const fullResponse = !!options?.fullResponse;
       setSending(true);
       if (fullResponse) setLoadingFull(true);
@@ -407,11 +422,11 @@ export function ConsoleTab(props: ConsoleTabProps) {
           }),
           signal: controller.signal
         });
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || requestSeqRef.current !== requestSeq) return;
         const elapsed = Math.round(performance.now() - started);
         const bodyValue = payload.data.response;
         const preview = payload.data.responsePreview;
-        const bodyResult = consoleResponseText(bodyValue, preview);
+        const bodyResult = consoleResponseText(bodyValue, preview, { fullResponse });
         const status = payload.data.status || 200;
         setResponse({
           status,
@@ -431,10 +446,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
         if (bodyResult.truncated) toast(`Large response previewed: ${formatBytes(bodyResult.bytes)} shown of ${formatBytes(bodyResult.originalBytes)}.`, false);
         else if (fullResponse) toast(`Loaded full response (${formatBytes(bodyResult.bytes)}).`, false);
       } catch (error) {
-        if (controller.signal.aborted) {
-          toast('Request cancelled.', false);
-          return;
-        }
+        if (controller.signal.aborted || requestSeqRef.current !== requestSeq) return;
         const elapsed = Math.round(performance.now() - started);
         const message = error instanceof Error ? error.message : String(error);
         setResponse({
@@ -448,9 +460,11 @@ export function ConsoleTab(props: ConsoleTabProps) {
         setHistory((current) => [{ api: apiKey, method, path, status: 0, elapsed }, ...current].slice(0, 50));
         toast(message, true);
       } finally {
-        if (abortRef.current === controller) abortRef.current = null;
-        setSending(false);
-        setLoadingFull(false);
+        if (requestSeqRef.current === requestSeq) {
+          if (abortRef.current === controller) abortRef.current = null;
+          setSending(false);
+          setLoadingFull(false);
+        }
       }
     },
     [apiKey, body, bodyParseError, cancelInFlight, environment, headerRows, method, path, queryRows, sending, supportsBody, toast]

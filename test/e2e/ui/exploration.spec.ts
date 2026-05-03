@@ -77,6 +77,52 @@ test('console sends structured request payloads and drops body fields for GET', 
   await audit.assertClean();
 });
 
+test('console load full response clears local truncation', async ({ page, audit }) => {
+  const largeResponse = `${'x'.repeat(540 * 1024)}FULL_RESPONSE_TAIL`;
+  await installDesktopApiMocks(page, [{ method: 'POST', path: '/api/request/execute', bodyPath: '/large-response', body: requestResult(largeResponse) }]);
+
+  await openApp(page);
+  await visitTab(page, 'Console');
+  await page.locator('#console-path').fill('/large-response');
+  await page.locator('#console-send').click();
+
+  const warning = page.locator('.console-response-warning');
+  await expect(warning).toBeVisible();
+  await warning.getByRole('button', { name: 'Load full response' }).click();
+  await expect(warning).toHaveCount(0);
+
+  const calls = (await getDesktopApiCalls(page)).filter((request) => request.path === '/api/request/execute' && (request.body as { path?: string } | undefined)?.path === '/large-response');
+  expect(calls).toHaveLength(2);
+  expect(calls[0].body).toMatchObject({ maxResponseBytes: expect.any(Number) });
+  expect(calls[1].body).toMatchObject({ maxResponseBytes: 0 });
+
+  await audit.assertClean();
+});
+
+test('console cancel releases the send button and ignores late responses', async ({ page, audit }) => {
+  await installDesktopApiMocks(page, [
+    { method: 'POST', path: '/api/request/execute', bodyPath: '/slow-response', delayMs: 600, body: requestResult({ marker: 'slow-response' }) },
+    { method: 'POST', path: '/api/request/execute', bodyPath: '/fast-response', body: requestResult({ marker: 'fast-response' }) }
+  ]);
+
+  await openApp(page);
+  await visitTab(page, 'Console');
+  await page.locator('#console-path').fill('/slow-response');
+  await page.locator('#console-send').click();
+  await expect(page.locator('#console-send')).toHaveText('Cancel');
+  await page.locator('#console-send').click();
+  await expect(page.locator('#console-send')).toHaveText('Send');
+
+  await page.locator('#console-path').fill('/fast-response');
+  await page.locator('#console-send').click();
+  await expect(page.locator('.console-response-viewer')).toContainText('fast-response');
+  await page.waitForTimeout(750);
+  await expect(page.locator('.console-response-viewer')).toContainText('fast-response');
+  await expect(page.locator('.console-response-viewer')).not.toContainText('slow-response');
+
+  await audit.assertClean();
+});
+
 test('dataverse query result can toggle table and JSON without corrupting payloads', async ({ page, audit }) => {
   await installDesktopApiMocks(page, [
     {
@@ -104,6 +150,7 @@ test('dataverse query result can toggle table and JSON without corrupting payloa
   await expect(queryResultPanel.locator('pre.viewer')).toContainText('Playwright Probe');
   await queryResultPanel.getByRole('button', { name: 'Table', exact: true }).click();
   await expect(queryResultPanel.getByText('Playwright Probe')).toBeVisible();
+  await expect(queryResultPanel.locator('.rt-scroll')).toHaveClass(/rt-scroll-expanded/);
 
   const executeRequest = (await getDesktopApiCalls(page)).find((request) => request.path === '/api/dv/query/execute');
   expect(executeRequest?.body).toMatchObject({
@@ -124,6 +171,77 @@ test('relationship graph validation stays client-side until an entity is selecte
   await page.locator('#dv-subpanel-dv-relationships').getByRole('button', { name: 'Load Graph' }).click();
   await expect(page.locator('#toasts')).toContainText('Select an entity first');
   expect((await getDesktopApiCalls(page)).filter((request) => request.path.startsWith('/api/dv/entities/'))).toEqual([]);
+  await audit.assertClean();
+});
+
+test('dataverse entity selection is optimistic while metadata loads', async ({ page, audit }) => {
+  await installDesktopApiMocks(page, [
+    {
+      path: '/api/dv/entities?environment=dev&allowInteractive=false&softFail=true',
+      body: apiEnvelope([
+        {
+          logicalName: 'account',
+          displayName: 'Account',
+          entitySetName: 'accounts',
+          primaryIdAttribute: 'accountid',
+          primaryNameAttribute: 'name'
+        },
+        {
+          logicalName: 'contact',
+          displayName: 'Contact',
+          entitySetName: 'contacts',
+          primaryIdAttribute: 'contactid',
+          primaryNameAttribute: 'fullname'
+        }
+      ])
+    },
+    {
+      path: '/api/dv/entities/account?environment=dev',
+      delayMs: 600,
+      body: apiEnvelope({
+        logicalName: 'account',
+        displayName: 'Account',
+        entitySetName: 'accounts',
+        primaryIdAttribute: 'accountid',
+        primaryNameAttribute: 'name',
+        attributes: [
+          { logicalName: 'accountid', displayName: 'Account', attributeTypeName: 'UniqueidentifierType', isPrimaryId: true, isValidForRead: true },
+          { logicalName: 'name', displayName: 'Account Name', attributeTypeName: 'StringType', isPrimaryName: true, isValidForRead: true }
+        ]
+      })
+    },
+    {
+      method: 'POST',
+      path: '/api/dv/query/execute',
+      body: apiEnvelope({
+        path: '/api/data/v9.2/accounts?$select=accountid,name&$top=5',
+        entitySetName: 'accounts',
+        logicalName: 'account',
+        records: [{ accountid: '00000000-0000-0000-0000-000000000001', name: 'Playwright Probe' }]
+      })
+    }
+  ]);
+
+  await openApp(page);
+  await visitTab(page, 'Dataverse');
+
+  const account = page.locator('button.entity-item[data-entity="account"]');
+  await expect(account).toBeVisible();
+  await account.click();
+  await expect(account).toHaveClass(/active/);
+  await expect(page.locator('#entity-detail-loading')).toContainText('Loading Account metadata...');
+  await expect(page.locator('#entity-title')).toContainText('Account');
+
+  const detailCalls = (await getDesktopApiCalls(page)).filter((request) => request.path === '/api/dv/entities/account?environment=dev');
+  expect(detailCalls).toHaveLength(1);
+  await expect.poll(async () => (await getDesktopApiCalls(page)).filter((request) => request.path === '/api/dv/query/execute').length).toBe(1);
+
+  await page.locator('#entity-detail-panel').getByRole('button', { name: 'Records', exact: true }).click();
+  await expect(page.locator('#subpanel-records .rt-scroll')).toHaveClass(/rt-scroll-expanded/);
+  await chooseSelect(page, '#record-preview-top', '25 rows');
+  await expect.poll(async () => (await getDesktopApiCalls(page)).filter((request) => request.path === '/api/dv/query/execute').length).toBe(2);
+  const previewCalls = (await getDesktopApiCalls(page)).filter((request) => request.path === '/api/dv/query/execute');
+  expect(previewCalls.at(-1)?.body).toMatchObject({ top: 25 });
   await audit.assertClean();
 });
 
@@ -394,6 +512,11 @@ test('Automate flow, run, and action clicks load the expected detail paths', asy
   expect(flowPaths).toEqual(
     expect.arrayContaining(['/flows', '/flows/flow-probe', '/flows/flow-probe/runs?$top=20', '/flows/flow-probe/runs/run-probe/actions', '/flows/flow-probe/runs/run-probe/actions/Compose'])
   );
+  const passiveFlowCalls = (await getDesktopApiCalls(page))
+    .map((request) => request.body as { api?: string; path?: string; allowInteractive?: boolean; softFail?: boolean } | undefined)
+    .filter((body) => body?.api === 'flow' && body.path && flowPaths.includes(body.path));
+  const nonSilentPassiveFlowCalls = passiveFlowCalls.filter((body) => body?.allowInteractive !== false || body.softFail !== true);
+  expect(nonSilentPassiveFlowCalls).toEqual([]);
 
   await audit.assertClean();
 });

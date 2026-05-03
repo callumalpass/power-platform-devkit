@@ -25,6 +25,13 @@ test('buildRequest normalizes relative paths for each Power Platform API', () =>
       path: '/providers/Microsoft.ProcessSimple/environments/f3f934b0-7b79-e09e-b393-f0b21c05fcce/flows',
       authResource: 'https://service.flow.microsoft.com'
     },
+    {
+      api: 'flow',
+      input: '/providers/Microsoft.ProcessSimple/scopes/admin/environments/{environment}/v2/flows',
+      baseUrl: 'https://api.flow.microsoft.com',
+      path: '/providers/Microsoft.ProcessSimple/scopes/admin/environments/f3f934b0-7b79-e09e-b393-f0b21c05fcce/v2/flows',
+      authResource: 'https://service.flow.microsoft.com'
+    },
     { api: 'bap', input: '/environments', baseUrl: 'https://api.bap.microsoft.com', path: '/providers/Microsoft.BusinessAppPlatform/environments', authResource: 'https://service.powerapps.com' },
     {
       api: 'powerapps',

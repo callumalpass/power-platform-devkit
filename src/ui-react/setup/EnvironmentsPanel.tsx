@@ -348,7 +348,7 @@ export function AddEnvironmentForm(props: {
       <section className="drawer-section drawer-section-tight">
         <h3>Discover from account</h3>
         <p className="desc">Pick an account and pull its available environments from the Power Platform admin API.</p>
-        <div className="form-row">
+        <div className="form-row drawer-discovery-row">
           <div className="field">
             <span className="field-label">Account</span>
             <Select
@@ -364,7 +364,7 @@ export function AddEnvironmentForm(props: {
               }))}
             />
           </div>
-          <div className="field" style={{ alignSelf: 'end' }}>
+          <div className="field drawer-discovery-action">
             <button type="button" className="btn btn-secondary btn-sm" disabled={discovering || !selectedDiscoveryAccount} onClick={() => void handleDiscover()}>
               {discovering ? 'Discovering…' : 'Discover'}
             </button>

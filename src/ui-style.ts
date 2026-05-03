@@ -190,6 +190,12 @@ export const UI_CSS = String.raw`
     /* Inventory sidebar (shared by automate/apps/platform) */
     .inventory-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }
     .inventory-sidebar .panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .flow-list-mode { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 8px; background: var(--bg); }
+    .flow-list-mode-button { border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--muted); padding: 6px 8px; font-size: 0.6875rem; font-weight: 600; cursor: pointer; }
+    .flow-list-mode-button:last-child { border-right: 0; }
+    .flow-list-mode-button:hover:not(:disabled) { color: var(--ink); background: var(--surface); }
+    .flow-list-mode-button.active { color: var(--accent); background: var(--surface); }
+    .flow-list-mode-button:disabled { cursor: default; opacity: 0.7; }
 
     /* Detail area */
     .detail-area { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
@@ -255,19 +261,19 @@ export const UI_CSS = String.raw`
 
     /* Forms */
     form, .form-grid { display: grid; gap: 14px; }
-    .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-    .form-row.three { grid-template-columns: repeat(3, 1fr); }
-    .field { display: grid; gap: 6px; }
+    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .form-row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .field { display: grid; gap: 6px; min-width: 0; }
     .field-label { font-size: 0.625rem; font-weight: 500; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.14em; }
     input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 0.8125rem; background: var(--surface); color: var(--ink); transition: border-color 150ms, background-color 150ms; }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
     /* Custom Select component — drop-in replacement for native <select>.
        Closed trigger inherits input shape; open listbox uses app chrome. */
-    .pp-select { position: relative; display: inline-flex; width: 100%; }
+    .pp-select { position: relative; display: inline-flex; width: 100%; min-width: 0; }
     .pp-select-trigger {
       display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
-      width: 100%; padding: 8px 10px; padding-right: 28px;
+      width: 100%; min-width: 0; padding: 8px 10px; padding-right: 28px;
       border: 1px solid var(--border); border-radius: var(--radius-sm);
       background: var(--surface); color: var(--ink);
       font: inherit; font-size: 0.8125rem; text-align: left; cursor: pointer;
@@ -582,7 +588,7 @@ export const UI_CSS = String.raw`
     .flow-action-field-meta { color: var(--muted); font-family: var(--mono); font-size: 0.6875rem; }
     .flow-action-field-desc,
     .flow-action-edit-note { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
-    .flow-action-monaco-editor { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+    .flow-action-monaco-editor { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); text-transform: none; letter-spacing: 0; font-weight: 400; }
     .flow-action-monaco-editor:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
     .flow-action-monaco-editor.text { height: 34px; }
     .flow-action-monaco-editor.json { height: 96px; min-height: 86px; resize: vertical; max-height: 70vh; }
@@ -693,7 +699,7 @@ export const UI_CSS = String.raw`
     .card-item-info { min-width: 0; }
     .card-item-title { font-size: 0.8125rem; font-weight: 600; }
     .card-item-sub { font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
-    .badge { font-size: 0.625rem; font-weight: 500; padding: 2px 8px; border-radius: 0; background: transparent; color: var(--muted); border: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.1em; }
+    .badge { display: inline-flex; align-items: center; white-space: nowrap; line-height: 1.2; font-size: 0.625rem; font-weight: 500; padding: 2px 8px; border-radius: 0; background: transparent; color: var(--muted); border: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.1em; }
     .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     /* Attribute picker */
     .attr-picker { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); min-height: 40px; max-height: 160px; overflow-y: auto; }
@@ -1140,6 +1146,7 @@ export const UI_CSS = String.raw`
     /* React result table */
     .rt-wrap { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
     .rt-scroll { overflow: auto; max-height: 500px; }
+    .rt-scroll-expanded { max-height: none; }
     .rt-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
     .rt-th { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); z-index: 1; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; transition: color 100ms; position: relative; overflow: hidden; text-overflow: ellipsis; }
     .rt-th:hover { color: var(--ink); }
@@ -1392,6 +1399,9 @@ export const UI_CSS = String.raw`
 
     .drawer-form { display: flex; flex-direction: column; gap: 12px; }
     .drawer-form .btn-group { margin-top: 6px; }
+    .drawer-discovery-row { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+    .drawer-discovery-action { align-self: end; }
+    .drawer-discovery-action .btn { white-space: nowrap; }
 
     .drawer-section { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
     .drawer-section-tight { padding-top: 0; border-top: none; }

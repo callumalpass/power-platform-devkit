@@ -1,4 +1,4 @@
-import { flowIdentifier, flowRuntimeId, flowWorkflowId } from '../automate-data.js';
+import { flowIdentifier, flowRuntimeId, flowWorkflowId, type FlowListSource } from '../automate-data.js';
 import { CopyButton } from '../CopyButton.js';
 import { formatDate, prop } from '../utils.js';
 import type { FlowItem, ToastFn } from '../ui-types.js';
@@ -14,6 +14,7 @@ type FlowCallbackUrlState = {
 
 export function FlowDetailHeader(props: {
   currentFlow: FlowItem | null;
+  flowSource: FlowListSource;
   callbackUrl: FlowCallbackUrlState;
   toast: ToastFn;
   onOpenRecord: (logicalName: string, entitySetName: string, id: string) => void;
@@ -22,7 +23,7 @@ export function FlowDetailHeader(props: {
   onRevealCallbackUrl: () => void;
   onHideCallbackUrl: () => void;
 }) {
-  const { currentFlow, callbackUrl, toast, onOpenRecord, onOpenConsole, onFlowAction, onRevealCallbackUrl, onHideCallbackUrl } = props;
+  const { currentFlow, flowSource, callbackUrl, toast, onOpenRecord, onOpenConsole, onFlowAction, onRevealCallbackUrl, onHideCallbackUrl } = props;
   const workflowId = flowWorkflowId(currentFlow);
   const runtimeId = flowRuntimeId(currentFlow);
   const displayId = flowIdentifier(currentFlow);
@@ -108,7 +109,7 @@ export function FlowDetailHeader(props: {
             </div>
             <div className="metric">
               <div className="metric-label">Source</div>
-              <div className="metric-value">{currentFlow.source === 'dv' ? 'Dataverse fallback' : 'Flow API'}</div>
+              <div className="metric-value">{flowSourceLabel(currentFlow, flowSource)}</div>
             </div>
           </div>
           {currentFlow.source === 'flow' ? (
@@ -145,6 +146,12 @@ export function FlowDetailHeader(props: {
       )}
     </div>
   );
+}
+
+function flowSourceLabel(flow: FlowItem, source: FlowListSource) {
+  if (source === 'flow-admin') return 'Flow API admin';
+  if (flow.source === 'dv') return source === 'dv' ? 'Dataverse' : 'Dataverse fallback';
+  return 'Flow API';
 }
 
 function maskCallbackUrl(value: string) {

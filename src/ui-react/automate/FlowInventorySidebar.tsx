@@ -1,19 +1,21 @@
-import { flowIdentifier } from '../automate-data.js';
+import { flowIdentifier, type FlowListMode, type FlowListSource } from '../automate-data.js';
 import { formatDateShort, prop } from '../utils.js';
 import type { FlowItem } from '../ui-types.js';
 
 export function FlowInventorySidebar(props: {
   flows: FlowItem[];
   filteredFlows: FlowItem[];
-  flowSource: 'flow' | 'dv';
+  flowListMode: FlowListMode;
+  flowSource: FlowListSource;
   filter: string;
   loading: boolean;
   currentFlow: FlowItem | null;
   onFilterChange: (value: string) => void;
+  onFlowListModeChange: (value: FlowListMode) => void;
   onRefresh: () => void;
   onSelect: (flow: FlowItem) => void;
 }) {
-  const { flows, filteredFlows, flowSource, filter, loading, currentFlow, onFilterChange, onRefresh, onSelect } = props;
+  const { flows, filteredFlows, flowListMode, flowSource, filter, loading, currentFlow, onFilterChange, onFlowListModeChange, onRefresh, onSelect } = props;
 
   return (
     <div className="inventory-sidebar">
@@ -24,13 +26,27 @@ export function FlowInventorySidebar(props: {
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
+        <div className="flow-list-mode" role="group" aria-label="Flow list source">
+          {FLOW_LIST_MODES.map((mode) => (
+            <button
+              key={mode.value}
+              className={`flow-list-mode-button ${flowListMode === mode.value ? 'active' : ''}`}
+              type="button"
+              disabled={loading}
+              onClick={() => onFlowListModeChange(mode.value)}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
         <input type="text" className="entity-filter" placeholder="Filter flows…" value={filter} onChange={(event) => onFilterChange(event.target.value)} />
-        <div className="entity-count">{flows.length ? `${flows.length} flows${flowSource === 'dv' ? ' via Dataverse fallback' : ''}` : ''}</div>
+        <div className="entity-count">{flows.length ? `${flows.length} ${flowSourceLabel(flowSource, flowListMode)}` : ''}</div>
         <div className="entity-list">
           {filteredFlows.length ? (
             filteredFlows.map((flow) => {
               const state = String(prop(flow, 'properties.state') || '');
               const cls = state === 'Started' ? 'ok' : state === 'Stopped' ? 'error' : 'pending';
+              const isManaged = prop(flow, 'properties.isManaged') === true;
               return (
                 <div
                   key={flowIdentifier(flow)}
@@ -48,6 +64,7 @@ export function FlowInventorySidebar(props: {
                   {state ? (
                     <div className="entity-item-badges">
                       <span className="entity-item-flag">{state.toLowerCase()}</span>
+                      {isManaged ? <span className="entity-item-flag">managed</span> : null}
                     </div>
                   ) : null}
                 </div>
@@ -60,4 +77,16 @@ export function FlowInventorySidebar(props: {
       </div>
     </div>
   );
+}
+
+const FLOW_LIST_MODES: Array<{ value: FlowListMode; label: string }> = [
+  { value: 'mine', label: 'My' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'dataverse', label: 'Dataverse' }
+];
+
+function flowSourceLabel(source: FlowListSource, mode: FlowListMode) {
+  if (source === 'flow-admin') return 'admin flows';
+  if (source === 'dv') return mode === 'dataverse' ? 'Dataverse rows' : 'flows via Dataverse';
+  return 'my flows';
 }

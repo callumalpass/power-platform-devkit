@@ -128,8 +128,11 @@ export type DataverseState = {
   entitiesLoadError?: string;
   currentEntity: DataverseEntitySummary | null;
   currentEntityDetail: DataverseEntityDetail | null;
+  currentEntityLoading: boolean;
+  currentEntityLoadError?: string;
   currentEntityDiagnostics?: DiagnosticItem[];
   selectedColumns: string[];
+  recordPreviewTop: number;
   recordPreview: DataverseRecordPage | null;
   entityFilter: string;
   attrFilter: string;
@@ -238,6 +241,7 @@ export type FlowItem = {
     workflowUniqueId?: string;
     installationStatus?: string;
     componentState?: string;
+    isManaged?: boolean;
     creator?: { objectId?: string };
     definition?: unknown;
     connectionReferences?: unknown;
