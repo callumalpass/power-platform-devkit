@@ -130,8 +130,7 @@ export const UI_CSS = String.raw`
     .env-picker-count { font-size: 0.625rem; color: var(--muted-2); font-family: var(--sans); font-variant-numeric: tabular-nums; letter-spacing: 0.1em; flex-shrink: 0; }
     .env-picker-list { overflow: auto; padding: 6px 0; flex: 1; min-height: 0; }
     .env-picker-empty { padding: 28px 20px; text-align: center; color: var(--muted-2); font-size: 0.875rem; }
-    .env-picker-item { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 16px; width: 100%; padding: 10px 20px; border: none; background: transparent; color: var(--ink); cursor: pointer; text-align: left; transition: background 80ms; position: relative; }
-    .env-picker-item.active { background: var(--accent-soft); }
+    .env-picker-item { width: 100%; border: none; background: transparent; color: var(--ink); position: relative; }
     .env-picker-item-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; grid-column: 1 / 2; }
     .env-picker-alias { font-size: 0.9375rem; font-weight: 600; color: var(--ink); letter-spacing: -0.02em; display: inline-flex; align-items: baseline; gap: 8px; }
     .env-picker-item.current .env-picker-alias::after { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--ok); transform: translateY(-2px); }
@@ -1526,8 +1525,10 @@ export const UI_CSS = String.raw`
     .env-picker-item-select { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 16px; width: 100%; padding: 10px 20px; border: none; background: transparent; color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
     .env-picker-item-select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .env-picker-item.active .env-picker-item-select { background: var(--accent-soft); }
-    .env-picker-item-copy { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 100ms; }
+    .env-picker-item-copy { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; opacity: 0; transition: opacity 100ms, color 100ms, border-color 100ms, background 100ms; }
     .env-picker-item:hover .env-picker-item-copy, .env-picker-item.active .env-picker-item-copy, .env-picker-item-copy:focus-visible { opacity: 1; }
+    .env-picker-item-copy:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); background: var(--bg); }
+    .env-picker-item-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .env-picker-badge.recent { color: var(--highlight); border-color: var(--highlight); }
 
     /* Header menu new items */

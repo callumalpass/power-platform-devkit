@@ -234,7 +234,7 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
                       <span className="env-picker-account">{accountLabel}</span>
                     </div>
                   </button>
-                  {env.url ? <CopyButton value={env.url} label="" title="Copy environment URL" className="env-picker-item-copy" toast={toast} stopPropagation /> : null}
+                  {env.url ? <CopyButton value={env.url} label="" icon="copy" title="Copy environment URL" className="env-picker-item-copy" toast={toast} stopPropagation /> : null}
                 </div>
               );
             })

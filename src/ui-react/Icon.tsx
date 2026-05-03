@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type IconName = 'bell' | 'sun' | 'moon' | 'power' | 'search' | 'plus' | 'more' | 'star' | 'star-filled' | 'refresh' | 'reply' | 'circle-dashed' | 'grid' | 'pencil' | 'circle';
+export type IconName = 'bell' | 'sun' | 'moon' | 'power' | 'search' | 'plus' | 'more' | 'star' | 'star-filled' | 'refresh' | 'reply' | 'circle-dashed' | 'grid' | 'pencil' | 'copy' | 'circle';
 
 type Props = {
   name: IconName;
@@ -72,6 +72,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="m4 20 1-5 11-11 4 4L9 19Z" />
       <path d="m14 6 4 4" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
     </>
   ),
   circle: <circle cx="12" cy="12" r="8" />

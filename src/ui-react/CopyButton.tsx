@@ -1,4 +1,5 @@
 import type { MouseEvent } from 'react';
+import { Icon, type IconName } from './Icon.js';
 import type { ToastFn } from './ui-types.js';
 
 export async function copyTextToClipboard(text: string): Promise<void> {
@@ -28,14 +29,15 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   }
 }
 
-export function CopyButton(props: { value: unknown; label?: string; title?: string; className?: string; toast?: ToastFn; stopPropagation?: boolean }) {
-  const { value, label = 'Copy', title = 'Copy to clipboard', className = 'copy-mini', toast, stopPropagation } = props;
+export function CopyButton(props: { value: unknown; label?: string; title?: string; className?: string; toast?: ToastFn; stopPropagation?: boolean; icon?: IconName }) {
+  const { value, label = 'Copy', title = 'Copy to clipboard', className = 'copy-mini', toast, stopPropagation, icon } = props;
   const text = value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (
     <button
       className={className}
       type="button"
       title={title}
+      aria-label={label ? undefined : title}
       disabled={!text}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
         if (stopPropagation) event.stopPropagation();
@@ -45,6 +47,7 @@ export function CopyButton(props: { value: unknown; label?: string; title?: stri
           .catch((error) => toast?.(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, true));
       }}
     >
+      {icon ? <Icon name={icon} size={12} strokeWidth={1.8} /> : null}
       {label}
     </button>
   );
