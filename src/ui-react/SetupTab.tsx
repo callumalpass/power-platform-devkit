@@ -8,9 +8,12 @@ import { AccountsPanel } from './setup/AccountsPanel.js';
 import { EnvironmentsPanel } from './setup/EnvironmentsPanel.js';
 import { AccessPanel } from './setup/AccessPanel.js';
 import { ToolsPanel } from './setup/ToolsPanel.js';
-import { summarizeHealthFailure } from './setup/health.js';
+import { authRequiredHealthEntry, summarizeHealthFailure } from './setup/health.js';
 import { api } from './utils.js';
 import { HEALTH_APIS, SETUP_SUB_TAB_LABELS, type HealthMap, type SetupSubTab, type TokenEntry, type TokenStatusMap } from './setup/types.js';
+
+const HEALTH_CHECK_CONCURRENCY = 3;
+const HEALTH_CHECK_TIMEOUT_MS = 12_000;
 
 type SetupTabProps = {
   active: boolean;
@@ -37,8 +40,17 @@ export function SetupTab(props: SetupTabProps) {
   const confirm = useConfirm();
   const tokenStatusRunRef = useRef(0);
   const healthRunRef = useRef(0);
+  const lastAutoCheckKeyRef = useRef('');
+  const accountsRef = useRef<AccountSummary[]>([]);
+  const environmentsRef = useRef<EnvironmentSummary[]>([]);
   const accounts: AccountSummary[] = useMemo(() => shellData?.accounts || [], [shellData]);
   const environments: EnvironmentSummary[] = useMemo(() => shellData?.environments || [], [shellData]);
+  const autoCheckKey = useMemo(() => `${fingerprintAccounts(accounts)}|${fingerprintEnvironments(environments)}`, [accounts, environments]);
+
+  useEffect(() => {
+    accountsRef.current = accounts;
+    environmentsRef.current = environments;
+  }, [accounts, environments]);
 
   const beginTokenStatusRun = useCallback((): number => {
     tokenStatusRunRef.current += 1;
@@ -59,40 +71,36 @@ export function SetupTab(props: SetupTabProps) {
   }, []);
 
   const checkTokenStatuses = useCallback(
-    async (accountList: AccountSummary[], runId: number) => {
-      await Promise.all(
-        accountList.map(async (account) => {
+    async (accountList: AccountSummary[], runId: number): Promise<TokenStatusMap> => {
+      const entries = await Promise.all(
+        accountList.map(async (account): Promise<[string, NonNullable<TokenEntry>]> => {
           try {
             const data = await api<ApiEnvelope<NonNullable<TokenEntry>>>(`/api/accounts/token-status?account=${encodeURIComponent(account.name)}`, { allowFailure: true });
-            if (!isCurrentTokenStatusRun(runId)) return;
-            setTokenStatus((current) => ({
-              ...current,
-              [account.name]: data.success && data.data ? data.data : { authenticated: false }
-            }));
+            return [account.name, data.success && data.data ? data.data : { authenticated: false }];
           } catch {
-            if (!isCurrentTokenStatusRun(runId)) return;
-            setTokenStatus((current) => ({ ...current, [account.name]: { authenticated: false } }));
+            return [account.name, { authenticated: false }];
           }
         })
       );
+      const nextStatus = Object.fromEntries(entries) as TokenStatusMap;
+      if (isCurrentTokenStatusRun(runId)) {
+        setTokenStatus((current) => ({ ...current, ...nextStatus }));
+      }
+      return nextStatus;
     },
     [isCurrentTokenStatusRun]
   );
 
   const pingApi = useCallback(
-    async (alias: string, apiName: string, runId: number) => {
+    async (alias: string, apiName: string, runId: number, markPending = true) => {
       if (!isCurrentHealthRun(runId)) return;
-      setHealth((current) => ({
-        ...current,
-        [alias]: {
-          ...(current[alias] || {}),
-          [apiName]: { status: 'pending', summary: 'Checking...' }
-        }
-      }));
+      if (markPending) {
+        setHealth((current) => markHealthPending(current, [{ alias, apiName }]));
+      }
       try {
         const payload = await api<ApiEnvelope<unknown>>('/api/checks/ping', {
           method: 'POST',
-          body: JSON.stringify({ environment: alias, api: apiName, softFail: true }),
+          body: JSON.stringify({ environment: alias, api: apiName, softFail: true, timeoutMs: HEALTH_CHECK_TIMEOUT_MS }),
           allowFailure: true
         });
         const value = payload.success !== false ? { status: 'ok', summary: 'Reachable' } : summarizeHealthFailure(payload);
@@ -116,27 +124,50 @@ export function SetupTab(props: SetupTabProps) {
   );
 
   const checkHealth = useCallback(
-    async (environmentList: EnvironmentSummary[], runId: number) => {
-      await Promise.all(environmentList.flatMap((environment) => HEALTH_APIS.map((apiName) => pingApi(environment.alias, apiName, runId))));
+    async (environmentList: EnvironmentSummary[], runId: number, checkedTokenStatus?: TokenStatusMap) => {
+      const checks: Array<{ alias: string; apiName: string }> = [];
+      const skippedChecks: Array<{ alias: string; apiName: string }> = [];
+      for (const environment of environmentList) {
+        const target = checkedTokenStatus?.[environment.account];
+        const targetChecks = HEALTH_APIS.map((apiName) => ({ alias: environment.alias, apiName }));
+        if (target?.authenticated === false) skippedChecks.push(...targetChecks);
+        else checks.push(...targetChecks);
+      }
+      if (isCurrentHealthRun(runId)) {
+        setHealth((current) => markHealthAuthRequired(markHealthPending(current, checks), skippedChecks));
+      }
+      await runLimited(checks, HEALTH_CHECK_CONCURRENCY, (check) => pingApi(check.alias, check.apiName, runId, false));
     },
-    [pingApi]
+    [isCurrentHealthRun, pingApi]
   );
 
   useEffect(() => {
-    if (!active || !shellData) return;
+    const currentAccounts = accountsRef.current;
+    const currentEnvironments = environmentsRef.current;
+    if (!active || !currentAccounts.length || !currentEnvironments.length) return;
+    if (lastAutoCheckKeyRef.current === autoCheckKey) return;
+    lastAutoCheckKeyRef.current = autoCheckKey;
     const tokenRun = beginTokenStatusRun();
     const healthRun = beginHealthRun();
-    void checkTokenStatuses(accounts, tokenRun);
-    void checkHealth(environments, healthRun);
+    void (async () => {
+      const checkedTokenStatus = await checkTokenStatuses(currentAccounts, tokenRun);
+      if (!isCurrentTokenStatusRun(tokenRun) || !isCurrentHealthRun(healthRun)) return;
+      await checkHealth(currentEnvironments, healthRun, checkedTokenStatus);
+    })();
     return () => {
       tokenStatusRunRef.current += 1;
       healthRunRef.current += 1;
     };
-  }, [accounts, active, beginHealthRun, beginTokenStatusRun, checkHealth, checkTokenStatuses, environments, shellData]);
+  }, [active, autoCheckKey, beginHealthRun, beginTokenStatusRun, checkHealth, checkTokenStatuses, isCurrentHealthRun, isCurrentTokenStatusRun]);
 
   function recheckHealth() {
-    void checkHealth(environments, beginHealthRun());
-    void checkTokenStatuses(accounts, beginTokenStatusRun());
+    const tokenRun = beginTokenStatusRun();
+    const healthRun = beginHealthRun();
+    void (async () => {
+      const checkedTokenStatus = await checkTokenStatuses(accounts, tokenRun);
+      if (!isCurrentTokenStatusRun(tokenRun) || !isCurrentHealthRun(healthRun)) return;
+      await checkHealth(environments, healthRun, checkedTokenStatus);
+    })();
     toast('Health checks started');
   }
 
@@ -231,4 +262,46 @@ export function SetupTab(props: SetupTabProps) {
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />
     </div>
   );
+}
+
+async function runLimited<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      await worker(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function markHealthPending(health: HealthMap, checks: Array<{ alias: string; apiName: string }>): HealthMap {
+  const next: HealthMap = { ...health };
+  for (const check of checks) {
+    next[check.alias] = {
+      ...(next[check.alias] || {}),
+      [check.apiName]: { status: 'pending', summary: 'Checking...' }
+    };
+  }
+  return next;
+}
+
+function markHealthAuthRequired(health: HealthMap, checks: Array<{ alias: string; apiName: string }>): HealthMap {
+  const next: HealthMap = { ...health };
+  for (const check of checks) {
+    next[check.alias] = {
+      ...(next[check.alias] || {}),
+      [check.apiName]: authRequiredHealthEntry()
+    };
+  }
+  return next;
+}
+
+function fingerprintAccounts(accounts: AccountSummary[]): string {
+  return accounts.map((account) => [account.name, account.kind, account.tokenCacheKey, account.homeAccountId, account.localAccountId].join(':')).join('|');
+}
+
+function fingerprintEnvironments(environments: EnvironmentSummary[]): string {
+  return environments.map((environment) => [environment.alias, environment.account, environment.url, environment.makerEnvironmentId].join(':')).join('|');
 }

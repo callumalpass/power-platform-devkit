@@ -307,6 +307,7 @@ export function optionalString(value: unknown): string | undefined {
 }
 
 export function optionalInteger(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
   if (typeof value !== 'string' || !value.trim()) return undefined;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;

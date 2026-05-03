@@ -56,6 +56,8 @@ const MCP_TOOLS = [
 ];
 
 const TOKEN_STATUS_CACHE_TTL_MS = 2_000;
+const HEALTH_PING_CACHE_TTL_MS = 5_000;
+const HEALTH_PING_TIMEOUT_MS = 12_000;
 
 export interface DesktopApiRequest {
   path: string;
@@ -69,6 +71,7 @@ export interface DesktopApiResponse {
 }
 
 type AccountTokenStatusResult = OperationResult<{ authenticated: boolean; expiresAt?: number }>;
+type HealthPingResult = Awaited<ReturnType<typeof runConnectivityPing>>;
 
 export interface DesktopApiContext {
   configOptions: ConfigStoreOptions;
@@ -81,6 +84,8 @@ export interface DesktopApiContext {
   flowLanguage: FlowLanguageService;
   tokenStatusRequests: Map<string, Promise<AccountTokenStatusResult>>;
   tokenStatusCache: Map<string, { expiresAt: number; result: AccountTokenStatusResult }>;
+  healthPingRequests: Map<string, Promise<HealthPingResult>>;
+  healthPingCache: Map<string, { expiresAt: number; result: HealthPingResult }>;
   quit?: () => void;
 }
 
@@ -157,6 +162,8 @@ export function createDesktopApiContext(
     flowLanguage: new FlowLanguageService(),
     tokenStatusRequests: new Map(),
     tokenStatusCache: new Map(),
+    healthPingRequests: new Map(),
+    healthPingCache: new Map(),
     quit: options.quit
   };
 }
@@ -223,6 +230,7 @@ async function accountCreate(body: unknown, context: DesktopApiContext): Promise
   if (!account.success || !account.data) return json(400, account);
   const result = await saveAccount(account.data, context.configOptions);
   clearAccountTokenStatus(context, account.data.name);
+  clearHealthPingStatus(context);
   return json(result.success && result.data ? 201 : 400, result.success && result.data ? ok({ account: summarizeAccount(result.data) }, result.diagnostics) : result);
 }
 
@@ -240,6 +248,7 @@ async function accountLogin(body: unknown, context: DesktopApiContext): Promise<
     context.configOptions
   );
   if (input.data.name) clearAccountTokenStatus(context, input.data.name);
+  clearHealthPingStatus(context);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -276,6 +285,7 @@ async function accountDelete(url: URL, context: DesktopApiContext): Promise<Desk
   const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
   const result = await removeAccountByName(name, context.configOptions);
   clearAccountTokenStatus(context, name);
+  clearHealthPingStatus(context);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -285,6 +295,7 @@ async function accountUpdate(url: URL, body: unknown, context: DesktopApiContext
   if (!account.success || !account.data) return json(400, account);
   const result = await saveAccount(account.data, context.configOptions);
   clearAccountTokenStatus(context, name);
+  clearHealthPingStatus(context);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -298,6 +309,11 @@ async function accountTokenStatus(url: URL, context: DesktopApiContext): Promise
 function clearAccountTokenStatus(context: DesktopApiContext, name: string): void {
   context.tokenStatusRequests.delete(name);
   context.tokenStatusCache.delete(name);
+}
+
+function clearHealthPingStatus(context: DesktopApiContext): void {
+  context.healthPingRequests.clear();
+  context.healthPingCache.clear();
 }
 
 async function getCoalescedAccountTokenStatus(context: DesktopApiContext, name: string): Promise<AccountTokenStatusResult> {
@@ -361,12 +377,14 @@ async function environmentCreate(body: unknown, context: DesktopApiContext): Pro
   const input = readEnvironmentInput(body);
   if (!input.success || !input.data) return json(400, input);
   const result = await addConfiguredEnvironment(input.data, context.configOptions, { allowInteractive: context.allowInteractiveAuth });
+  clearHealthPingStatus(context);
   return json(result.success ? 200 : 400, result);
 }
 
 async function environmentDelete(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {
   const alias = decodeURIComponent(url.pathname.slice('/api/environments/'.length));
   const result = await removeConfiguredEnvironment(alias, context.configOptions);
+  clearHealthPingStatus(context);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -403,6 +421,7 @@ async function environmentUpdate(url: URL, body: unknown, context: DesktopApiCon
     ...(nextAccess === undefined ? {} : { access: nextAccess })
   };
   const saved = await saveEnvironment(merged, context.configOptions);
+  clearHealthPingStatus(context);
   return json(saved.success ? 200 : 400, saved.success ? ok(saved.data, saved.diagnostics) : saved);
 }
 
@@ -418,16 +437,41 @@ async function ping(body: unknown, context: DesktopApiContext): Promise<DesktopA
   const data = asRecord(body);
   const environment = optionalString(data?.environment);
   if (!environment) return json(400, fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environment is required.', { source: 'pp/desktop' })));
-  const result = await runConnectivityPing(
-    {
-      environmentAlias: environment,
-      accountName: optionalString(data?.account),
-      api: readPingApi(data?.api),
-      allowInteractive: false
-    },
-    context.configOptions
-  );
+  const input = {
+    environmentAlias: environment,
+    accountName: optionalString(data?.account),
+    api: readPingApi(data?.api),
+    allowInteractive: false,
+    timeoutMs: optionalInteger(data?.timeoutMs) ?? HEALTH_PING_TIMEOUT_MS
+  };
+  const result = await getCoalescedHealthPing(context, input);
   return json(result.success || data?.softFail === true ? 200 : 400, result);
+}
+
+async function getCoalescedHealthPing(context: DesktopApiContext, input: Parameters<typeof runConnectivityPing>[0]): Promise<HealthPingResult> {
+  const key = healthPingKey(input);
+  const cached = context.healthPingCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+
+  const existing = context.healthPingRequests.get(key);
+  if (existing) return existing;
+
+  const request = runConnectivityPing(input, context.configOptions).then((result) => {
+    context.healthPingCache.set(key, { expiresAt: Date.now() + HEALTH_PING_CACHE_TTL_MS, result });
+    return result;
+  });
+  context.healthPingRequests.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (context.healthPingRequests.get(key) === request) {
+      context.healthPingRequests.delete(key);
+    }
+  }
+}
+
+function healthPingKey(input: Parameters<typeof runConnectivityPing>[0]): string {
+  return [input.environmentAlias, input.accountName ?? '', input.api ?? 'dv', input.timeoutMs ?? ''].join('\0');
 }
 
 async function entityList(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {

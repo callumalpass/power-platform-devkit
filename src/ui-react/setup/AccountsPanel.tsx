@@ -191,7 +191,15 @@ function EditAccountBody(props: {
           <span className="drawer-meta-label">Token</span>
           <span className="drawer-meta-value">
             <span className={`health-dot ${tokenClass}`} />
-            {tokenExpiry ? <span className={`token-expiry ${tokenExpiry.cls || ''}`}>{tokenExpiry.text}</span> : tokenClass === 'pending' ? 'checking…' : 'not signed in'}
+            {tokenExpiry ? (
+              <span className={`token-expiry ${tokenExpiry.cls || ''}`}>{tokenExpiry.text}</span>
+            ) : tokenStatus?.authenticated ? (
+              'signed in'
+            ) : tokenClass === 'pending' ? (
+              'checking…'
+            ) : (
+              'not signed in'
+            )}
           </span>
         </div>
         {account.accountUsername || account.loginHint ? (
@@ -758,6 +766,8 @@ export function AccountsPanel(props: {
                       <td>
                         {expiry ? (
                           <span className={`token-expiry ${expiry.cls || ''}`}>{expiry.text}</span>
+                        ) : token?.authenticated ? (
+                          <span className="token-expiry">signed in</span>
                         ) : state === 'pending' ? (
                           <span className="setup-row-muted">checking…</span>
                         ) : (

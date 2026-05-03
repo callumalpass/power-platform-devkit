@@ -146,6 +146,29 @@ test('handleDesktopApiRequest reuses an in-flight token status check per account
   assert.equal(responseBody<{ authenticated: boolean }>(response.body).data.authenticated, true);
 });
 
+test('handleDesktopApiRequest reuses an in-flight health ping per environment and API', async () => {
+  type HealthPing = { ok: true; api: 'dv'; environment: string; account: string; status: number; request: unknown };
+  let releaseHealth: (value: ReturnType<typeof ok<HealthPing>>) => void = () => undefined;
+  const pendingHealth = new Promise<ReturnType<typeof ok<HealthPing>>>((resolve) => {
+    releaseHealth = resolve;
+  });
+  const context = createContext();
+  context.healthPingRequests.set(['dev', '', 'dv', '12000'].join('\0'), pendingHealth);
+
+  const responsePromise = handleDesktopApiRequest(context, {
+    method: 'POST',
+    path: '/api/checks/ping',
+    body: { environment: 'dev', api: 'dv', softFail: true }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(context.healthPingRequests.has(['dev', '', 'dv', '12000'].join('\0')), true);
+  releaseHealth(ok({ ok: true, api: 'dv', environment: 'dev', account: 'work', status: 200, request: {} }));
+
+  const response = await responsePromise;
+  assert.equal(response.status, 200);
+  assert.equal(responseBody<HealthPing>(response.body).data.ok, true);
+});
+
 test('handleDesktopApiRequest validates Dataverse create route before execution', async () => {
   const response = await handleDesktopApiRequest(createContext(), {
     method: 'POST',

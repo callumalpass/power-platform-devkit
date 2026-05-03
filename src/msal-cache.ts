@@ -6,6 +6,9 @@ import { createOsCredentialStore, isCredentialStoreUnavailableError, type Creden
 
 const MSAL_CREDENTIAL_SERVICE = 'pp';
 const MSAL_CREDENTIAL_PREFIX = 'msal:';
+const AUTO_EXTENSION_UNAVAILABLE_RETRY_MS = 30_000;
+
+const autoExtensionUnavailableUntil = new Map<string, number>();
 
 type MsalPersistence = {
   save(contents: string): Promise<void>;
@@ -36,11 +39,15 @@ export function setMsalExtensionsLoaderForTest(loader?: MsalExtensionsLoader): v
 export async function createMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): Promise<ICachePlugin> {
   const mode = getCredentialStoreMode(options);
   if (mode === 'file') return createFileMsalCachePlugin(cacheKey, options, accountName);
+  if (mode === 'auto' && isAutoExtensionRecentlyUnavailable(options)) {
+    return (await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode)) ?? createFileMsalCachePlugin(cacheKey, options, accountName);
+  }
 
   try {
     return await createExtensionMsalCachePlugin(cacheKey, options, accountName, mode);
   } catch (error) {
     if (mode === 'auto' && isCredentialPersistenceUnavailable(error)) {
+      markAutoExtensionUnavailable(options);
       return (await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode)) ?? createFileMsalCachePlugin(cacheKey, options, accountName);
     }
     if (mode === 'os' && isCredentialPersistenceUnavailable(error)) {
@@ -386,6 +393,18 @@ function msalCredentialKey(key: string): string {
 
 function encodeKey(key: string): string {
   return Buffer.from(key, 'utf8').toString('base64url');
+}
+
+function isAutoExtensionRecentlyUnavailable(options: ConfigStoreOptions): boolean {
+  return (autoExtensionUnavailableUntil.get(autoExtensionScope(options)) ?? 0) > Date.now();
+}
+
+function markAutoExtensionUnavailable(options: ConfigStoreOptions): void {
+  autoExtensionUnavailableUntil.set(autoExtensionScope(options), Date.now() + AUTO_EXTENSION_UNAVAILABLE_RETRY_MS);
+}
+
+function autoExtensionScope(options: ConfigStoreOptions): string {
+  return `${process.platform}:${getCredentialStoreDir(options)}`;
 }
 
 async function quarantineCorruptCacheFile(cachePath: string): Promise<void> {

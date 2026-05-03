@@ -193,16 +193,20 @@ export class AuthService {
       return ok({ authenticated: Boolean(process.env[account.clientSecretEnv]) });
     }
 
-    // user / device-code: try silent acquisition only
+    // user / device-code: account status is the presence of a cached MSAL account.
+    // Resource-specific token acquisition is reported by API health checks.
     try {
       const app = await createPublicClientApplication(account, this.options);
-      const scopes = resolveScopes(account, targetResource);
       const storedAccount = await resolveStoredAccount(app, account);
       if (!storedAccount) return ok({ authenticated: false });
-      const result = await app.acquireTokenSilent({ account: storedAccount, scopes });
-      if (!result || !result.accessToken) return ok({ authenticated: false });
-      const claims = decodeJwtClaims(result.accessToken);
-      return ok({ authenticated: true, expiresAt: readNumericClaim(claims, 'exp') });
+      try {
+        const scopes = resolveScopes(account, targetResource);
+        const result = await app.acquireTokenSilent({ account: storedAccount, scopes });
+        const claims = decodeJwtClaims(result?.accessToken ?? '');
+        return ok({ authenticated: true, expiresAt: readNumericClaim(claims, 'exp') });
+      } catch {
+        return ok({ authenticated: true });
+      }
     } catch {
       return ok({ authenticated: false });
     }

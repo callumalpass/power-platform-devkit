@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatTimeRemaining } from '../utils.js';
 import { HEALTH_APIS, type HealthMap, type SetupAccount, type SetupEnvironment, type TokenStatusMap } from './types.js';
+import { isInteractiveAuthRequiredHealthEntry } from './health.js';
 
 type Issue = { kind: 'account' | 'env'; alias?: string; message: string };
 
@@ -18,9 +19,11 @@ export function StatusStrip(props: {
   const [expanded, setExpanded] = useState(false);
 
   const issues: Issue[] = [];
+  const unauthenticatedAccounts = new Set<string>();
   for (const account of accounts) {
     const token = tokenStatus[account.name];
     if (token && !token.authenticated) {
+      unauthenticatedAccounts.add(account.name);
       issues.push({ kind: 'account', message: `Account "${account.name}" is not authenticated` });
     } else if (token?.authenticated) {
       const expiry = formatTimeRemaining(token.expiresAt);
@@ -30,13 +33,22 @@ export function StatusStrip(props: {
     }
   }
   for (const env of environments) {
+    if (env.account && unauthenticatedAccounts.has(env.account)) continue;
     const envHealth = health[env.alias] || {};
+    const envIssues: Issue[] = [];
+    let needsLogin = false;
     for (const apiName of HEALTH_APIS) {
       const state = envHealth[apiName];
       if (state?.status === 'error') {
-        issues.push({ kind: 'env', alias: env.alias, message: `${env.alias} · ${apiName}: ${state.summary}` });
+        if (isInteractiveAuthRequiredHealthEntry(state)) {
+          needsLogin = true;
+        } else {
+          envIssues.push({ kind: 'env', alias: env.alias, message: `${env.alias} · ${apiName}: ${state.summary}` });
+        }
       }
     }
+    if (needsLogin) issues.push({ kind: 'env', alias: env.alias, message: `${env.alias}: sign in required for API health checks` });
+    issues.push(...envIssues);
   }
 
   return (

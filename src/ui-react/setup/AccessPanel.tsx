@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, readRecord } from '../utils.js';
 import { RecordDetailModal, useRecordDetail } from '../RecordDetailModal.js';
 import type { ApiEnvelope, ApiExecuteResponse, ToastFn, UnknownRecord } from '../ui-types.js';
+import { summarizeAccessError } from './health.js';
 
 type AccessData = {
   userId?: string;
@@ -48,6 +49,13 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const detail = useRecordDetail();
+  const toastRef = useRef(toast);
+  const loadRunRef = useRef(0);
+  const lastAutoLoadEnvironmentRef = useRef('');
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const dvGet = useCallback(
     async (path: string): Promise<UnknownRecord> => {
@@ -83,74 +91,84 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
     [environment]
   );
 
-  const loadAccess = useCallback(async () => {
-    if (!environment) {
-      toast('Select an environment first.', true);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setData(null);
-    try {
-      const whoami = await dvGet('/WhoAmI');
-      const userId = stringField(whoami, 'UserId');
-      const businessUnitId = stringField(whoami, 'BusinessUnitId');
-      if (!userId) throw new Error('Could not determine current user.');
-
-      const [user, rolesResult, teamsResult] = await Promise.all([
-        dvGet(`/systemusers(${userId})?$select=fullname,domainname,internalemailaddress,azureactivedirectoryobjectid`),
-        dvGet(`/systemusers(${userId})/systemuserroles_association?$select=name,roleid`),
-        dvGet(`/systemusers(${userId})/teammembership_association?$select=name,teamid`)
-      ]);
-
-      const roles: NonNullable<AccessData['roles']> = responseRows(rolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
-      const teams: NonNullable<AccessData['teams']> = responseRows(teamsResult).map((team) => ({ name: stringField(team, 'name'), teamid: stringField(team, 'teamid') }));
-
-      await Promise.all(
-        teams.map(async (team) => {
-          try {
-            const teamRolesResult = await dvGet(`/teams(${team.teamid})/teamroles_association?$select=name,roleid`);
-            team.roles = responseRows(teamRolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
-          } catch {
-            team.roles = [];
-          }
-        })
-      );
-
-      let graph: AccessData['graph'] | undefined;
-      try {
-        const [me, managerResult, licensesResult] = await Promise.all([
-          graphGet('/me?$select=displayName,jobTitle,department,officeLocation,mail'),
-          graphGetOptional('/me/manager?$select=displayName'),
-          graphGetOptional('/me/licenseDetails')
-        ]);
-        graph = {
-          displayName: stringField(me, 'displayName'),
-          jobTitle: stringField(me, 'jobTitle'),
-          department: stringField(me, 'department'),
-          officeLocation: stringField(me, 'officeLocation'),
-          mail: stringField(me, 'mail'),
-          manager: managerResult ? stringField(managerResult, 'displayName') : undefined,
-          licenses: responseRows(licensesResult)
-            .map((license) => stringField(license, 'skuPartNumber'))
-            .filter(Boolean)
-        };
-      } catch {
-        // Graph not available — that's fine
+  const loadAccess = useCallback(
+    async (notify = false) => {
+      if (!environment) {
+        toastRef.current('Select an environment first.', true);
+        return;
       }
+      const runId = ++loadRunRef.current;
+      setLoading(true);
+      setError(null);
+      setData(null);
+      try {
+        const whoami = await dvGet('/WhoAmI');
+        const userId = stringField(whoami, 'UserId');
+        const businessUnitId = stringField(whoami, 'BusinessUnitId');
+        if (!userId) throw new Error('Could not determine current user.');
 
-      setData({ userId, businessUnitId, user, roles, teams, graph });
-      toast('Access data loaded');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      toast(err instanceof Error ? err.message : String(err), true);
-    } finally {
-      setLoading(false);
-    }
-  }, [dvGet, environment, graphGet, graphGetOptional, toast]);
+        const [user, rolesResult, teamsResult] = await Promise.all([
+          dvGet(`/systemusers(${userId})?$select=fullname,domainname,internalemailaddress,azureactivedirectoryobjectid`),
+          dvGet(`/systemusers(${userId})/systemuserroles_association?$select=name,roleid`),
+          dvGet(`/systemusers(${userId})/teammembership_association?$select=name,teamid`)
+        ]);
+
+        const roles: NonNullable<AccessData['roles']> = responseRows(rolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
+        const teams: NonNullable<AccessData['teams']> = responseRows(teamsResult).map((team) => ({ name: stringField(team, 'name'), teamid: stringField(team, 'teamid') }));
+
+        await Promise.all(
+          teams.map(async (team) => {
+            try {
+              const teamRolesResult = await dvGet(`/teams(${team.teamid})/teamroles_association?$select=name,roleid`);
+              team.roles = responseRows(teamRolesResult).map((role) => ({ name: stringField(role, 'name'), roleid: stringField(role, 'roleid') }));
+            } catch {
+              team.roles = [];
+            }
+          })
+        );
+
+        let graph: AccessData['graph'] | undefined;
+        try {
+          const [me, managerResult, licensesResult] = await Promise.all([
+            graphGet('/me?$select=displayName,jobTitle,department,officeLocation,mail'),
+            graphGetOptional('/me/manager?$select=displayName'),
+            graphGetOptional('/me/licenseDetails')
+          ]);
+          graph = {
+            displayName: stringField(me, 'displayName'),
+            jobTitle: stringField(me, 'jobTitle'),
+            department: stringField(me, 'department'),
+            officeLocation: stringField(me, 'officeLocation'),
+            mail: stringField(me, 'mail'),
+            manager: managerResult ? stringField(managerResult, 'displayName') : undefined,
+            licenses: responseRows(licensesResult)
+              .map((license) => stringField(license, 'skuPartNumber'))
+              .filter(Boolean)
+          };
+        } catch {
+          // Graph not available — that's fine
+        }
+
+        if (loadRunRef.current !== runId) return;
+        setData({ userId, businessUnitId, user, roles, teams, graph });
+        if (notify) toastRef.current('Access data loaded');
+      } catch (err) {
+        if (loadRunRef.current !== runId) return;
+        const message = summarizeAccessError(err);
+        setError(message);
+        if (notify) toastRef.current(message, true);
+      } finally {
+        if (loadRunRef.current === runId) setLoading(false);
+      }
+    },
+    [dvGet, environment, graphGet, graphGetOptional]
+  );
 
   useEffect(() => {
-    if (active && environment) void loadAccess();
+    if (!active || !environment) return;
+    if (lastAutoLoadEnvironmentRef.current === environment) return;
+    lastAutoLoadEnvironmentRef.current = environment;
+    void loadAccess(false);
   }, [active, environment, loadAccess]);
 
   if (!environment) {
@@ -173,7 +191,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
     return (
       <div className="panel">
         <div className="rt-modal-error">{error}</div>
-        <button className="btn btn-primary" type="button" style={{ marginTop: 12 }} onClick={() => void loadAccess()}>
+        <button className="btn btn-primary" type="button" style={{ marginTop: 12 }} onClick={() => void loadAccess(true)}>
           Retry
         </button>
       </div>
@@ -191,7 +209,7 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
       <div className="panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2>Identity</h2>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadAccess()}>
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadAccess(true)}>
             {loading ? 'Loading...' : 'Refresh'}
           </button>
         </div>

@@ -89,6 +89,7 @@ export async function runConnectivityPing(
     accountName?: string;
     api?: EnvironmentTokenApi;
     allowInteractive?: boolean;
+    timeoutMs?: number;
   },
   configOptions: ConfigStoreOptions = {}
 ): Promise<OperationResult<{ ok: true; api: EnvironmentTokenApi; environment: string; account: string; status: number; request: unknown }>> {
@@ -98,7 +99,8 @@ export async function runConnectivityPing(
     accountName: input.accountName,
     api,
     responseType: 'json' as const,
-    readIntent: true
+    readIntent: true,
+    timeoutMs: input.timeoutMs
   };
   const result =
     api === 'dv'

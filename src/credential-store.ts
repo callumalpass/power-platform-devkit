@@ -3,7 +3,11 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCredentialStoreDir, type ConfigStoreOptions } from './config.js';
 
-const CREDENTIAL_STORE_COMMAND_TIMEOUT_MS = 10_000;
+const DEFAULT_CREDENTIAL_STORE_COMMAND_TIMEOUT_MS = 10_000;
+const LINUX_SECRET_SERVICE_COMMAND_TIMEOUT_MS = 2_000;
+const LINUX_SECRET_SERVICE_UNAVAILABLE_RETRY_MS = 30_000;
+
+let linuxSecretServiceUnavailableUntil = 0;
 
 export interface CredentialStore {
   readonly kind: 'os';
@@ -61,23 +65,26 @@ class LinuxSecretServiceCredentialStore implements CredentialStore {
   constructor(private readonly service: string) {}
 
   async get(key: string): Promise<string | undefined> {
-    const result = await runCommand('secret-tool', ['lookup', 'service', this.service, 'account', key]);
+    assertLinuxSecretServiceAvailable();
+    const result = await runCommand('secret-tool', ['lookup', 'service', this.service, 'account', key], undefined, LINUX_SECRET_SERVICE_COMMAND_TIMEOUT_MS);
     if (result.status === 0) return trimTrailingNewline(result.stdout);
-    if (isSecretServiceUnavailable(result)) throw new CredentialStoreUnavailableError(secretServiceUnavailableMessage(result));
+    if (isSecretServiceUnavailable(result)) throw linuxSecretServiceUnavailable(result);
     return undefined;
   }
 
   async set(key: string, value: string): Promise<void> {
-    const result = await runCommand('secret-tool', ['store', `--label=pp ${key}`, 'service', this.service, 'account', key], value);
+    assertLinuxSecretServiceAvailable();
+    const result = await runCommand('secret-tool', ['store', `--label=pp ${key}`, 'service', this.service, 'account', key], value, LINUX_SECRET_SERVICE_COMMAND_TIMEOUT_MS);
     if (result.status === 0) return;
-    if (isSecretServiceUnavailable(result)) throw new CredentialStoreUnavailableError(secretServiceUnavailableMessage(result));
+    if (isSecretServiceUnavailable(result)) throw linuxSecretServiceUnavailable(result);
     throw commandFailure('Secret Service write failed', result);
   }
 
   async delete(key: string): Promise<void> {
-    const result = await runCommand('secret-tool', ['clear', 'service', this.service, 'account', key]);
+    assertLinuxSecretServiceAvailable();
+    const result = await runCommand('secret-tool', ['clear', 'service', this.service, 'account', key], undefined, LINUX_SECRET_SERVICE_COMMAND_TIMEOUT_MS);
     if (result.status === 0 || result.status === 1) return;
-    if (isSecretServiceUnavailable(result)) throw new CredentialStoreUnavailableError(secretServiceUnavailableMessage(result));
+    if (isSecretServiceUnavailable(result)) throw linuxSecretServiceUnavailable(result);
     throw commandFailure('Secret Service delete failed', result);
   }
 }
@@ -136,7 +143,7 @@ function runPowerShell(script: string, input: string): Promise<CommandResult> {
   return runCommand(process.env.ComSpec ? 'powershell.exe' : 'pwsh', ['-NoProfile', '-NonInteractive', '-Command', script], input);
 }
 
-function runCommand(command: string, args: string[], input?: string): Promise<CommandResult> {
+function runCommand(command: string, args: string[], input?: string, timeoutMs = DEFAULT_CREDENTIAL_STORE_COMMAND_TIMEOUT_MS): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const stdout: Buffer[] = [];
@@ -147,9 +154,9 @@ function runCommand(command: string, args: string[], input?: string): Promise<Co
       finish({
         status: 124,
         stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: `${command} timed out after ${CREDENTIAL_STORE_COMMAND_TIMEOUT_MS}ms.`
+        stderr: `${command} timed out after ${timeoutMs}ms.`
       });
-    }, CREDENTIAL_STORE_COMMAND_TIMEOUT_MS);
+    }, timeoutMs);
 
     function finish(result: CommandResult) {
       if (settled) return;
@@ -193,13 +200,26 @@ function isMacosNotFound(stderr: string): boolean {
 }
 
 function isSecretServiceUnavailable(result: CommandResult): boolean {
+  if (result.status === 124) return true;
   if (result.error?.code === 'ENOENT') return true;
   return /org\.freedesktop\.secrets|Cannot autolaunch|No such interface|could not connect|command not found/i.test(result.stderr);
 }
 
 function secretServiceUnavailableMessage(result: CommandResult): string {
   if (result.error?.code === 'ENOENT') return 'Secret Service is unavailable because secret-tool is not installed.';
+  if (result.status === 124) return `Secret Service is unavailable: ${trimTrailingNewline(result.stderr) || 'secret-tool timed out.'}`;
   return `Secret Service is unavailable: ${trimTrailingNewline(result.stderr) || `exit ${result.status}`}`;
+}
+
+function assertLinuxSecretServiceAvailable(): void {
+  if (Date.now() < linuxSecretServiceUnavailableUntil) {
+    throw new CredentialStoreUnavailableError('Secret Service is unavailable after a recent failed probe.');
+  }
+}
+
+function linuxSecretServiceUnavailable(result: CommandResult): CredentialStoreUnavailableError {
+  linuxSecretServiceUnavailableUntil = Date.now() + LINUX_SECRET_SERVICE_UNAVAILABLE_RETRY_MS;
+  return new CredentialStoreUnavailableError(secretServiceUnavailableMessage(result));
 }
 
 function isWindowsDpapiUnreadableBlob(result: CommandResult): boolean {
