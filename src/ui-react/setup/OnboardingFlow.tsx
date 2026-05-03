@@ -1,7 +1,18 @@
-import type { ShellState, ToastFn } from '../ui-types.js';
+import { useEffect, useState } from 'react';
+import type { ApiEnvelope, ShellState, ToastFn } from '../ui-types.js';
+import { api } from '../utils.js';
 import { AddAccountForm } from './AccountsPanel.js';
 import { AddEnvironmentForm } from './EnvironmentsPanel.js';
 import { LoginProgress, useAuthSession } from './login.js';
+import type { AuthSession, SetupAccount } from './types.js';
+
+type OnboardingStep = 'account' | 'environment' | 'done';
+
+export function getOnboardingStep(accounts: readonly unknown[], environments: readonly unknown[]): OnboardingStep {
+  if (accounts.length === 0) return 'account';
+  if (environments.length === 0) return 'environment';
+  return 'done';
+}
 
 export function OnboardingFlow(props: {
   shellData: ShellState | null;
@@ -15,10 +26,35 @@ export function OnboardingFlow(props: {
   const accounts = shellData?.accounts || [];
   const environments = shellData?.environments || [];
   const login = useAuthSession(toast, refreshState);
+  const [showAdditionalAccountForm, setShowAdditionalAccountForm] = useState(false);
 
   const hasAccounts = accounts.length > 0;
   const hasEnvironments = environments.length > 0;
-  const step = hasEnvironments ? 'done' : hasAccounts ? 'environment' : 'account';
+  const step = getOnboardingStep(accounts, environments);
+  const showLoginProgress = login.activeSession || login.loginTargets.length > 0;
+
+  useEffect(() => {
+    if (!hasAccounts) setShowAdditionalAccountForm(false);
+  }, [hasAccounts]);
+
+  async function handleBapLogin(account: SetupAccount) {
+    try {
+      const started = await api<ApiEnvelope<AuthSession>>('/api/auth/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: account.name,
+          kind: account.kind === 'device-code' ? 'device-code' : 'user',
+          loginHint: account.loginHint || account.accountUsername,
+          tenantId: account.tenantId,
+          clientId: account.clientId,
+          excludeApis: ['dv', 'flow', 'powerapps', 'graph']
+        })
+      });
+      login.handleLoginStarted(started.data);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
 
   if (step === 'done') return null;
 
@@ -41,7 +77,7 @@ export function OnboardingFlow(props: {
           <>
             <h2>Connect your first account</h2>
             <p className="desc">Add a Microsoft account to start working with Power Platform. You'll sign in through your browser.</p>
-            {login.activeSession || login.loginTargets.length > 0 ? (
+            {showLoginProgress ? (
               <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
             ) : (
               <AddAccountForm
@@ -57,9 +93,33 @@ export function OnboardingFlow(props: {
           </>
         ) : step === 'environment' ? (
           <>
-            <h2>Add an environment</h2>
-            <p className="desc">Discover the Power Platform environments available to your account, or enter one manually.</p>
-            <AddEnvironmentForm accounts={accounts} refreshState={refreshState} toast={toast} />
+            <div className="onboarding-section-header">
+              <div>
+                <h2>Add an environment</h2>
+                <p className="desc">Discover the Power Platform environments available to your account, or enter one manually.</p>
+              </div>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowAdditionalAccountForm((current) => !current)}>
+                {showAdditionalAccountForm ? 'Hide account form' : 'Add another account'}
+              </button>
+            </div>
+            {showLoginProgress ? (
+              <LoginProgress session={login.activeSession} loginTargets={login.loginTargets} onCancel={login.handleCancelLogin} onDismiss={login.clearCompletedLogin} toast={toast} />
+            ) : showAdditionalAccountForm ? (
+              <section className="onboarding-inline-section">
+                <h3>Add account</h3>
+                <AddAccountForm
+                  accounts={accounts}
+                  selectedApis={selectedApis}
+                  setSelectedApis={setSelectedApis}
+                  globalEnvironment={globalEnvironment}
+                  onLoginStarted={login.handleLoginStarted}
+                  refreshState={refreshState}
+                  toast={toast}
+                  onSaved={() => setShowAdditionalAccountForm(false)}
+                />
+              </section>
+            ) : null}
+            <AddEnvironmentForm accounts={accounts} refreshState={refreshState} toast={toast} startBapLogin={handleBapLogin} />
           </>
         ) : null}
       </div>

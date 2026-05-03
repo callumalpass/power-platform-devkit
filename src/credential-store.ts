@@ -98,6 +98,10 @@ class WindowsDpapiCredentialStore implements CredentialStore {
     }
     const result = await runPowerShell(WINDOWS_DPAPI_DECRYPT_SCRIPT, encrypted);
     if (result.status === 0) return result.stdout;
+    if (isWindowsDpapiUnreadableBlob(result)) {
+      await rm(path, { force: true }).catch(() => undefined);
+      return undefined;
+    }
     throw commandFailure('Windows DPAPI decrypt failed', result);
   }
 
@@ -177,6 +181,10 @@ function isSecretServiceUnavailable(result: CommandResult): boolean {
 function secretServiceUnavailableMessage(result: CommandResult): string {
   if (result.error?.code === 'ENOENT') return 'Secret Service is unavailable because secret-tool is not installed.';
   return `Secret Service is unavailable: ${trimTrailingNewline(result.stderr) || `exit ${result.status}`}`;
+}
+
+function isWindowsDpapiUnreadableBlob(result: CommandResult): boolean {
+  return /CryptographicException|FromBase64String|Invalid length for a Base-64|not a valid Base-64|The parameter is incorrect|Key not valid for use in specified state/i.test(result.stderr);
 }
 
 function encodeKey(key: string): string {

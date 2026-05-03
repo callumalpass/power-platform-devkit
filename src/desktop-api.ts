@@ -315,7 +315,7 @@ async function accountBrowserProfileReset(url: URL, context: DesktopApiContext):
 async function environmentDiscover(body: unknown, context: DesktopApiContext): Promise<DesktopApiResponse> {
   const account = optionalString(asRecord(body)?.account);
   if (!account) return json(400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account is required.', { source: 'pp/desktop' })));
-  const result = await discoverAccessibleEnvironments(account, context.configOptions, { allowInteractive: context.allowInteractiveAuth });
+  const result = await discoverAccessibleEnvironments(account, context.configOptions, { allowInteractive: false });
   return json(result.success ? 200 : 400, result);
 }
 

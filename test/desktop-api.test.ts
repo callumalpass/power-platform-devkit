@@ -70,6 +70,30 @@ test('handleDesktopApiRequest saves interactive accounts without starting login'
   assert.equal(config.accounts.work.loginHint, 'admin@example.com');
 });
 
+test('handleDesktopApiRequest does not start hidden interactive auth during environment discovery', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-api-'));
+  const context = createContext({ allowInteractiveAuth: true, configOptions: { configDir, credentialStore: 'file' } });
+
+  const createResponse = await handleDesktopApiRequest(context, {
+    method: 'POST',
+    path: '/api/accounts',
+    body: {
+      name: 'work',
+      kind: 'user',
+      loginHint: 'admin@example.com'
+    }
+  });
+  assert.equal(createResponse.status, 201);
+
+  const discoverResponse = await handleDesktopApiRequest(context, {
+    method: 'POST',
+    path: '/api/environments/discover',
+    body: { account: 'work' }
+  });
+  assert.equal(discoverResponse.status, 400);
+  assert.match(JSON.stringify(discoverResponse.body), /Interactive authentication is disabled/);
+});
+
 test('handleDesktopApiRequest exposes browser profile status and reset routes per account', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-api-'));
   const context = createContext({ configOptions: { configDir } });

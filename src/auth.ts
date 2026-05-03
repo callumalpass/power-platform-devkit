@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { ConfidentialClientApplication, PublicClientApplication, PromptValue, type AccountInfo, type AuthenticationResult, type ICachePlugin } from '@azure/msal-node';
 import { getAccount, getCredentialStoreMode, getMsalCacheDir, listAccounts, removeAccount, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import { createOsCredentialStore, isCredentialStoreUnavailableError } from './credential-store.js';
+import { createOsCredentialStore, isCredentialStoreUnavailableError, type CredentialStore } from './credential-store.js';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
@@ -531,6 +531,7 @@ async function readMsalCache(key: string, options: ConfigStoreOptions): Promise<
   const mode = getCredentialStoreMode(options);
   if (mode === 'file') return readMsalFileCache(key, options);
 
+  const credentialKey = msalCredentialKey(key);
   const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
   if (!store) {
     if (mode === 'auto') return readMsalFileCache(key, options);
@@ -538,12 +539,15 @@ async function readMsalCache(key: string, options: ConfigStoreOptions): Promise<
   }
 
   try {
-    const secureCache = await store.get(msalCredentialKey(key));
-    if (secureCache) return secureCache;
+    const secureCache = await store.get(credentialKey);
+    if (secureCache) {
+      if (isValidMsalCache(secureCache)) return secureCache;
+      await store.delete(credentialKey).catch(() => undefined);
+    }
     const fileCache = await readMsalFileCache(key, options);
     if (!fileCache) return undefined;
-    await store.set(msalCredentialKey(key), fileCache);
-    await deleteMsalFileCache(key, options);
+    const storage = await writeVerifiedSecureMsalCache(store, credentialKey, fileCache, mode, options, key);
+    if (storage === 'secure') await deleteMsalFileCache(key, options);
     return fileCache;
   } catch (error) {
     if (mode === 'auto' && isCredentialStoreUnavailableError(error)) {
@@ -560,6 +564,7 @@ async function writeMsalCache(key: string, value: string, options: ConfigStoreOp
     return;
   }
 
+  const credentialKey = msalCredentialKey(key);
   const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
   if (!store) {
     if (mode === 'auto') {
@@ -570,8 +575,8 @@ async function writeMsalCache(key: string, value: string, options: ConfigStoreOp
   }
 
   try {
-    await store.set(msalCredentialKey(key), value);
-    await deleteMsalFileCache(key, options);
+    const storage = await writeVerifiedSecureMsalCache(store, credentialKey, value, mode, options, key, accountName);
+    if (storage === 'secure') await deleteMsalFileCache(key, options);
   } catch (error) {
     if (mode === 'auto' && isCredentialStoreUnavailableError(error)) {
       await writeMsalFileCache(key, value, options, accountName);
@@ -579,6 +584,28 @@ async function writeMsalCache(key: string, value: string, options: ConfigStoreOp
     }
     throw new Error(`Failed to write secure MSAL cache for ${accountName}: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+async function writeVerifiedSecureMsalCache(
+  store: CredentialStore,
+  credentialKey: string,
+  value: string,
+  mode: 'auto' | 'os',
+  options: ConfigStoreOptions,
+  cacheKey: string,
+  accountName?: string
+): Promise<'secure' | 'file'> {
+  await store.set(credentialKey, value);
+  const written = await store.get(credentialKey);
+  if (written === value && isValidMsalCache(written)) return 'secure';
+
+  await store.delete(credentialKey).catch(() => undefined);
+  const message = 'OS credential storage returned a corrupted or truncated MSAL cache after write.';
+  if (mode === 'auto') {
+    await writeMsalFileCache(cacheKey, value, options, accountName ?? cacheKey);
+    return 'file';
+  }
+  throw new Error(message);
 }
 
 async function deleteMsalCache(key: string, options: ConfigStoreOptions): Promise<void> {
@@ -598,13 +625,21 @@ async function deleteMsalCache(key: string, options: ConfigStoreOptions): Promis
   await deleteMsalFileCache(key, options);
 }
 
+function isValidMsalCache(cache: string | undefined): cache is string {
+  if (!cache) return false;
+  try {
+    JSON.parse(cache);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function readMsalFileCache(key: string, options: ConfigStoreOptions): Promise<string | undefined> {
   const cachePath = msalFileCachePath(key, options);
   try {
     const cache = await readFile(cachePath, 'utf8');
-    try {
-      JSON.parse(cache);
-    } catch {
+    if (!isValidMsalCache(cache)) {
       await quarantineCorruptCacheFile(cachePath);
       return undefined;
     }

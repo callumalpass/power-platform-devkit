@@ -660,6 +660,7 @@ export function AccountsPanel(props: {
   }
 
   const editingAccount = drawer.mode === 'edit' ? accounts.find((account) => account.name === drawer.accountName) : null;
+  const showDetail = drawer.mode !== 'closed';
 
   return (
     <div className="panel setup-table-panel">
@@ -676,17 +677,17 @@ export function AccountsPanel(props: {
         </div>
       </div>
 
-      {accounts.length === 0 ? (
-        <div className="setup-table-empty">
-          <p>No accounts configured yet.</p>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>
-            Add your first account
-          </button>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="setup-table-empty">No accounts match “{filter}”.</div>
-      ) : (
-        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={detailStyle}>
+      <div className={`setup-table-area ${showDetail ? 'with-detail' : ''}`} style={detailStyle}>
+        {accounts.length === 0 ? (
+          <div className="setup-table-empty">
+            <p>No accounts configured yet.</p>
+            <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })}>
+              Add your first account
+            </button>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="setup-table-empty">No accounts match “{filter}”.</div>
+        ) : (
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
@@ -786,50 +787,51 @@ export function AccountsPanel(props: {
               </tbody>
             </table>
           </div>
-          {drawer.mode !== 'closed' ? (
-            <div className="setup-split-detail">
-              <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
-              <DetailPanel open={drawer.mode === 'new'} title="Add account" subtitle="Connect to Power Platform via Microsoft identity." onClose={() => setDrawer({ mode: 'closed' })}>
-                <AddAccountForm
-                  accounts={accounts}
-                  selectedApis={selectedApis}
-                  setSelectedApis={setSelectedApis}
-                  globalEnvironment={globalEnvironment}
-                  onLoginStarted={login.handleLoginStarted}
-                  refreshState={refreshState}
-                  toast={toast}
-                  onSaved={() => setDrawer({ mode: 'closed' })}
-                />
-              </DetailPanel>
+        )}
 
-              <DetailPanel
-                open={drawer.mode === 'edit' && !!editingAccount}
-                title={editingAccount?.name || 'Account'}
-                subtitle={
-                  editingAccount ? (
-                    <>
-                      {editingAccount.kind} · {editingAccount.accountUsername || editingAccount.loginHint || 'no identity'}
-                    </>
-                  ) : undefined
-                }
-                onClose={() => setDrawer({ mode: 'closed' })}
-              >
-                {editingAccount ? (
-                  <EditAccountBody
-                    key={editingAccount.name}
-                    account={editingAccount}
-                    tokenStatus={tokenStatus[editingAccount.name]}
-                    confirm={confirm}
-                    refreshState={refreshState}
-                    onClose={() => setDrawer({ mode: 'closed' })}
-                    toast={toast}
-                  />
-                ) : null}
-              </DetailPanel>
-            </div>
-          ) : null}
-        </div>
-      )}
+        {showDetail ? (
+          <div className="setup-split-detail">
+            <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
+            <DetailPanel open={drawer.mode === 'new'} title="Add account" subtitle="Connect to Power Platform via Microsoft identity." onClose={() => setDrawer({ mode: 'closed' })}>
+              <AddAccountForm
+                accounts={accounts}
+                selectedApis={selectedApis}
+                setSelectedApis={setSelectedApis}
+                globalEnvironment={globalEnvironment}
+                onLoginStarted={login.handleLoginStarted}
+                refreshState={refreshState}
+                toast={toast}
+                onSaved={() => setDrawer({ mode: 'closed' })}
+              />
+            </DetailPanel>
+
+            <DetailPanel
+              open={drawer.mode === 'edit' && !!editingAccount}
+              title={editingAccount?.name || 'Account'}
+              subtitle={
+                editingAccount ? (
+                  <>
+                    {editingAccount.kind} · {editingAccount.accountUsername || editingAccount.loginHint || 'no identity'}
+                  </>
+                ) : undefined
+              }
+              onClose={() => setDrawer({ mode: 'closed' })}
+            >
+              {editingAccount ? (
+                <EditAccountBody
+                  key={editingAccount.name}
+                  account={editingAccount}
+                  tokenStatus={tokenStatus[editingAccount.name]}
+                  confirm={confirm}
+                  refreshState={refreshState}
+                  onClose={() => setDrawer({ mode: 'closed' })}
+                  toast={toast}
+                />
+              ) : null}
+            </DetailPanel>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

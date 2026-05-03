@@ -212,6 +212,7 @@ export function SetupTab(props: SetupTabProps) {
           tokenStatus={tokenStatus}
           health={health}
           confirm={confirm}
+          login={login}
           recheckHealth={recheckHealth}
           recheckApi={recheckApi}
           refreshState={refreshState}

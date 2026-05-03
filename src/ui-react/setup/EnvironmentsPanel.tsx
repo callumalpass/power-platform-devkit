@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { api, formDataObject, formatTimeRemaining, optionList } from '../utils.js';
+import { ApiRequestError, api, formDataObject, formatTimeRemaining, optionList } from '../utils.js';
 import type { ApiEnvelope, ToastFn } from '../ui-types.js';
 import {
   HEALTH_APIS,
@@ -9,11 +9,13 @@ import {
   type SetupAccount,
   type SetupDetailStyle,
   type SetupEnvironment,
+  type AuthSession,
   type TokenEntry,
   type TokenStatusMap
 } from './types.js';
 import { healthHint } from './health.js';
 import type { useConfirm } from './ConfirmDialog.js';
+import type { useAuthSession } from './login.js';
 import { DetailPanel } from './DetailPanel.js';
 import { OverflowMenu } from './OverflowMenu.js';
 import { useResizableWidth } from './use-resizable-width.js';
@@ -50,6 +52,18 @@ function worstHealth(statuses: Record<string, HealthEntry> | undefined): 'pendin
     if (entry.status === 'error') return 'error';
   }
   return anyPending ? 'pending' : 'ok';
+}
+
+function canStartInteractiveLogin(account: SetupAccount | undefined): account is SetupAccount {
+  return account?.kind === 'user' || account?.kind === 'device-code';
+}
+
+function isInteractiveAuthRequired(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError)) return false;
+  return (
+    /Interactive authentication is disabled|not authenticated|no cached account/i.test(error.message) ||
+    /Interactive authentication is disabled|not authenticated|no cached account/i.test(JSON.stringify(error.data))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +252,14 @@ function EditEnvironmentBody(props: {
 // AddEnvironmentForm (still exported for OnboardingFlow; used by drawer)
 // ---------------------------------------------------------------------------
 
-export function AddEnvironmentForm(props: { accounts: SetupAccount[]; refreshState: (silent?: boolean) => Promise<void>; toast: ToastFn; onSaved?: () => void }) {
-  const { accounts, refreshState, toast, onSaved } = props;
+export function AddEnvironmentForm(props: {
+  accounts: SetupAccount[];
+  refreshState: (silent?: boolean) => Promise<void>;
+  toast: ToastFn;
+  onSaved?: () => void;
+  startBapLogin?: (account: SetupAccount) => Promise<void> | void;
+}) {
+  const { accounts, refreshState, toast, onSaved, startBapLogin } = props;
   const [discoveries, setDiscoveries] = useState<EnvironmentDiscovery[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [selectedDiscoveryAccount, setSelectedDiscoveryAccount] = useState<string>(accounts[0]?.name || '');
@@ -276,6 +296,12 @@ export function AddEnvironmentForm(props: { accounts: SetupAccount[]; refreshSta
       setDiscoveries(payload.data || []);
       toast(`${(payload.data || []).length} environment${(payload.data || []).length === 1 ? '' : 's'} found`);
     } catch (error) {
+      const account = accounts.find((candidate) => candidate.name === selectedDiscoveryAccount);
+      if (startBapLogin && canStartInteractiveLogin(account) && isInteractiveAuthRequired(error)) {
+        await startBapLogin(account);
+        toast('Sign in to Platform Admin, then retry discovery.');
+        return;
+      }
       toast(error instanceof Error ? error.message : String(error), true);
     } finally {
       setDiscovering(false);
@@ -443,12 +469,13 @@ export function EnvironmentsPanel(props: {
   tokenStatus: TokenStatusMap;
   health: HealthMap;
   confirm: ReturnType<typeof useConfirm>;
+  login: ReturnType<typeof useAuthSession>;
   recheckHealth: () => void;
   recheckApi: (alias: string, apiName?: string) => void;
   refreshState: (silent?: boolean) => Promise<void>;
   toast: ToastFn;
 }) {
-  const { accounts, environments, tokenStatus, health, confirm, recheckHealth, recheckApi, refreshState, toast } = props;
+  const { accounts, environments, tokenStatus, health, confirm, login, recheckHealth, recheckApi, refreshState, toast } = props;
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'alias', dir: 'asc' });
   const [drawer, setDrawer] = useState<DrawerState>({ mode: 'closed' });
@@ -511,7 +538,27 @@ export function EnvironmentsPanel(props: {
     });
   }
 
+  async function handleBapLogin(account: SetupAccount) {
+    try {
+      const started = await api<ApiEnvelope<AuthSession>>('/api/auth/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: account.name,
+          kind: account.kind === 'device-code' ? 'device-code' : 'user',
+          loginHint: account.loginHint || account.accountUsername,
+          tenantId: account.tenantId,
+          clientId: account.clientId,
+          excludeApis: ['dv', 'flow', 'powerapps', 'graph']
+        })
+      });
+      login.handleLoginStarted(started.data);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
   const editingEnv = drawer.mode === 'edit' ? environments.find((env) => env.alias === drawer.alias) : null;
+  const showDetail = drawer.mode !== 'closed';
 
   return (
     <div className="panel setup-table-panel">
@@ -528,17 +575,17 @@ export function EnvironmentsPanel(props: {
         </div>
       </div>
 
-      {environments.length === 0 ? (
-        <div className="setup-table-empty">
-          <p>No environments configured yet.</p>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })} disabled={!accounts.length}>
-            {accounts.length ? 'Add your first environment' : 'Add an account first'}
-          </button>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="setup-table-empty">No environments match “{filter}”.</div>
-      ) : (
-        <div className={`setup-table-area ${drawer.mode !== 'closed' ? 'with-detail' : ''}`} style={detailStyle}>
+      <div className={`setup-table-area ${showDetail ? 'with-detail' : ''}`} style={detailStyle}>
+        {environments.length === 0 ? (
+          <div className="setup-table-empty">
+            <p>No environments configured yet.</p>
+            <button className="btn btn-primary btn-sm" type="button" onClick={() => setDrawer({ mode: 'new' })} disabled={!accounts.length}>
+              {accounts.length ? 'Add your first environment' : 'Add an account first'}
+            </button>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="setup-table-empty">No environments match “{filter}”.</div>
+        ) : (
           <div className="setup-table-scroll">
             <table className="setup-table">
               <thead>
@@ -641,44 +688,45 @@ export function EnvironmentsPanel(props: {
               </tbody>
             </table>
           </div>
-          {drawer.mode !== 'closed' ? (
-            <div className="setup-split-detail">
-              <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
-              <DetailPanel open={drawer.mode === 'new'} title="Add environment" subtitle="Discover from an account or enter details manually." onClose={() => setDrawer({ mode: 'closed' })}>
-                <AddEnvironmentForm accounts={accounts} refreshState={refreshState} toast={toast} onSaved={() => setDrawer({ mode: 'closed' })} />
-              </DetailPanel>
+        )}
 
-              <DetailPanel
-                open={drawer.mode === 'edit' && !!editingEnv}
-                title={editingEnv?.alias || 'Environment'}
-                subtitle={
-                  editingEnv ? (
-                    <>
-                      {editingEnv.displayName || hostFromUrl(editingEnv.url)} · {editingEnv.account}
-                    </>
-                  ) : undefined
-                }
-                onClose={() => setDrawer({ mode: 'closed' })}
-              >
-                {editingEnv ? (
-                  <EditEnvironmentBody
-                    key={editingEnv.alias}
-                    environment={editingEnv}
-                    accounts={accounts}
-                    health={health[editingEnv.alias] || {}}
-                    tokenStatus={tokenStatus[editingEnv.account]}
-                    confirm={confirm}
-                    refreshState={refreshState}
-                    recheckApi={recheckApi}
-                    onClose={() => setDrawer({ mode: 'closed' })}
-                    toast={toast}
-                  />
-                ) : null}
-              </DetailPanel>
-            </div>
-          ) : null}
-        </div>
-      )}
+        {showDetail ? (
+          <div className="setup-split-detail">
+            <div className="setup-detail-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize detail panel" onMouseDown={startDetailResize} />
+            <DetailPanel open={drawer.mode === 'new'} title="Add environment" subtitle="Discover from an account or enter details manually." onClose={() => setDrawer({ mode: 'closed' })}>
+              <AddEnvironmentForm accounts={accounts} refreshState={refreshState} toast={toast} startBapLogin={handleBapLogin} onSaved={() => setDrawer({ mode: 'closed' })} />
+            </DetailPanel>
+
+            <DetailPanel
+              open={drawer.mode === 'edit' && !!editingEnv}
+              title={editingEnv?.alias || 'Environment'}
+              subtitle={
+                editingEnv ? (
+                  <>
+                    {editingEnv.displayName || hostFromUrl(editingEnv.url)} · {editingEnv.account}
+                  </>
+                ) : undefined
+              }
+              onClose={() => setDrawer({ mode: 'closed' })}
+            >
+              {editingEnv ? (
+                <EditEnvironmentBody
+                  key={editingEnv.alias}
+                  environment={editingEnv}
+                  accounts={accounts}
+                  health={health[editingEnv.alias] || {}}
+                  tokenStatus={tokenStatus[editingEnv.account]}
+                  confirm={confirm}
+                  refreshState={refreshState}
+                  recheckApi={recheckApi}
+                  onClose={() => setDrawer({ mode: 'closed' })}
+                  toast={toast}
+                />
+              ) : null}
+            </DetailPanel>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

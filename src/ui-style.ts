@@ -781,6 +781,10 @@ export const UI_CSS = String.raw`
     .onboarding-step-indicator.active { color: var(--ink); font-weight: 600; }
     .onboarding-step-indicator.done { color: var(--ok); }
     .onboarding-step-divider { width: 24px; height: 1px; background: var(--border); }
+    .onboarding-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .onboarding-section-header .desc { margin: 0; }
+    .onboarding-inline-section { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px; background: var(--bg); }
+    .onboarding-inline-section h3 { margin: 0 0 12px; font-size: 0.875rem; }
     .health-dot.muted { background: var(--border); }
 
     /* Login progress (step-through) */
