@@ -83,10 +83,10 @@ function mapAttribute(attribute: DataverseAttributeSummary) {
 function extractReferencedEntityNames(source: string, fallback?: string): string[] {
   const names = new Set<string>();
   if (fallback?.trim()) names.add(fallback.trim());
-  const pattern = /<(entity|link-entity)\b[^>]*\bname="([^"]+)"/g;
+  const pattern = /<(entity|link-entity)\b[^>]*\bname\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s/>]+))/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(source)) !== null) {
-    const value = match[2]?.trim();
+    const value = (match[2] ?? match[3] ?? match[4])?.trim();
     if (value) names.add(value);
   }
   return [...names];

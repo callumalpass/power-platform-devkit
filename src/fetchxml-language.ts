@@ -123,6 +123,8 @@ const ROOT_TAGS = ['fetch'];
 const FILTER_TYPES = ['and', 'or'];
 const BOOLEAN_VALUES = ['true', 'false', '1', '0'];
 const LINK_TYPES = ['inner', 'outer', 'any', 'not any', 'all', 'not all', 'exists', 'in', 'matchfirstrowusingcrossapply'];
+const DEFAULT_COMPLETION_LIMIT = 100;
+const ENTITY_COMPLETION_LIMIT = 5000;
 
 const OPERATORS_BY_KIND: Record<string, string[]> = {
   default: ['eq', 'ne', 'null', 'not-null', 'in', 'not-in'],
@@ -215,17 +217,23 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
     const token = match[0];
     const from = match.index;
     const to = from + token.length;
-    if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
-    if (token.startsWith('<!--') || token.startsWith('<?') || token.startsWith('<!')) continue;
+    if (token.startsWith('<!--') || token.startsWith('<?') || token.startsWith('<!')) {
+      if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
+      continue;
+    }
 
     const parsedTag = parseTagToken(token, from);
-    if (!parsedTag) continue;
+    if (!parsedTag) {
+      if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
+      continue;
+    }
     parsedTag.parentName = stack[stack.length - 1]?.name;
     elements.push(parsedTag);
 
     if (parsedTag.closing) {
       if (!stack.length) {
         diagnostics.push(rangeDiagnostic('error', 'FETCHXML_UNEXPECTED_CLOSING_TAG', `Unexpected closing tag </${parsedTag.name}>.`, from, to));
+        if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
         continue;
       }
       const top = stack[stack.length - 1];
@@ -233,9 +241,11 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
         diagnostics.push(rangeDiagnostic('error', 'FETCHXML_MISMATCHED_CLOSING_TAG', `Expected </${top.name}> but found </${parsedTag.name}>.`, from, to));
         const idx = findFrameIndex(stack, parsedTag.name);
         if (idx >= 0) stack.splice(idx);
+        if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
         continue;
       }
       stack.pop();
+      if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
       continue;
     }
 
@@ -246,6 +256,7 @@ function parseDocument(source: string, cursor: number): ParsedDocument {
       attributes: parsedTag.attributes
     };
     if (!parsedTag.selfClosing) stack.push(frame);
+    if (to <= cursor) stackAtCursor = stack.map(cloneFrame);
   }
 
   if (source.length <= cursor) stackAtCursor = stack.map(cloneFrame);
@@ -283,17 +294,17 @@ function parseTagToken(token: string, offset: number): ParsedElement | undefined
 
 function parseAttributes(text: string, offset: number): ParsedAttribute[] {
   const attributes: ParsedAttribute[] = [];
-  const attrPattern = /([A-Za-z_][\w:-]*)\s*=\s*"([^"]*)"/g;
+  const attrPattern = /([A-Za-z_][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+))/g;
   let match: RegExpExecArray | null;
   while ((match = attrPattern.exec(text)) !== null) {
     const full = match[0];
     const name = match[1];
-    const value = match[2] ?? '';
+    const value = match[2] ?? match[3] ?? match[4] ?? '';
     const fullFrom = offset + match.index;
     const nameFrom = fullFrom;
     const nameTo = nameFrom + name.length;
-    const quoteIndex = full.indexOf('"');
-    const valueFrom = fullFrom + quoteIndex + 1;
+    const quoteIndex = full.search(/["']/);
+    const valueFrom = quoteIndex >= 0 ? fullFrom + quoteIndex + 1 : fullFrom + full.indexOf(value);
     const valueTo = valueFrom + value.length;
     attributes.push({ name, value, valueFrom, valueTo, nameFrom, nameTo });
   }
@@ -338,6 +349,7 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
   let currentName = '';
   let currentValue = '';
   let mode: 'between' | 'name' | 'after-name' | 'before-value' | 'value' = 'between';
+  let quoteChar: '"' | "'" | undefined;
   let attrValueFrom = cursor;
   let attrNameFrom = cursor;
 
@@ -404,28 +416,27 @@ function readCurrentTagContext(source: string, cursor: number): CurrentTagContex
         index += 1;
         continue;
       }
-      if (char === '"') {
+      if (char === '"' || char === "'") {
         mode = 'value';
+        quoteChar = char;
         currentValue = '';
         attrValueFrom = lt + index + 1;
         index += 1;
         continue;
       }
-      return {
-        kind: 'attribute-value',
-        elementName: tagName,
-        attributeName: currentName,
-        text: '',
-        from: lt + index,
-        to: lt + index,
-        parsedAttributes: rawAttributes
-      };
+      mode = 'value';
+      quoteChar = undefined;
+      currentValue = char;
+      attrValueFrom = lt + index;
+      index += 1;
+      continue;
     }
     if (mode === 'value') {
-      if (char === '"') {
+      if ((quoteChar && char === quoteChar) || (!quoteChar && /[\s/>]/.test(char))) {
         rawAttributes.push({ name: currentName, value: currentValue });
         currentName = '';
         currentValue = '';
+        quoteChar = undefined;
         mode = 'between';
         index += 1;
         continue;
@@ -481,7 +492,7 @@ function buildCompletions(context: FetchXmlCursorContext, parsed: ParsedDocument
     case 'attribute-name':
       return filterByPrefix(attributeNameCompletions(context.elementName, currentTag), context.text);
     case 'attribute-value':
-      return filterByPrefix(attributeValueCompletions(context, parsed, currentTag, metadata), context.text);
+      return filterByPrefix(attributeValueCompletions(context, parsed, currentTag, metadata), context.text, entityNameCompletionLimit(context));
     default:
       return [];
   }
@@ -515,6 +526,8 @@ function attributeValueCompletions(context: FetchXmlCursorContext, parsed: Parse
   const workspace = indexMetadata(metadata);
   const scopeEntityName = context.entityScope;
   const scopeEntity = scopeEntityName ? workspace.entities.get(scopeEntityName) : undefined;
+  const parentEntityName = resolveParentEntityScope(parsed.stackAtCursor, metadata);
+  const parentEntity = parentEntityName ? workspace.entities.get(parentEntityName) : undefined;
   const currentTagMap = new Map(currentTag?.parsedAttributes.map((attribute) => [attribute.name, attribute.value]) ?? []);
 
   if (attrName === 'name' && (elementName === 'entity' || elementName === 'link-entity')) {
@@ -544,7 +557,7 @@ function attributeValueCompletions(context: FetchXmlCursorContext, parsed: Parse
     }));
   }
   if (attrName === 'to' && elementName === 'link-entity') {
-    return (scopeEntity?.attributes ?? []).map((attribute) => ({
+    return (parentEntity?.attributes ?? []).map((attribute) => ({
       label: attribute.logicalName,
       type: 'value',
       detail: attribute.attributeTypeName || attribute.attributeType,
@@ -655,13 +668,14 @@ function buildSemanticDiagnostics(parsed: ParsedDocument, metadata?: FetchXmlLan
       const fromAttr = attrMap.get('from');
       const toAttr = attrMap.get('to');
       const linkedEntity = linkedNameAttr ? workspace.entities.get(linkedNameAttr.value) : undefined;
+      const parentEntity = resolveElementParentScopeEntity(element, parsed.elements, workspace, rootEntity);
       if (fromAttr && linkedEntity && !hasAttribute(linkedEntity, fromAttr.value)) {
         diagnostics.push(
           rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_FROM', `Unknown link source attribute ${fromAttr.value} for ${linkedEntity.logicalName}.`, fromAttr.valueFrom, fromAttr.valueTo)
         );
       }
-      if (toAttr && scopeEntity && !hasAttribute(scopeEntity, toAttr.value)) {
-        diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_TO', `Unknown link target attribute ${toAttr.value} for ${scopeEntity.logicalName}.`, toAttr.valueFrom, toAttr.valueTo));
+      if (toAttr && parentEntity && !hasAttribute(parentEntity, toAttr.value)) {
+        diagnostics.push(rangeDiagnostic('warning', 'FETCHXML_UNKNOWN_LINK_TO', `Unknown link target attribute ${toAttr.value} for ${parentEntity.logicalName}.`, toAttr.valueFrom, toAttr.valueTo));
       }
     }
   }
@@ -700,20 +714,56 @@ function resolveEntityScope(stack: ElementFrame[], currentTag: CurrentTagContext
   return scopedNames[scopedNames.length - 1] ?? workspace.rootEntityName;
 }
 
-function resolveElementScopeEntity(element: ParsedElement, elements: ParsedElement[], workspace: IndexedMetadata, rootEntity?: FetchXmlLanguageEntity): FetchXmlLanguageEntity | undefined {
-  if (element.name === 'entity') {
-    const nameValue = element.attributes.find((attribute) => attribute.name === 'name')?.value;
-    return (nameValue && workspace.entities.get(nameValue)) || rootEntity;
+function resolveParentEntityScope(stack: ElementFrame[], metadata?: FetchXmlLanguageMetadata): string | undefined {
+  const workspace = indexMetadata(metadata);
+  const scopedNames: string[] = [];
+  for (const frame of stack) {
+    if (frame.name === 'entity' || frame.name === 'link-entity') {
+      const nameValue = frame.attributes.find((attribute) => attribute.name === 'name')?.value;
+      if (nameValue) scopedNames.push(nameValue);
+    }
   }
+  return scopedNames[scopedNames.length - 1] ?? workspace.rootEntityName;
+}
+
+function resolveElementScopeEntity(element: ParsedElement, elements: ParsedElement[], workspace: IndexedMetadata, rootEntity?: FetchXmlLanguageEntity): FetchXmlLanguageEntity | undefined {
   let scopeName = rootEntity?.logicalName;
-  const openers = elements.filter((candidate) => !candidate.closing && candidate.from <= element.from);
-  for (const candidate of openers) {
+  for (const candidate of openElementStackBefore(element, elements)) {
+    if (candidate.name === 'entity' || candidate.name === 'link-entity') {
+      const nameValue = candidate.attributes.find((attribute) => attribute.name === 'name')?.value;
+      if (nameValue) scopeName = nameValue;
+    }
+  }
+  if (element.name === 'entity' || element.name === 'link-entity') {
+    const nameValue = element.attributes.find((attribute) => attribute.name === 'name')?.value;
+    if (nameValue) scopeName = nameValue;
+  }
+  return scopeName ? workspace.entities.get(scopeName) : undefined;
+}
+
+function resolveElementParentScopeEntity(element: ParsedElement, elements: ParsedElement[], workspace: IndexedMetadata, rootEntity?: FetchXmlLanguageEntity): FetchXmlLanguageEntity | undefined {
+  let scopeName = rootEntity?.logicalName;
+  for (const candidate of openElementStackBefore(element, elements)) {
     if (candidate.name === 'entity' || candidate.name === 'link-entity') {
       const nameValue = candidate.attributes.find((attribute) => attribute.name === 'name')?.value;
       if (nameValue) scopeName = nameValue;
     }
   }
   return scopeName ? workspace.entities.get(scopeName) : undefined;
+}
+
+function openElementStackBefore(element: ParsedElement, elements: ParsedElement[]): ParsedElement[] {
+  const stack: ParsedElement[] = [];
+  for (const candidate of elements) {
+    if (candidate.from >= element.from) break;
+    if (candidate.closing) {
+      const index = findOpenElementIndex(stack, candidate.name);
+      if (index >= 0) stack.splice(index);
+      continue;
+    }
+    if (!candidate.selfClosing) stack.push(candidate);
+  }
+  return stack;
 }
 
 function collectLinkAliases(parsed: ParsedDocument): string[] {
@@ -766,19 +816,34 @@ function operatorsForAttribute(attribute: FetchXmlLanguageAttribute | undefined)
   return OPERATORS_BY_KIND.default;
 }
 
-function filterByPrefix(items: FetchXmlCompletionItem[], prefix: string): FetchXmlCompletionItem[] {
+function entityNameCompletionLimit(context: FetchXmlCursorContext): number {
+  return context.attributeName === 'name' && (context.elementName === 'entity' || context.elementName === 'link-entity') ? ENTITY_COMPLETION_LIMIT : DEFAULT_COMPLETION_LIMIT;
+}
+
+function filterByPrefix(items: FetchXmlCompletionItem[], prefix: string, limit = DEFAULT_COMPLETION_LIMIT): FetchXmlCompletionItem[] {
   const normalizedPrefix = prefix.trim().toLowerCase();
-  if (!normalizedPrefix) return items.slice(0, 100);
+  if (!normalizedPrefix) return items.slice(0, limit);
   return items
-    .filter((item) => item.label.toLowerCase().includes(normalizedPrefix))
+    .filter((item) => searchableCompletionText(item).some((value) => value.includes(normalizedPrefix)))
     .sort((a, b) => scoreItem(a, normalizedPrefix) - scoreItem(b, normalizedPrefix))
-    .slice(0, 100);
+    .slice(0, limit);
 }
 
 function scoreItem(item: FetchXmlCompletionItem, prefix: string): number {
-  const label = item.label.toLowerCase();
+  const [label, ...metadata] = searchableCompletionText(item);
   if (label.startsWith(prefix)) return 0 - (item.boost ?? 0);
-  return label.indexOf(prefix) + 10 - (item.boost ?? 0);
+  const labelIndex = label.indexOf(prefix);
+  const labelScore = labelIndex >= 0 ? labelIndex + 10 : Number.POSITIVE_INFINITY;
+  const metadataScore = metadata.reduce((best, value) => {
+    if (value.startsWith(prefix)) return Math.min(best, 20);
+    const index = value.indexOf(prefix);
+    return index >= 0 ? Math.min(best, index + 30) : best;
+  }, Number.POSITIVE_INFINITY);
+  return Math.min(labelScore, metadataScore) - (item.boost ?? 0);
+}
+
+function searchableCompletionText(item: FetchXmlCompletionItem): string[] {
+  return [item.label, item.detail, item.info].filter((value): value is string => Boolean(value)).map((value) => value.toLowerCase());
 }
 
 function rangeDiagnostic(level: Diagnostic['level'], code: string, message: string, from: number, to: number): FetchXmlRangeDiagnostic {
@@ -795,6 +860,13 @@ function cloneFrame(frame: ElementFrame): ElementFrame {
 }
 
 function findFrameIndex(stack: ElementFrame[], name: string): number {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    if (stack[index].name === name) return index;
+  }
+  return -1;
+}
+
+function findOpenElementIndex(stack: ParsedElement[], name: string): number {
   for (let index = stack.length - 1; index >= 0; index -= 1) {
     if (stack[index].name === name) return index;
   }
