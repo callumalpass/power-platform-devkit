@@ -175,13 +175,12 @@ export class AuthService {
     }
   }
 
-  async checkTokenStatus(name: string, resource?: string): Promise<OperationResult<{ authenticated: boolean; expiresAt?: number }>> {
+  async checkTokenStatus(name: string, _resource?: string): Promise<OperationResult<{ authenticated: boolean; expiresAt?: number }>> {
     const accountResult = await this.getAccount(name);
     if (!accountResult.success || !accountResult.data) {
       return ok({ authenticated: false });
     }
     const account = accountResult.data;
-    const targetResource = resource ?? DEFAULT_LOGIN_RESOURCE;
 
     if (account.kind === 'static-token') {
       return ok({ authenticated: Boolean(account.token) });
@@ -194,19 +193,12 @@ export class AuthService {
     }
 
     // user / device-code: account status is the presence of a cached MSAL account.
-    // Resource-specific token acquisition is reported by API health checks.
+    // Resource-specific token acquisition is reported by API health checks, so this
+    // status check must not refresh tokens or mutate the cache.
     try {
       const app = await createPublicClientApplication(account, this.options);
       const storedAccount = await resolveStoredAccount(app, account);
-      if (!storedAccount) return ok({ authenticated: false });
-      try {
-        const scopes = resolveScopes(account, targetResource);
-        const result = await app.acquireTokenSilent({ account: storedAccount, scopes });
-        const claims = decodeJwtClaims(result?.accessToken ?? '');
-        return ok({ authenticated: true, expiresAt: readNumericClaim(claims, 'exp') });
-      } catch {
-        return ok({ authenticated: true });
-      }
+      return ok({ authenticated: Boolean(storedAccount) });
     } catch {
       return ok({ authenticated: false });
     }

@@ -1,5 +1,5 @@
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { ICachePlugin, TokenCacheContext } from '@azure/msal-node';
 import { getCredentialStoreDir, getCredentialStoreMode, getMsalCacheDir, type ConfigStoreOptions, type CredentialStoreMode } from './config.js';
 import { createOsCredentialStore, isCredentialStoreUnavailableError, type CredentialStore } from './credential-store.js';
@@ -7,8 +7,12 @@ import { createOsCredentialStore, isCredentialStoreUnavailableError, type Creden
 const MSAL_CREDENTIAL_SERVICE = 'pp';
 const MSAL_CREDENTIAL_PREFIX = 'msal:';
 const AUTO_EXTENSION_UNAVAILABLE_RETRY_MS = 30_000;
+const CROSS_PROCESS_LOCK_RETRY_MS = 100;
+const CROSS_PROCESS_LOCK_TIMEOUT_MS = 120_000;
+const CROSS_PROCESS_LOCK_STALE_MS = 10 * 60_000;
 
 const autoExtensionUnavailableUntil = new Map<string, number>();
+const fallbackCacheLocks = new Map<string, Promise<void>>();
 
 type MsalPersistence = {
   save(contents: string): Promise<void>;
@@ -34,6 +38,37 @@ let msalExtensionsLoader: MsalExtensionsLoader = async () => (await import('@azu
 
 export function setMsalExtensionsLoaderForTest(loader?: MsalExtensionsLoader): void {
   msalExtensionsLoader = loader ?? (async () => (await import('@azure/msal-node-extensions')) as unknown as MsalExtensionsModule);
+}
+
+async function withFallbackCacheLock<T>(cacheKey: string, options: ConfigStoreOptions, fn: () => Promise<T>): Promise<T> {
+  const release = await acquireFallbackCacheLock(cacheKey, options);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
+async function acquireFallbackCacheLock(cacheKey: string, options: ConfigStoreOptions): Promise<() => Promise<void>> {
+  const scope = fallbackCacheLockScope(cacheKey, options);
+  const releaseInProcess = await acquireInProcessFallbackCacheLock(scope);
+  let releaseCrossProcess: (() => Promise<void>) | undefined;
+  let released = false;
+  try {
+    releaseCrossProcess = await acquireCrossProcessFallbackCacheLock(fallbackCacheLockPath(cacheKey, options));
+    return async () => {
+      if (released) return;
+      released = true;
+      try {
+        await releaseCrossProcess?.();
+      } finally {
+        releaseInProcess();
+      }
+    };
+  } catch (error) {
+    releaseInProcess();
+    throw error;
+  }
 }
 
 export async function createMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): Promise<ICachePlugin> {
@@ -67,13 +102,18 @@ export async function deleteMsalCache(key: string, options: ConfigStoreOptions):
     } catch (error) {
       if (!(mode === 'auto' && isCredentialPersistenceUnavailable(error))) throw error;
     }
-    try {
-      await deleteLegacySecureCache(key, options);
-    } catch (error) {
-      if (!(mode === 'auto' && isCredentialStoreUnavailableError(error))) throw error;
-    }
   }
-  await deleteMsalFileCache(key, options);
+
+  await withFallbackCacheLock(key, options, async () => {
+    if (mode !== 'file') {
+      try {
+        await deleteLegacySecureCache(key, options);
+      } catch (error) {
+        if (!(mode === 'auto' && isCredentialStoreUnavailableError(error))) throw error;
+      }
+    }
+    await deleteMsalFileCache(key, options);
+  });
 }
 
 export function accountCredentialCacheKeys(account: { name?: string; tokenCacheKey?: string }): string[] {
@@ -124,32 +164,36 @@ class VerifiedPersistenceCachePlugin implements ICachePlugin {
       await this.plugin.beforeCacheAccess(cacheContext);
     } catch (error) {
       if (!isUnreadablePersistenceCache(error)) throw error;
+      try {
+        await this.plugin.beforeCacheAccess(cacheContext);
+        return;
+      } catch (retryError) {
+        if (!isUnreadablePersistenceCache(retryError)) throw retryError;
+      }
       await this.persistence.delete().catch(() => false);
       this.skipNextOfficialAfter = true;
     }
   }
 
   async afterCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
-    const serialized = cacheContext.cacheHasChanged ? cacheContext.tokenCache.serialize() : undefined;
     if (this.skipNextOfficialAfter) {
       this.skipNextOfficialAfter = false;
-      await this.afterOfficialCacheAccess(cacheContext, serialized);
+      await this.afterOfficialCacheAccess(cacheContext);
       return;
     }
 
-    await this.afterOfficialCacheAccess(cacheContext, serialized);
+    await this.afterOfficialCacheAccess(cacheContext);
   }
 
-  private async afterOfficialCacheAccess(cacheContext: TokenCacheContext, serialized: string | undefined): Promise<void> {
+  private async afterOfficialCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
     try {
       await this.plugin.afterCacheAccess(cacheContext);
-      if (serialized !== undefined) {
-        await verifyPersistenceCache(this.persistence, serialized);
-      }
     } catch (error) {
+      const serialized = cacheContext.cacheHasChanged ? cacheContext.tokenCache.serialize() : undefined;
       if (this.mode === 'auto' && isRecoverablePersistenceWriteFailure(error) && serialized !== undefined) {
-        await this.persistence.delete().catch(() => false);
-        await writeMsalFileCache(this.cacheKey, serialized, this.options, this.accountName);
+        await withFallbackCacheLock(this.cacheKey, this.options, async () => {
+          await writeMsalFileCache(this.cacheKey, serialized, this.options, this.accountName);
+        });
         return;
       }
       throw error;
@@ -158,7 +202,7 @@ class VerifiedPersistenceCachePlugin implements ICachePlugin {
 }
 
 function createFileMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): ICachePlugin {
-  return {
+  return createLockedFallbackCachePlugin(cacheKey, options, {
     beforeCacheAccess: async (context) => {
       const cache = await readMsalFileCache(cacheKey, options);
       if (cache) context.tokenCache.deserialize(cache);
@@ -167,7 +211,7 @@ function createFileMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions
       if (!context.cacheHasChanged) return;
       await writeMsalFileCache(cacheKey, context.tokenCache.serialize(), options, accountName);
     }
-  };
+  });
 }
 
 async function createLegacySecureMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string, mode: Exclude<CredentialStoreMode, 'file'>): Promise<ICachePlugin | undefined> {
@@ -177,7 +221,7 @@ async function createLegacySecureMsalCachePlugin(cacheKey: string, options: Conf
     throw new Error(`OS credential storage is not available on ${process.platform}.`);
   }
 
-  return {
+  return createLockedFallbackCachePlugin(cacheKey, options, {
     beforeCacheAccess: async (context) => {
       const secureCache = await readLegacySecureCache(cacheKey, options, mode, store);
       if (secureCache) {
@@ -196,7 +240,7 @@ async function createLegacySecureMsalCachePlugin(cacheKey: string, options: Conf
       const storage = await writeVerifiedLegacySecureCache(store, cacheKey, context.tokenCache.serialize(), options, accountName, mode);
       if (storage === 'secure') await deleteMsalFileCache(cacheKey, options);
     }
-  };
+  });
 }
 
 async function migrateLegacyCachesToPersistence(
@@ -206,18 +250,54 @@ async function migrateLegacyCachesToPersistence(
   accountName: string,
   mode: Exclude<CredentialStoreMode, 'file'>
 ): Promise<void> {
-  const existing = await readValidPersistenceCache(persistence, mode);
-  if (existing) return;
+  await withFallbackCacheLock(cacheKey, options, async () => {
+    const existing = await readValidPersistenceCache(persistence, mode);
+    if (existing) return;
 
-  const fileCache = await readMsalFileCache(cacheKey, options);
-  const legacySecureCache = fileCache ? undefined : await readLegacySecureCache(cacheKey, options, mode);
-  const source = fileCache ?? legacySecureCache;
-  if (!source) return;
+    const fileCache = await readMsalFileCache(cacheKey, options);
+    const legacySecureCache = fileCache ? undefined : await readLegacySecureCache(cacheKey, options, mode);
+    const source = fileCache ?? legacySecureCache;
+    if (!source) return;
 
-  const storage = await saveVerifiedPersistenceCache(persistence, source, cacheKey, options, accountName, mode);
-  if (storage !== 'persistence') return;
-  await deleteMsalFileCache(cacheKey, options);
-  await deleteLegacySecureCache(cacheKey, options).catch(() => undefined);
+    const storage = await saveVerifiedPersistenceCache(persistence, source, cacheKey, options, accountName, mode);
+    if (storage !== 'persistence') return;
+    await deleteMsalFileCache(cacheKey, options);
+    await deleteLegacySecureCache(cacheKey, options).catch(() => undefined);
+  });
+}
+
+function createLockedFallbackCachePlugin(cacheKey: string, options: ConfigStoreOptions, plugin: ICachePlugin): ICachePlugin {
+  const releases = new WeakMap<TokenCacheContext, () => Promise<void>>();
+
+  return {
+    beforeCacheAccess: async (context) => {
+      const release = await acquireFallbackCacheLock(cacheKey, options);
+      releases.set(context, release);
+      try {
+        await plugin.beforeCacheAccess(context);
+      } catch (error) {
+        releases.delete(context);
+        await release();
+        throw error;
+      }
+    },
+    afterCacheAccess: async (context) => {
+      const release = releases.get(context);
+      if (!release) {
+        await withFallbackCacheLock(cacheKey, options, async () => {
+          await plugin.afterCacheAccess(context);
+        });
+        return;
+      }
+
+      releases.delete(context);
+      try {
+        await plugin.afterCacheAccess(context);
+      } finally {
+        await release();
+      }
+    }
+  };
 }
 
 async function readValidPersistenceCache(persistence: MsalPersistence, mode: Exclude<CredentialStoreMode, 'file'>): Promise<string | undefined> {
@@ -405,6 +485,93 @@ function markAutoExtensionUnavailable(options: ConfigStoreOptions): void {
 
 function autoExtensionScope(options: ConfigStoreOptions): string {
   return `${process.platform}:${getCredentialStoreDir(options)}`;
+}
+
+function fallbackCacheLockScope(cacheKey: string, options: ConfigStoreOptions): string {
+  return [process.platform, getCredentialStoreDir(options), getMsalCacheDir(options), cacheKey].join('\0');
+}
+
+function fallbackCacheLockPath(cacheKey: string, options: ConfigStoreOptions): string {
+  return join(getCredentialStoreDir(options), 'locks', `${encodeKey(fallbackCacheLockScope(cacheKey, options))}.lockfile`);
+}
+
+async function acquireInProcessFallbackCacheLock(scope: string): Promise<() => void> {
+  const previous = fallbackCacheLocks.get(scope) ?? Promise.resolve();
+  let releaseCurrent: () => void = () => undefined;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const next = previous.catch(() => undefined).then(() => current);
+  fallbackCacheLocks.set(scope, next);
+  await previous.catch(() => undefined);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseCurrent();
+    if (fallbackCacheLocks.get(scope) === next) {
+      fallbackCacheLocks.delete(scope);
+    }
+  };
+}
+
+async function acquireCrossProcessFallbackCacheLock(lockPath: string): Promise<() => Promise<void>> {
+  await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
+  const started = Date.now();
+  while (true) {
+    try {
+      const handle = await open(lockPath, 'wx');
+      try {
+        await handle.writeFile(`${process.pid}\n${new Date().toISOString()}\n`, 'utf8');
+      } catch (error) {
+        await handle.close().catch(() => undefined);
+        await rm(lockPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      return async () => {
+        await handle.close().catch(() => undefined);
+        await rm(lockPath, { force: true }).catch(() => undefined);
+      };
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+      if (code !== 'EEXIST') throw error;
+      if (await removeStaleCrossProcessLock(lockPath)) continue;
+      if (Date.now() - started >= CROSS_PROCESS_LOCK_TIMEOUT_MS) {
+        throw new Error(`Timed out waiting for MSAL cache lock ${lockPath}.`);
+      }
+      await sleep(CROSS_PROCESS_LOCK_RETRY_MS);
+    }
+  }
+}
+
+async function removeStaleCrossProcessLock(lockPath: string): Promise<boolean> {
+  try {
+    const [contents, info] = await Promise.all([readFile(lockPath, 'utf8').catch(() => ''), stat(lockPath)]);
+    const pid = Number(contents.split(/\r?\n/, 1)[0]);
+    const staleByAge = Date.now() - info.mtimeMs > CROSS_PROCESS_LOCK_STALE_MS;
+    const staleByPid = Number.isFinite(pid) && pid > 0 && !isProcessRunning(pid);
+    if (!staleByAge && !staleByPid) return false;
+    await rm(lockPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isProcessRunning(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    return code === 'EPERM';
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function quarantineCorruptCacheFile(cachePath: string): Promise<void> {

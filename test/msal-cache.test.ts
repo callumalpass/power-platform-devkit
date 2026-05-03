@@ -96,6 +96,36 @@ function cacheContext(value: string, cacheHasChanged = false): FakeTokenCacheCon
 test('MSAL extension cache behavior', async (t) => {
   t.after(() => setMsalExtensionsLoaderForTest());
 
+  await t.test('serializes fallback file cache access for the same cache key', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-lock-'));
+    const cacheKey = `work-cache-lock-${Date.now()}`;
+    const firstCache = '{"Account":{"id":"first"}}';
+    const plugin1 = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'file' }, 'work');
+    const plugin2 = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'file' }, 'work');
+    const events: string[] = [];
+    const firstContext = cacheContext(firstCache, true);
+    let secondDeserialized: string | undefined;
+
+    await plugin1.beforeCacheAccess(firstContext as never);
+    events.push('first:before');
+
+    const second = (async () => {
+      const secondContext = cacheContext('{}');
+      await plugin2.beforeCacheAccess(secondContext as never);
+      events.push('second:before');
+      secondDeserialized = secondContext.deserialized;
+      await plugin2.afterCacheAccess(secondContext as never);
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(events, ['first:before']);
+
+    events.push('first:release');
+    await plugin1.afterCacheAccess(firstContext as never);
+    await second;
+    assert.deepEqual(events, ['first:before', 'first:release', 'second:before']);
+    assert.equal(secondDeserialized, firstCache);
+  });
+
   await t.test('migrates existing file cache before deleting it', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-migrate-'));
     const cacheKey = `work-cache-migrate-${Date.now()}`;
@@ -135,8 +165,8 @@ test('MSAL extension cache behavior', async (t) => {
     setMsalExtensionsLoaderForTest();
   });
 
-  await t.test('falls back to file mode when verified OS write returns corrupt data in auto mode', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-write-fallback-'));
+  await t.test('does not re-read persistence after the official after hook writes cache', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-write-no-reread-'));
     const cacheKey = `work-cache-write-${Date.now()}`;
     const nextCache = '{"Account":{"id":"next"}}';
     const persistence = new FakePersistence();
@@ -148,14 +178,9 @@ test('MSAL extension cache behavior', async (t) => {
     await plugin.afterCacheAccess(cacheContext(nextCache, true) as never);
 
     const fileCachePath = join(getMsalCacheDir({ configDir }), `${cacheKey}.json`);
-    assert.equal(
-      existsSync(fileCachePath),
-      true,
-      `expected file fallback; persistence=${JSON.stringify({ value: persistence.value, deleted: persistence.deleted, queuedLoads: persistence.loadResponses.length })}`
-    );
-    const fileCache = await readFile(fileCachePath, 'utf8');
-    assert.equal(fileCache, nextCache);
-    assert.equal(persistence.deleted > 0, true);
+    assert.equal(existsSync(fileCachePath), false);
+    assert.equal(persistence.value, nextCache);
+    assert.equal(persistence.deleted, 0);
   });
 
   await t.test('keeps the file cache when migration falls back after failed persistence verification', async () => {
@@ -185,7 +210,7 @@ test('MSAL extension cache behavior', async (t) => {
     installFakeExtensions(persistence);
 
     const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
-    persistence.loadResponses.push(new Error('DPAPIEncryptedFileError: The parameter is incorrect'));
+    persistence.loadResponses.push(new Error('DPAPIEncryptedFileError: The parameter is incorrect'), new Error('DPAPIEncryptedFileError: The parameter is incorrect'));
     const context = cacheContext(nextCache, true);
 
     await plugin.beforeCacheAccess(context as never);
