@@ -202,12 +202,12 @@ async function ensureKeytarNativePackage(packageJsonPath) {
 }
 
 function runNpmScript(cwd, script) {
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const npmCommand = 'npm';
   return new Promise((resolve, reject) => {
     const child = spawn(npmCommand, ['run', script], {
       cwd,
       stdio: 'inherit',
-      shell: false
+      shell: process.platform === 'win32'
     });
     child.once('error', reject);
     child.once('exit', (code) => {
