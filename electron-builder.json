@@ -12,6 +12,7 @@
     "devDependencies": {}
   },
   "asar": true,
+  "asarUnpack": ["node_modules/@azure/msal-node-extensions/bin/**/*.node", "node_modules/@azure/msal-node-runtime/dist/**/*.{node,dll,dylib,so}", "node_modules/keytar/build/Release/*.node"],
   "npmRebuild": false,
   "win": {
     "icon": "packaging/windows/assets/pp-icon.ico",

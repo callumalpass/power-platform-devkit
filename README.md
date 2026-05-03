@@ -133,7 +133,7 @@ The `pp auth login` command supports multiple authentication methods:
 - `--env-token` -- Read a token from an environment variable (`--env-var` required)
 - `--static-token` -- Use a fixed token string (`--token` required)
 
-Interactive `user` and `device-code` accounts store their MSAL token cache in the OS credential store when available. `--credential-store auto` is the default: macOS uses Keychain, Windows uses DPAPI-protected storage, Linux uses Secret Service when available, and headless/CI environments fall back to the existing `0600` file cache. Use `--credential-store os` to require OS-backed storage or `--credential-store file` for deterministic local test/config directories.
+Interactive `user` and `device-code` accounts store their MSAL token cache in OS-backed secure persistence when available. `--credential-store auto` is the default: pp uses Microsoft's MSAL cache persistence extension for Keychain on macOS, DPAPI-protected storage on Windows, and Secret Service on Linux. Headless/CI environments fall back to the existing `0600` file cache, and Windows single-executable builds can fall back to the bounded legacy DPAPI bridge when native addons are unavailable. Use `--credential-store os` to require OS-backed storage or `--credential-store file` for deterministic local test/config directories.
 
 ### API shortcuts
 

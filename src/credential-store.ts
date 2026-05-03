@@ -3,6 +3,8 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCredentialStoreDir, type ConfigStoreOptions } from './config.js';
 
+const CREDENTIAL_STORE_COMMAND_TIMEOUT_MS = 10_000;
+
 export interface CredentialStore {
   readonly kind: 'os';
   get(key: string): Promise<string | undefined>;
@@ -139,11 +141,27 @@ function runCommand(command: string, args: string[], input?: string): Promise<Co
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let settled = false;
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish({
+        status: 124,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: `${command} timed out after ${CREDENTIAL_STORE_COMMAND_TIMEOUT_MS}ms.`
+      });
+    }, CREDENTIAL_STORE_COMMAND_TIMEOUT_MS);
+
+    function finish(result: CommandResult) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(result);
+    }
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', (error: NodeJS.ErrnoException) => {
-      resolve({
+      finish({
         status: typeof error.errno === 'number' ? error.errno : 127,
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: Buffer.concat(stderr).toString('utf8'),
@@ -151,7 +169,7 @@ function runCommand(command: string, args: string[], input?: string): Promise<Co
       });
     });
     child.on('close', (status) => {
-      resolve({
+      finish({
         status: status ?? 1,
         stdout: Buffer.concat(stdout).toString('utf8'),
         stderr: Buffer.concat(stderr).toString('utf8')
@@ -165,6 +183,7 @@ function runCommand(command: string, args: string[], input?: string): Promise<Co
 
 function commandFailure(prefix: string, result: CommandResult): Error {
   if (result.error?.code === 'ENOENT') return new CredentialStoreUnavailableError(`${prefix}: command not found.`);
+  if (result.status === 124) return new CredentialStoreUnavailableError(`${prefix}: ${trimTrailingNewline(result.stderr) || 'command timed out.'}`);
   const detail = trimTrailingNewline(result.stderr || result.error?.message || `exit ${result.status}`);
   return new Error(detail ? `${prefix}: ${detail}` : prefix);
 }

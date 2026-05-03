@@ -55,6 +55,8 @@ const MCP_TOOLS = [
   'pp.token'
 ];
 
+const TOKEN_STATUS_CACHE_TTL_MS = 2_000;
+
 export interface DesktopApiRequest {
   path: string;
   method?: string;
@@ -66,6 +68,8 @@ export interface DesktopApiResponse {
   body: unknown;
 }
 
+type AccountTokenStatusResult = OperationResult<{ authenticated: boolean; expiresAt?: number }>;
+
 export interface DesktopApiContext {
   configOptions: ConfigStoreOptions;
   allowInteractiveAuth: boolean;
@@ -75,6 +79,8 @@ export interface DesktopApiContext {
   canvasSessions: CanvasSessionStore;
   fetchXmlCatalog: FetchXmlMetadataCatalog;
   flowLanguage: FlowLanguageService;
+  tokenStatusRequests: Map<string, Promise<AccountTokenStatusResult>>;
+  tokenStatusCache: Map<string, { expiresAt: number; result: AccountTokenStatusResult }>;
   quit?: () => void;
 }
 
@@ -149,6 +155,8 @@ export function createDesktopApiContext(
     canvasSessions,
     fetchXmlCatalog: new FetchXmlMetadataCatalog(),
     flowLanguage: new FlowLanguageService(),
+    tokenStatusRequests: new Map(),
+    tokenStatusCache: new Map(),
     quit: options.quit
   };
 }
@@ -214,6 +222,7 @@ async function accountCreate(body: unknown, context: DesktopApiContext): Promise
   const account = readAccountUpdateInput(input.data.name, body);
   if (!account.success || !account.data) return json(400, account);
   const result = await saveAccount(account.data, context.configOptions);
+  clearAccountTokenStatus(context, account.data.name);
   return json(result.success && result.data ? 201 : 400, result.success && result.data ? ok({ account: summarizeAccount(result.data) }, result.diagnostics) : result);
 }
 
@@ -230,6 +239,7 @@ async function accountLogin(body: unknown, context: DesktopApiContext): Promise<
     },
     context.configOptions
   );
+  if (input.data.name) clearAccountTokenStatus(context, input.data.name);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -265,6 +275,7 @@ function authSessionCancel(url: URL, context: DesktopApiContext): DesktopApiResp
 async function accountDelete(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {
   const name = decodeURIComponent(url.pathname.slice('/api/accounts/'.length));
   const result = await removeAccountByName(name, context.configOptions);
+  clearAccountTokenStatus(context, name);
   return json(result.success ? 200 : 400, result);
 }
 
@@ -273,14 +284,41 @@ async function accountUpdate(url: URL, body: unknown, context: DesktopApiContext
   const account = readAccountUpdateInput(name, body);
   if (!account.success || !account.data) return json(400, account);
   const result = await saveAccount(account.data, context.configOptions);
+  clearAccountTokenStatus(context, name);
   return json(result.success ? 200 : 400, result);
 }
 
 async function accountTokenStatus(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {
   const name = optionalString(url.searchParams.get('account'));
   if (!name) return json(400, fail(createDiagnostic('error', 'ACCOUNT_REQUIRED', 'account query parameter is required.', { source: 'pp/desktop' })));
-  const result = await checkAccountTokenStatus(name, context.configOptions);
+  const result = await getCoalescedAccountTokenStatus(context, name);
   return json(result.success ? 200 : 400, result);
+}
+
+function clearAccountTokenStatus(context: DesktopApiContext, name: string): void {
+  context.tokenStatusRequests.delete(name);
+  context.tokenStatusCache.delete(name);
+}
+
+async function getCoalescedAccountTokenStatus(context: DesktopApiContext, name: string): Promise<AccountTokenStatusResult> {
+  const cached = context.tokenStatusCache.get(name);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+
+  const existing = context.tokenStatusRequests.get(name);
+  if (existing) return existing;
+
+  const request = checkAccountTokenStatus(name, context.configOptions).then((result) => {
+    context.tokenStatusCache.set(name, { expiresAt: Date.now() + TOKEN_STATUS_CACHE_TTL_MS, result });
+    return result;
+  });
+  context.tokenStatusRequests.set(name, request);
+  try {
+    return await request;
+  } finally {
+    if (context.tokenStatusRequests.get(name) === request) {
+      context.tokenStatusRequests.delete(name);
+    }
+  }
 }
 
 async function accountBrowserProfileGet(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {

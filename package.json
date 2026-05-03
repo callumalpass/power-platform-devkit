@@ -125,7 +125,8 @@
     "typecheck:strict-next": "tsc --noEmit -p tsconfig.strict-next.json"
   },
   "dependencies": {
-    "@azure/msal-node": "^5.0.6",
+    "@azure/msal-node": "^5.1.5",
+    "@azure/msal-node-extensions": "^5.1.5",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "jq-wasm": "1.1.0-jq-1.8.1",
     "yaml": "^2.8.1",

@@ -128,6 +128,24 @@ test('handleDesktopApiRequest exposes browser profile status and reset routes pe
   assert.equal(config.accounts['work@example.com'].kind, 'user');
 });
 
+test('handleDesktopApiRequest reuses an in-flight token status check per account', async () => {
+  let releaseStatus: (value: ReturnType<typeof ok<{ authenticated: boolean }>>) => void = () => undefined;
+  const pendingStatus = new Promise<ReturnType<typeof ok<{ authenticated: boolean }>>>((resolve) => {
+    releaseStatus = resolve;
+  });
+  const context = createContext();
+  context.tokenStatusRequests.set('work', pendingStatus);
+
+  const responsePromise = handleDesktopApiRequest(context, { method: 'GET', path: '/api/accounts/token-status?account=work' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(context.tokenStatusRequests.has('work'), true);
+  releaseStatus(ok({ authenticated: true }));
+
+  const response = await responsePromise;
+  assert.equal(response.status, 200);
+  assert.equal(responseBody<{ authenticated: boolean }>(response.body).data.authenticated, true);
+});
+
 test('handleDesktopApiRequest validates Dataverse create route before execution', async () => {
   const response = await handleDesktopApiRequest(createContext(), {
     method: 'POST',

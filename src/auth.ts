@@ -1,17 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { ConfidentialClientApplication, PublicClientApplication, PromptValue, type AccountInfo, type AuthenticationResult, type ICachePlugin } from '@azure/msal-node';
-import { getAccount, getCredentialStoreMode, getMsalCacheDir, listAccounts, removeAccount, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
-import { createOsCredentialStore, isCredentialStoreUnavailableError, type CredentialStore } from './credential-store.js';
+import { ConfidentialClientApplication, PublicClientApplication, PromptValue, type AccountInfo, type AuthenticationResult } from '@azure/msal-node';
+import { getAccount, listAccounts, removeAccount, saveAccount, type Account, type ConfigStoreOptions } from './config.js';
 import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
+import { accountCredentialCacheKeys, createMsalCachePlugin, deleteMsalCache } from './msal-cache.js';
 
 export const DEFAULT_PUBLIC_CLIENT_ID = '51f81489-12ee-4a9e-aaae-a2591f45987d';
 export const CANVAS_AUTHORING_PUBLIC_CLIENT_ID = '4e291c71-d680-4d0e-9640-0a3358e31177';
 export const DEFAULT_USER_TENANT = 'common';
 export const DEFAULT_LOGIN_RESOURCE = 'https://graph.microsoft.com';
-const MSAL_CREDENTIAL_SERVICE = 'pp';
-const MSAL_CREDENTIAL_PREFIX = 'msal:';
 
 export interface LoginTarget {
   resource: string;
@@ -440,18 +436,7 @@ function loginFailureDiagnostic(account: Account, resource: string, error: unkno
 
 async function createPublicClientApplication(account: UserAccount, options: ConfigStoreOptions): Promise<PublicClientApplication> {
   const cacheKey = resolveTokenCacheKey(account);
-  const cachePlugin: ICachePlugin = {
-    beforeCacheAccess: async (context) => {
-      const cache = await readMsalCache(cacheKey, options);
-      if (cache) {
-        context.tokenCache.deserialize(cache);
-      }
-    },
-    afterCacheAccess: async (context) => {
-      if (!context.cacheHasChanged) return;
-      await writeMsalCache(cacheKey, context.tokenCache.serialize(), options, account.name);
-    }
-  };
+  const cachePlugin = await createMsalCachePlugin(cacheKey, options, account.name);
   return new PublicClientApplication({
     auth: {
       clientId: account.clientId ?? DEFAULT_PUBLIC_CLIENT_ID,
@@ -514,165 +499,6 @@ async function removeAccountCredentialCache(account: Account, options: ConfigSto
   return ok(undefined, diagnostics);
 }
 
-function accountCredentialCacheKeys(account: Account): string[] {
-  const baseKeys = new Set<string>();
-  if (account.name) baseKeys.add(account.name);
-  if (account.tokenCacheKey) baseKeys.add(account.tokenCacheKey);
-
-  const keys = new Set<string>();
-  for (const key of baseKeys) {
-    keys.add(key);
-    keys.add(`${key}-canvas-authoring`);
-  }
-  return [...keys];
-}
-
-async function readMsalCache(key: string, options: ConfigStoreOptions): Promise<string | undefined> {
-  const mode = getCredentialStoreMode(options);
-  if (mode === 'file') return readMsalFileCache(key, options);
-
-  const credentialKey = msalCredentialKey(key);
-  const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
-  if (!store) {
-    if (mode === 'auto') return readMsalFileCache(key, options);
-    throw new Error(`OS credential storage is not available on ${process.platform}.`);
-  }
-
-  try {
-    const secureCache = await store.get(credentialKey);
-    if (secureCache) {
-      if (isValidMsalCache(secureCache)) return secureCache;
-      await store.delete(credentialKey).catch(() => undefined);
-    }
-    const fileCache = await readMsalFileCache(key, options);
-    if (!fileCache) return undefined;
-    const storage = await writeVerifiedSecureMsalCache(store, credentialKey, fileCache, mode, options, key);
-    if (storage === 'secure') await deleteMsalFileCache(key, options);
-    return fileCache;
-  } catch (error) {
-    if (mode === 'auto' && isCredentialStoreUnavailableError(error)) {
-      return readMsalFileCache(key, options);
-    }
-    throw error;
-  }
-}
-
-async function writeMsalCache(key: string, value: string, options: ConfigStoreOptions, accountName: string): Promise<void> {
-  const mode = getCredentialStoreMode(options);
-  if (mode === 'file') {
-    await writeMsalFileCache(key, value, options, accountName);
-    return;
-  }
-
-  const credentialKey = msalCredentialKey(key);
-  const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
-  if (!store) {
-    if (mode === 'auto') {
-      await writeMsalFileCache(key, value, options, accountName);
-      return;
-    }
-    throw new Error(`OS credential storage is not available on ${process.platform}.`);
-  }
-
-  try {
-    const storage = await writeVerifiedSecureMsalCache(store, credentialKey, value, mode, options, key, accountName);
-    if (storage === 'secure') await deleteMsalFileCache(key, options);
-  } catch (error) {
-    if (mode === 'auto' && isCredentialStoreUnavailableError(error)) {
-      await writeMsalFileCache(key, value, options, accountName);
-      return;
-    }
-    throw new Error(`Failed to write secure MSAL cache for ${accountName}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function writeVerifiedSecureMsalCache(
-  store: CredentialStore,
-  credentialKey: string,
-  value: string,
-  mode: 'auto' | 'os',
-  options: ConfigStoreOptions,
-  cacheKey: string,
-  accountName?: string
-): Promise<'secure' | 'file'> {
-  await store.set(credentialKey, value);
-  const written = await store.get(credentialKey);
-  if (written === value && isValidMsalCache(written)) return 'secure';
-
-  await store.delete(credentialKey).catch(() => undefined);
-  const message = 'OS credential storage returned a corrupted or truncated MSAL cache after write.';
-  if (mode === 'auto') {
-    await writeMsalFileCache(cacheKey, value, options, accountName ?? cacheKey);
-    return 'file';
-  }
-  throw new Error(message);
-}
-
-async function deleteMsalCache(key: string, options: ConfigStoreOptions): Promise<void> {
-  const mode = getCredentialStoreMode(options);
-  if (mode !== 'file') {
-    const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
-    if (store) {
-      try {
-        await store.delete(msalCredentialKey(key));
-      } catch (error) {
-        if (!(mode === 'auto' && isCredentialStoreUnavailableError(error))) throw error;
-      }
-    } else if (mode === 'os') {
-      throw new Error(`OS credential storage is not available on ${process.platform}.`);
-    }
-  }
-  await deleteMsalFileCache(key, options);
-}
-
-function isValidMsalCache(cache: string | undefined): cache is string {
-  if (!cache) return false;
-  try {
-    JSON.parse(cache);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readMsalFileCache(key: string, options: ConfigStoreOptions): Promise<string | undefined> {
-  const cachePath = msalFileCachePath(key, options);
-  try {
-    const cache = await readFile(cachePath, 'utf8');
-    if (!isValidMsalCache(cache)) {
-      await quarantineCorruptCacheFile(cachePath);
-      return undefined;
-    }
-    return cache;
-  } catch {
-    return undefined;
-  }
-}
-
-async function writeMsalFileCache(key: string, value: string, options: ConfigStoreOptions, accountName: string): Promise<void> {
-  const cachePath = msalFileCachePath(key, options);
-  try {
-    await mkdir(getMsalCacheDir(options), { recursive: true, mode: 0o700 });
-    await writeFile(cachePath, value, { encoding: 'utf8', mode: 0o600 });
-    if (process.platform !== 'win32') await chmod(cachePath, 0o600).catch(() => undefined);
-  } catch (error) {
-    await quarantineCorruptCacheFile(cachePath);
-    throw new Error(`Failed to write MSAL cache for ${accountName}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function deleteMsalFileCache(key: string, options: ConfigStoreOptions): Promise<void> {
-  await rm(msalFileCachePath(key, options), { force: true });
-}
-
-function msalFileCachePath(key: string, options: ConfigStoreOptions): string {
-  return join(getMsalCacheDir(options), `${key}.json`);
-}
-
-function msalCredentialKey(key: string): string {
-  return `${MSAL_CREDENTIAL_PREFIX}${key}`;
-}
-
 function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
   const seen = new Set<string>();
   const defaultTarget: LoginTarget = { resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' };
@@ -687,13 +513,6 @@ function normalizeLoginTargets(targets?: LoginTarget[]): LoginTarget[] {
       return true;
     });
   return normalized.length ? normalized : [defaultTarget];
-}
-
-async function quarantineCorruptCacheFile(cachePath: string): Promise<void> {
-  const suffix = new Date().toISOString().replaceAll(':', '').replaceAll('.', '');
-  try {
-    await rename(cachePath, `${cachePath}.corrupt-${suffix}`);
-  } catch {}
 }
 
 function promptValue(prompt: 'select_account' | 'login' | 'consent' | 'none') {

@@ -23,5 +23,6 @@ export default defineConfig({
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,
-  target: 'es2022'
+  target: 'es2022',
+  external: ['@azure/msal-node-extensions']
 });
