@@ -5,6 +5,19 @@ import type { FetchXmlLanguageRequest } from './fetchxml-language-service.js';
 import type { FlowLanguageRequest } from './flow-language-service.js';
 import { isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import type { DataverseCreateRecordInput, DataverseQuerySpec, FetchXmlSpec } from './services/dataverse.js';
+import {
+  hasOwnInput,
+  parseUiPayload,
+  uiAccountUpdateInputSchema,
+  uiApiRequestInputSchema,
+  uiDataverseCreateRecordInputSchema,
+  uiDataverseQuerySpecSchema,
+  uiEnvironmentInputSchema,
+  uiFetchXmlLanguageRequestSchema,
+  uiFetchXmlSpecSchema,
+  uiFlowLanguageRequestSchema,
+  uiLoginInputSchema
+} from './ui-request-schemas.js';
 
 export interface UiEnvironmentInput {
   alias: string;
@@ -28,77 +41,82 @@ export interface UiApiRequestInput {
 }
 
 export function readLoginInput(value: unknown): OperationResult<LoginAccountInput> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_LOGIN_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const name = optionalString(value.name);
-  const kind = readAccountKind(value.kind);
+  const parsed = parseUiPayload(value, uiLoginInputSchema, { code: 'INVALID_LOGIN_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const name = input.name;
+  const kind = input.kind;
   if (!name) return fail(createDiagnostic('error', 'ACCOUNT_NAME_REQUIRED', 'name is required.', { source: 'pp/ui' }));
   if (!kind) return fail(createDiagnostic('error', 'ACCOUNT_KIND_REQUIRED', 'kind must be one of user, device-code, client-secret, environment-token, static-token.', { source: 'pp/ui' }));
-  return ok({
-    name,
-    kind,
-    description: optionalString(value.description),
-    tenantId: optionalString(value.tenantId),
-    clientId: optionalString(value.clientId),
-    loginHint: optionalString(value.loginHint),
-    prompt: readPrompt(optionalString(value.prompt)),
-    fallbackToDeviceCode: Boolean(value.fallbackToDeviceCode),
-    clientSecretEnv: optionalString(value.clientSecretEnv),
-    environmentVariable: optionalString(value.environmentVariable),
-    token: optionalString(value.token)
-  });
+  return ok(
+    omitUndefined({
+      name,
+      kind,
+      description: input.description,
+      tenantId: input.tenantId,
+      clientId: input.clientId,
+      scopes: input.scopes,
+      loginHint: input.loginHint,
+      prompt: input.prompt,
+      fallbackToDeviceCode: input.fallbackToDeviceCode,
+      clientSecretEnv: input.clientSecretEnv,
+      environmentVariable: input.environmentVariable,
+      token: input.token
+    })
+  );
 }
 
 export function readAccountUpdateInput(name: string, value: unknown): OperationResult<Account> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_ACCOUNT_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const kind = readAccountKind(value.kind) ?? 'user';
+  const parsed = parseUiPayload(value, uiAccountUpdateInputSchema, { code: 'INVALID_ACCOUNT_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const kind = input.kind ?? 'user';
   const account: Partial<Account> = {
     name,
     kind,
-    description: optionalString(value.description),
-    tenantId: optionalString(value.tenantId),
-    clientId: optionalString(value.clientId),
-    loginHint: optionalString(value.loginHint),
-    accountUsername: optionalString(value.accountUsername),
-    homeAccountId: optionalString(value.homeAccountId),
-    localAccountId: optionalString(value.localAccountId),
-    tokenCacheKey: optionalString(value.tokenCacheKey)
+    ...omitUndefined({
+      description: input.description,
+      tenantId: input.tenantId,
+      clientId: input.clientId,
+      loginHint: input.loginHint,
+      accountUsername: input.accountUsername,
+      homeAccountId: input.homeAccountId,
+      localAccountId: input.localAccountId,
+      tokenCacheKey: input.tokenCacheKey
+    })
   } as Account;
-  if (kind === 'client-secret') (account as Extract<Account, { kind: 'client-secret' }>).clientSecretEnv = optionalString(value.clientSecretEnv) ?? '';
-  if (kind === 'environment-token') (account as Extract<Account, { kind: 'environment-token' }>).environmentVariable = optionalString(value.environmentVariable) ?? '';
-  if (kind === 'static-token') (account as Extract<Account, { kind: 'static-token' }>).token = optionalString(value.token) ?? '';
+  if (kind === 'client-secret') (account as Extract<Account, { kind: 'client-secret' }>).clientSecretEnv = input.clientSecretEnv ?? '';
+  if (kind === 'environment-token') (account as Extract<Account, { kind: 'environment-token' }>).environmentVariable = input.environmentVariable ?? '';
+  if (kind === 'static-token') (account as Extract<Account, { kind: 'static-token' }>).token = input.token ?? '';
   return ok(account as Account);
 }
 
 export function readEnvironmentInput(value: unknown): OperationResult<UiEnvironmentInput> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_ENVIRONMENT_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const alias = optionalString(value.alias);
-  const url = optionalString(value.url);
-  const account = optionalString(value.account);
-  const accessMode = readAccessMode(value.accessMode);
+  const parsed = parseUiPayload(value, uiEnvironmentInputSchema, { code: 'INVALID_ENVIRONMENT_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const alias = input.alias;
+  const url = input.url;
+  const account = input.account;
+  const accessMode = input.accessMode;
   if (!alias) return fail(createDiagnostic('error', 'ENV_ALIAS_REQUIRED', 'alias is required.', { source: 'pp/ui' }));
   if (!url) return fail(createDiagnostic('error', 'ENV_URL_REQUIRED', 'url is required.', { source: 'pp/ui' }));
   if (!account) return fail(createDiagnostic('error', 'ENV_ACCOUNT_REQUIRED', 'account is required.', { source: 'pp/ui' }));
-  if (value.accessMode !== undefined && !accessMode) {
+  if (hasOwnInput(value as Record<string, unknown>, 'accessMode') && !accessMode) {
     return fail(createDiagnostic('error', 'ENV_ACCESS_MODE_INVALID', 'accessMode must be read-only or read-write.', { source: 'pp/ui' }));
   }
-  return ok({ alias, url, account, displayName: optionalString(value.displayName), accessMode });
+  return ok(omitUndefined({ alias, url, account, displayName: input.displayName, accessMode }));
 }
 
 export function readApiRequestInput(value: unknown, defaultAllowInteractive: boolean): OperationResult<UiApiRequestInput> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_REQUEST_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const environment = optionalString(value.environment);
-  const path = optionalString(value.path);
-  const method = optionalString(value.method) ?? 'GET';
-  const api = readGenericApi(value.api);
-  const account = optionalString(value.account);
+  const parsed = parseUiPayload(value, uiApiRequestInputSchema, { code: 'INVALID_REQUEST_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const environment = input.environment;
+  const path = input.path;
+  const method = input.method ?? 'GET';
+  const api = input.api;
+  const account = input.account;
   if (!environment && !(account && isAccountScopedApi(api))) {
     return fail(createDiagnostic('error', 'REQUEST_SCOPE_REQUIRED', 'environment is required unless an account-scoped API is used with account.', { source: 'pp/ui' }));
   }
@@ -107,54 +125,53 @@ export function readApiRequestInput(value: unknown, defaultAllowInteractive: boo
   }
   const reqMethod = method.toUpperCase();
   return ok({
-    environment,
-    account,
+    ...omitUndefined({ environment, account, query: input.query as Record<string, string> | undefined, headers: input.headers as Record<string, string> | undefined }),
     api,
     method: reqMethod,
     path,
-    query: isRecord(value.query) ? (value.query as Record<string, string>) : undefined,
-    headers: isRecord(value.headers) ? (value.headers as Record<string, string>) : undefined,
-    body: value.body,
-    allowInteractive: value.allowInteractive === undefined ? defaultAllowInteractive : Boolean(value.allowInteractive),
+    body: input.body,
+    allowInteractive: hasOwnInput(value as Record<string, unknown>, 'allowInteractive') ? Boolean(input.allowInteractive) : defaultAllowInteractive,
     readIntent: reqMethod === 'GET' || reqMethod === 'HEAD'
   });
 }
 
 export function readDataverseQuerySpec(value: unknown): OperationResult<DataverseQuerySpec> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_QUERY_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
-  const entitySetName = optionalString(value.entitySetName);
-  const rawPath = optionalString(value.rawPath);
+  const parsed = parseUiPayload(value, uiDataverseQuerySpecSchema, { code: 'INVALID_QUERY_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const environmentAlias = input.environmentAlias ?? input.environment;
+  const entitySetName = input.entitySetName;
+  const rawPath = input.rawPath;
   if (!environmentAlias) {
     return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
   }
   if (!entitySetName && !rawPath) {
     return fail(createDiagnostic('error', 'DV_ENTITY_SET_REQUIRED', 'entitySetName or rawPath is required.', { source: 'pp/ui' }));
   }
-  return ok({
-    environmentAlias,
-    accountName: optionalString(value.accountName ?? value.account),
-    entitySetName: entitySetName ?? '',
-    select: readStringArray(value.select) ?? readCsv(value.selectCsv),
-    filter: optionalString(value.filter),
-    orderBy: readStringArray(value.orderBy) ?? readCsv(value.orderByCsv),
-    expand: readStringArray(value.expand) ?? readCsv(value.expandCsv),
-    top: readNumber(value.top),
-    includeCount: value.includeCount === true,
-    search: optionalString(value.search),
-    rawPath
-  });
+  return ok(
+    omitUndefined({
+      environmentAlias,
+      accountName: input.accountName ?? input.account,
+      entitySetName: entitySetName ?? '',
+      select: input.select ?? input.selectCsv,
+      filter: input.filter,
+      orderBy: input.orderBy ?? input.orderByCsv,
+      expand: input.expand ?? input.expandCsv,
+      top: input.top,
+      includeCount: input.includeCount,
+      search: input.search,
+      rawPath
+    })
+  );
 }
 
 export function readDataverseCreateRecordInput(value: unknown): OperationResult<DataverseCreateRecordInput> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_DV_CREATE_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
-  const entitySetName = optionalString(value.entitySetName);
-  const body = isRecord(value.body) ? value.body : undefined;
+  const parsed = parseUiPayload(value, uiDataverseCreateRecordInputSchema, { code: 'INVALID_DV_CREATE_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const environmentAlias = input.environmentAlias ?? input.environment;
+  const entitySetName = input.entitySetName;
+  const body = input.body;
   if (!environmentAlias) {
     return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
   }
@@ -164,89 +181,103 @@ export function readDataverseCreateRecordInput(value: unknown): OperationResult<
   if (!body || !Object.keys(body).length) {
     return fail(createDiagnostic('error', 'DV_RECORD_BODY_REQUIRED', 'body must contain at least one field.', { source: 'pp/ui' }));
   }
-  return ok({
-    environmentAlias,
-    accountName: optionalString(value.accountName ?? value.account),
-    entitySetName,
-    logicalName: optionalString(value.logicalName),
-    primaryIdAttribute: optionalString(value.primaryIdAttribute),
-    body
-  });
+  return ok(
+    omitUndefined({
+      environmentAlias,
+      accountName: input.accountName ?? input.account,
+      entitySetName,
+      logicalName: input.logicalName,
+      primaryIdAttribute: input.primaryIdAttribute,
+      body
+    })
+  );
 }
 
 export function readFetchXmlSpec(value: unknown): OperationResult<FetchXmlSpec> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_FETCHXML_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const environmentAlias = optionalString(value.environmentAlias ?? value.environment);
-  const entity = optionalString(value.entity);
+  const parsed = parseUiPayload(value, uiFetchXmlSpecSchema, { code: 'INVALID_FETCHXML_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const environmentAlias = input.environmentAlias ?? input.environment;
+  const entity = input.entity;
   if (!environmentAlias) {
     return fail(createDiagnostic('error', 'ENVIRONMENT_REQUIRED', 'environmentAlias is required.', { source: 'pp/ui' }));
   }
-  if (!entity && !optionalString(value.rawXml)) {
+  if (!entity && !input.rawXml) {
     return fail(createDiagnostic('error', 'DV_FETCHXML_ENTITY_REQUIRED', 'entity or rawXml is required.', { source: 'pp/ui' }));
   }
-  return ok({
-    environmentAlias,
-    accountName: optionalString(value.accountName ?? value.account),
-    entity: entity ?? 'unknown',
-    entitySetName: optionalString(value.entitySetName),
-    attributes: readStringArray(value.attributes) ?? readCsv(value.attributesCsv),
-    top: readNumber(value.top),
-    distinct: value.distinct === true,
-    rawXml: optionalString(value.rawXml),
-    conditions: readArrayOfRecords(value.conditions).map((condition) => ({
-      attribute: optionalString(condition.attribute) ?? '',
-      operator: optionalString(condition.operator) ?? '',
-      value: optionalString(condition.value)
-    })),
-    orders: readArrayOfRecords(value.orders).map((order) => ({
-      attribute: optionalString(order.attribute) ?? '',
-      descending: order.descending === true
-    })),
-    filterType: readFilterType(value.filterType),
-    linkEntities: readArrayOfRecords(value.linkEntities).map((link) => ({
-      name: optionalString(link.name) ?? '',
-      from: optionalString(link.from) ?? '',
-      to: optionalString(link.to) ?? '',
-      alias: optionalString(link.alias),
-      linkType: readLinkType(link.linkType),
-      attributes: readStringArray(link.attributes) ?? readCsv(link.attributesCsv),
-      conditions: readArrayOfRecords(link.conditions).map((condition) => ({
-        attribute: optionalString(condition.attribute) ?? '',
-        operator: optionalString(condition.operator) ?? '',
-        value: optionalString(condition.value)
-      }))
-    }))
-  });
+  return ok(
+    omitUndefined({
+      environmentAlias,
+      accountName: input.accountName ?? input.account,
+      entity: entity ?? 'unknown',
+      entitySetName: input.entitySetName,
+      attributes: input.attributes ?? input.attributesCsv,
+      top: input.top,
+      distinct: input.distinct,
+      rawXml: input.rawXml,
+      conditions: input.conditions.map((condition) =>
+        omitUndefined({
+          attribute: condition.attribute ?? '',
+          operator: condition.operator ?? '',
+          value: condition.value
+        })
+      ),
+      orders: input.orders.map((order) =>
+        omitUndefined({
+          attribute: order.attribute ?? '',
+          descending: order.descending
+        })
+      ),
+      filterType: input.filterType,
+      linkEntities: input.linkEntities.map((link) =>
+        omitUndefined({
+          name: link.name ?? '',
+          from: link.from ?? '',
+          to: link.to ?? '',
+          alias: link.alias,
+          linkType: link.linkType,
+          attributes: link.attributes ?? link.attributesCsv,
+          conditions: link.conditions.map((condition) =>
+            omitUndefined({
+              attribute: condition.attribute ?? '',
+              operator: condition.operator ?? '',
+              value: condition.value
+            })
+          )
+        })
+      )
+    })
+  );
 }
 
 export function readFetchXmlLanguageRequest(value: unknown): OperationResult<FetchXmlLanguageRequest> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_FETCHXML_LANGUAGE_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const cursor = readNumber(value.cursor);
+  const parsed = parseUiPayload(value, uiFetchXmlLanguageRequestSchema, { code: 'INVALID_FETCHXML_LANGUAGE_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const cursor = input.cursor;
   if (cursor === undefined || !Number.isInteger(cursor) || cursor < 0) {
     return fail(createDiagnostic('error', 'FETCHXML_CURSOR_REQUIRED', 'cursor must be a non-negative integer.', { source: 'pp/ui' }));
   }
-  return ok({
-    environmentAlias: optionalString(value.environmentAlias ?? value.environment),
-    source: typeof value.source === 'string' ? value.source : '',
-    cursor,
-    rootEntityName: optionalString(value.rootEntityName ?? value.entity)
-  });
+  return ok(
+    omitUndefined({
+      environmentAlias: input.environmentAlias ?? input.environment,
+      source: input.source,
+      cursor,
+      rootEntityName: input.rootEntityName ?? input.entity
+    })
+  );
 }
 
 export function readFlowLanguageRequest(value: unknown): OperationResult<FlowLanguageRequest> {
-  if (!isRecord(value)) {
-    return fail(createDiagnostic('error', 'INVALID_FLOW_LANGUAGE_INPUT', 'Request body must be a JSON object.', { source: 'pp/ui' }));
-  }
-  const cursor = readNumber(value.cursor);
+  const parsed = parseUiPayload(value, uiFlowLanguageRequestSchema, { code: 'INVALID_FLOW_LANGUAGE_INPUT', message: 'Request body must be a JSON object.' });
+  if (!parsed.success) return fail(...parsed.diagnostics);
+  const input = parsed.data;
+  const cursor = input.cursor;
   if (cursor === undefined || !Number.isInteger(cursor) || cursor < 0) {
     return fail(createDiagnostic('error', 'FLOW_CURSOR_REQUIRED', 'cursor must be a non-negative integer.', { source: 'pp/ui' }));
   }
   return ok({
-    source: typeof value.source === 'string' ? value.source : '',
+    source: input.source,
     cursor
   });
 }
@@ -285,43 +316,16 @@ export function optionalBoolean(value: unknown): boolean | undefined {
   return value === true || value === 'true' ? true : value === false || value === 'false' ? false : undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+type OmitUndefined<T extends Record<string, unknown>> = {
+  [Key in keyof T as undefined extends T[Key] ? never : Key]: T[Key];
+} & {
+  [Key in keyof T as undefined extends T[Key] ? Key : never]?: Exclude<T[Key], undefined>;
+};
 
-function readCsv(value: unknown): string[] | undefined {
-  const text = optionalString(value);
-  if (!text) return undefined;
-  const items = text
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length ? items : undefined;
-}
-
-function readStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const items = value.map((item) => optionalString(item)).filter((item): item is string => Boolean(item));
-  return items.length ? items : undefined;
-}
-
-function readArrayOfRecords(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function readNumber(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
+function omitUndefined<T extends Record<string, unknown>>(value: T): OmitUndefined<T> {
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (item !== undefined) result[key] = item;
   }
-  return undefined;
-}
-
-function readFilterType(value: unknown): 'and' | 'or' | undefined {
-  return value === 'and' || value === 'or' ? value : undefined;
-}
-
-function readLinkType(value: unknown): 'inner' | 'outer' | undefined {
-  return value === 'inner' || value === 'outer' ? value : undefined;
+  return result as OmitUndefined<T>;
 }

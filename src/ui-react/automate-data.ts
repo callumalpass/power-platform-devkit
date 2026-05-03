@@ -1,7 +1,6 @@
 import { ApiRequestError, api, prop } from './utils.js';
 import type {
   ApiEnvelope,
-  ApiExecuteResponse,
   FlowAction,
   FlowAnalysis,
   FlowApiOperation,
@@ -13,11 +12,10 @@ import type {
   FlowItem,
   FlowRun
 } from './ui-types.js';
+import { CONNECTIONS_FOR_ENVIRONMENT_PATH, DATAVERSE_FLOW_FALLBACK_PATH, executeFlowUiRequest as executeRequest } from './automate/flow-api-client.js';
 import type { FlowEnvironmentConnection } from './automate/flow-connections.js';
-
-const DATAVERSE_FLOW_FALLBACK_PATH =
-  '/workflows?$filter=category eq 5&$select=name,workflowid,workflowidunique,createdon,modifiedon,statecode,statuscode,_ownerid_value,description,clientdata&$orderby=modifiedon desc&$top=200';
-const CONNECTIONS_FOR_ENVIRONMENT_PATH = '/connections?$filter=environment%20eq%20%27{environment}%27';
+import { normalizeFlowValidationResult, type FlowValidationKind, type FlowValidationResult } from './automate/flow-validation.js';
+export { flowValidationFromError, type FlowValidationItem, type FlowValidationKind, type FlowValidationResult } from './automate/flow-validation.js';
 
 const connectionNameCache = new Map<string, Promise<Map<string, string>>>();
 
@@ -25,27 +23,6 @@ export type FlowListResult = {
   flows: FlowItem[];
   source: 'flow' | 'dv';
   usedFallback: boolean;
-};
-
-export type FlowValidationKind = 'errors' | 'warnings';
-
-export type FlowValidationItem = {
-  level: 'error' | 'warning' | 'info';
-  code?: string;
-  message: string;
-  path?: string;
-  actionName?: string;
-  operationMetadataId?: string;
-  from?: number;
-  to?: number;
-  raw: unknown;
-};
-
-export type FlowValidationResult = {
-  kind: FlowValidationKind;
-  items: FlowValidationItem[];
-  raw: unknown;
-  checkedAt: string;
 };
 
 export type FlowCallbackUrlResult = {
@@ -111,31 +88,6 @@ export async function checkFlowDefinition(environment: string, flow: FlowItem, s
     }
     throw error;
   }
-}
-
-export function flowValidationFromError(kind: FlowValidationKind, error: unknown): FlowValidationResult {
-  if (error instanceof ApiRequestError) {
-    const result = normalizeFlowValidationResult(kind, error.data);
-    if (result.items.length) return result;
-    return {
-      ...result,
-      items: [
-        {
-          level: 'error',
-          code: `HTTP_${error.status}`,
-          message: error.message,
-          raw: error.data
-        }
-      ]
-    };
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  return normalizeFlowValidationResult(kind, {
-    error: {
-      code: error instanceof Error ? error.name : undefined,
-      message
-    }
-  });
 }
 
 export async function saveFlowDefinition(environment: string, flow: FlowItem, source: string): Promise<FlowItem> {
@@ -534,33 +486,6 @@ export function flowActivationRequest(flow: FlowItem, active: boolean): FlowLife
     method: 'POST',
     path: `/flows/${runtimeId}/${active ? 'start' : 'stop'}`
   };
-}
-
-async function executeRequest<T>(
-  environment: string,
-  apiKind: string,
-  path: string,
-  allowInteractive = true,
-  method = 'GET',
-  body?: unknown,
-  query?: Record<string, string>,
-  responseType?: 'json' | 'text' | 'void'
-) {
-  const result = await api<ApiEnvelope<ApiExecuteResponse<T>>>('/api/request/execute', {
-    method: 'POST',
-    body: JSON.stringify({
-      environment,
-      api: apiKind,
-      method,
-      path,
-      ...(query ? { query } : {}),
-      allowInteractive,
-      softFail: !allowInteractive,
-      ...(responseType ? { responseType } : {}),
-      ...(body === undefined ? {} : { body: JSON.stringify(body) })
-    })
-  });
-  return result.data;
 }
 
 export function flowIdentifier(flow: FlowItem | null | undefined) {
@@ -1209,84 +1134,6 @@ function parseJsonMaybe(value: unknown): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function normalizeFlowValidationResult(kind: FlowValidationKind, raw: unknown): FlowValidationResult {
-  return {
-    kind,
-    items: collectValidationItems(kind, raw).slice(0, 100),
-    raw,
-    checkedAt: new Date().toISOString()
-  };
-}
-
-function collectValidationItems(kind: FlowValidationKind, raw: unknown): FlowValidationItem[] {
-  const items: FlowValidationItem[] = [];
-  const seen = new Set<unknown>();
-  const visit = (value: unknown) => {
-    if (value == null || seen.has(value)) return;
-    if (typeof value !== 'object') return;
-    seen.add(value);
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-
-    const record = value as Record<string, unknown>;
-    const detail = parseServiceErrorDetail(record.detail);
-    const fixInstructions = isRecord(record.fixInstructions) ? record.fixInstructions : {};
-    const message =
-      detail?.message ||
-      firstString(record.errorDescription, record.message, record.errorMessage, record.localizedMessage, record.description, record.title, fixInstructions.markdownText, fixInstructions.textTemplate);
-    const code = firstString(record.code, record.ruleId, record.errorCode, record.name);
-    if (message) {
-      items.push({
-        level: kind === 'errors' ? 'error' : 'warning',
-        code: detail?.code || code,
-        message,
-        path: detail?.path || firstString(record.path, record.jsonPath, record.location, record.target),
-        actionName: firstString(record.actionName, record.operationName, record.nodeName, record.target),
-        operationMetadataId: firstString(record.operationMetadataId, record.anchor, record.nodeId),
-        raw: record
-      });
-    }
-
-    for (const key of ['diagnostics', 'errors', 'warnings', 'value', 'details', 'innerErrors', 'issues'] as const) {
-      if (record[key] !== undefined) visit(record[key]);
-    }
-  };
-  visit(raw);
-  return items;
-}
-
-function parseServiceErrorDetail(value: unknown): { code?: string; message?: string; path?: string } | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    const path = extractQuotedPath(value);
-    return { message: value, path };
-  }
-  const error = prop(parsed, 'error') || parsed;
-  const message = firstString(prop(error, 'message'), prop(error, 'ExceptionMessage'), prop(parsed, 'message'));
-  const extendedMessage = firstString(prop(error, 'extendedData.message'), prop(parsed, 'extendedData.message'));
-  const detailCode = extractDetailsCode(message) || extractDetailsCode(extendedMessage);
-  return {
-    code: firstString(detailCode, prop(error, 'code'), prop(error, 'ErrorCode'), prop(error, 'extendedData.code'), prop(parsed, 'code')),
-    message: firstString(message, extendedMessage),
-    path: message ? extractQuotedPath(message) : undefined
-  };
-}
-
-function extractQuotedPath(value: string) {
-  const match = value.match(/Path '([^']+)'/);
-  return match?.[1];
-}
-
-function extractDetailsCode(value: string | undefined) {
-  const match = value?.match(/details\s+["']([^"']+)["']/i);
-  return match?.[1];
 }
 
 function firstString(...values: unknown[]) {

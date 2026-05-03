@@ -54,6 +54,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Coverage summary
+        run: pnpm run test:coverage
+
       - name: Package smoke tests
         run: pnpm run test:package
 

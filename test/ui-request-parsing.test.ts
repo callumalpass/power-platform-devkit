@@ -8,11 +8,31 @@ test('readLoginInput validates required account fields', () => {
   assert.equal(result.diagnostics[0]?.code, 'ACCOUNT_NAME_REQUIRED');
 });
 
+test('readLoginInput rejects invalid top-level object shapes and enum values', () => {
+  const arrayInput = readLoginInput([]);
+  assert.equal(arrayInput.success, false);
+  assert.equal(arrayInput.diagnostics[0]?.code, 'INVALID_LOGIN_INPUT');
+
+  const invalidKind = readLoginInput({ name: 'work', kind: 'managed-identity' });
+  assert.equal(invalidKind.success, false);
+  assert.equal(invalidKind.diagnostics[0]?.code, 'ACCOUNT_KIND_REQUIRED');
+});
+
 test('readEnvironmentInput parses valid environment payload', () => {
   const result = readEnvironmentInput({ alias: 'dev', url: 'https://example.crm.dynamics.com', account: 'me', accessMode: 'read-only' });
   assert.equal(result.success, true);
   assert.equal(result.data?.alias, 'dev');
   assert.equal(result.data?.accessMode, 'read-only');
+});
+
+test('readEnvironmentInput rejects invalid access modes without changing required-field diagnostics', () => {
+  const invalidAccess = readEnvironmentInput({ alias: 'dev', url: 'https://example.crm.dynamics.com', account: 'me', accessMode: 'write' });
+  assert.equal(invalidAccess.success, false);
+  assert.equal(invalidAccess.diagnostics[0]?.code, 'ENV_ACCESS_MODE_INVALID');
+
+  const missingAlias = readEnvironmentInput({ url: 'https://example.crm.dynamics.com', account: 'me', accessMode: 'write' });
+  assert.equal(missingAlias.success, false);
+  assert.equal(missingAlias.diagnostics[0]?.code, 'ENV_ALIAS_REQUIRED');
 });
 
 test('readApiRequestInput derives read intent from method', () => {
@@ -29,6 +49,12 @@ test('readDataverseQuerySpec accepts raw path without entity set name', () => {
   const result = readDataverseQuerySpec({ environmentAlias: 'dev', rawPath: '/accounts?$top=5' });
   assert.equal(result.success, true);
   assert.equal(result.data?.rawPath, '/accounts?$top=5');
+});
+
+test('readDataverseQuerySpec rejects unknown top-level shapes', () => {
+  const result = readDataverseQuerySpec('environmentAlias=dev');
+  assert.equal(result.success, false);
+  assert.equal(result.diagnostics[0]?.code, 'INVALID_QUERY_INPUT');
 });
 
 test('readDataverseCreateRecordInput parses valid create payloads', () => {

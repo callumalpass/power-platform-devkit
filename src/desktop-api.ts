@@ -4,6 +4,7 @@ import { summarizeAccount } from './auth.js';
 import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
 import { getConfigDir, getConfigPath, getCredentialStoreMode, getEnvironment, getMsalCacheDir, saveAccount, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
+import { findDesktopRoute, type DesktopRoute } from './desktop-api-router.js';
 import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { FlowLanguageService } from './flow-language-service.js';
 import { normalizeOrigin as normalizeRequestOrigin } from './request-executor.js';
@@ -77,15 +78,9 @@ export interface DesktopApiContext {
   quit?: () => void;
 }
 
-type DesktopRouteHandler = (url: URL, body: unknown, context: DesktopApiContext) => DesktopApiResponse | Promise<DesktopApiResponse>;
+type RegisteredDesktopRoute = DesktopRoute<DesktopApiContext, DesktopApiResponse>;
 
-type DesktopRoute = {
-  method: string;
-  path: string | RegExp;
-  handler: DesktopRouteHandler;
-};
-
-const DESKTOP_ROUTES: DesktopRoute[] = [
+const DESKTOP_ROUTES: RegisteredDesktopRoute[] = [
   { method: 'GET', path: '/api/app/status', handler: (_url, _body, context) => appStatus(context) },
   { method: 'GET', path: '/api/ui/status', handler: (_url, _body, context) => appStatus(context) },
   { method: 'GET', path: '/api/state', handler: async (_url, _body, context) => json(200, await loadDesktopState(context)) },
@@ -164,21 +159,13 @@ export async function handleDesktopApiRequest(context: DesktopApiContext, reques
   const body = request.body;
 
   try {
-    const route = findDesktopRoute(method, url.pathname);
+    const route = findDesktopRoute(DESKTOP_ROUTES, method, url.pathname);
     if (route) return route.handler(url, body, context);
 
     return json(404, fail(createDiagnostic('error', 'NOT_FOUND', `No desktop API route for ${method} ${url.pathname}.`, { source: 'pp/desktop' })));
   } catch (error) {
     return json(500, fail(createDiagnostic('error', 'DESKTOP_API_UNHANDLED', error instanceof Error ? error.message : String(error), { source: 'pp/desktop' })));
   }
-}
-
-function findDesktopRoute(method: string, pathname: string): DesktopRoute | undefined {
-  return DESKTOP_ROUTES.find((route) => route.method === method && routeMatches(route.path, pathname));
-}
-
-function routeMatches(path: DesktopRoute['path'], pathname: string): boolean {
-  return typeof path === 'string' ? path === pathname : path.test(pathname);
 }
 
 function appStatus(context: DesktopApiContext): DesktopApiResponse {

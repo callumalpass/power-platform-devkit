@@ -52,21 +52,15 @@ export class HttpClient {
         : undefined;
       try {
         const method = request.method ?? 'GET';
-        const response = await fetch(url, {
-          method,
-          headers,
-          body,
-          ...(controller ? { signal: controller.signal } : {})
-        });
+        const init: RequestInit = { method, headers };
+        if (body !== undefined) init.body = body;
+        if (controller) init.signal = controller.signal;
+        const response = await fetch(url, init);
         const parsed = await readResponse<T>(response, request.responseType ?? 'json', method, url.toString());
         if (!parsed.success || !parsed.data) return fail(...parsed.diagnostics);
         if (!response.ok) {
-          return fail(
-            createDiagnostic('error', 'HTTP_REQUEST_FAILED', `${method} ${url.toString()} returned ${response.status}.`, {
-              source: 'pp/http',
-              detail: parsed.data.text
-            })
-          );
+          const context = parsed.data.text === undefined ? { source: 'pp/http' } : { source: 'pp/http', detail: parsed.data.text };
+          return fail(createDiagnostic('error', 'HTTP_REQUEST_FAILED', `${method} ${url.toString()} returned ${response.status}.`, context));
         }
         return ok({
           status: response.status,
@@ -92,25 +86,35 @@ export class HttpClient {
 }
 
 function applyQuery(url: URL, query: Record<string, HttpQueryValue> | undefined): void {
-  if (!query) return;
+  const encoded = encodeHttpQuery(query);
+  if (!encoded) return;
+  const existing = url.search ? url.search.slice(1) : '';
+  url.search = existing ? `${existing}&${encoded}` : encoded;
+}
+
+export function encodeHttpQuery(query: Record<string, HttpQueryValue> | undefined): string {
+  if (!query) return '';
   const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
       for (const item of value) {
-        if (item !== undefined && item !== null) parts.push(`${key}=${encodeODataValue(String(item))}`);
+        if (item !== undefined && item !== null) parts.push(`${encodeQueryName(key)}=${encodeQueryValue(String(item))}`);
       }
       continue;
     }
-    parts.push(`${key}=${encodeODataValue(String(value))}`);
+    parts.push(`${encodeQueryName(key)}=${encodeQueryValue(String(value))}`);
   }
-  if (!parts.length) return;
-  const existing = url.search ? url.search.slice(1) : '';
-  url.search = existing ? `${existing}&${parts.join('&')}` : parts.join('&');
+  return parts.join('&');
 }
 
-function encodeODataValue(value: string): string {
-  return value.replace(/ /g, '%20').replace(/#/g, '%23');
+function encodeQueryName(name: string): string {
+  if (name.startsWith('$')) return `$${encodeURIComponent(name.slice(1))}`;
+  return encodeURIComponent(name);
+}
+
+function encodeQueryValue(value: string): string {
+  return encodeURIComponent(value);
 }
 
 function resolveRequestBody(request: HttpRequestOptions): string | undefined {

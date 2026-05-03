@@ -118,6 +118,16 @@ test('handleDesktopApiRequest validates Dataverse create route before execution'
   assert.match(JSON.stringify(response.body), /DV_RECORD_BODY_REQUIRED/);
 });
 
+test('handleDesktopApiRequest uses shared Dataverse request shape validation', async () => {
+  const response = await handleDesktopApiRequest(createContext(), {
+    method: 'POST',
+    path: '/api/dv/query/preview',
+    body: []
+  });
+  assert.equal(response.status, 400);
+  assert.match(JSON.stringify(response.body), /INVALID_QUERY_INPUT/);
+});
+
 test('handleDesktopApiRequest serves flow language analysis over IPC-style routing', async () => {
   const source = await readFile(join(process.cwd(), 'test/fixtures/flows/broken-power-automate-wrapper.json'), 'utf8');
   const response = await handleDesktopApiRequest(createContext(), {

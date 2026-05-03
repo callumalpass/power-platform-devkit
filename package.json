@@ -118,9 +118,11 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json,md,yml,yaml}\"",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
     "test": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test .tmp-test/test/**/*.test.js",
+    "test:coverage": "pnpm run clean:test && tsc -p tsconfig.test.json && node --test --experimental-test-coverage .tmp-test/test/**/*.test.js",
     "test:package": "pnpm run build:lib && node test/package-smoke.mjs && node test/prepare-consumer-package-smoke.mjs && npm --cache .tmp-test/consumer-package/npm-cache pack --ignore-scripts --pack-destination .tmp-test/consumer-package/pack --json > .tmp-test/consumer-package/pack.json && node test/consumer-package-smoke.mjs",
     "test:e2e:desktop": "pnpm run build && node scripts/run-desktop-e2e.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:strict-next": "tsc --noEmit -p tsconfig.strict-next.json"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.6",

@@ -5,21 +5,22 @@ import { getDefaultSelectedColumns, getSelectableAttributes, highlightJson } fro
 import { ResultView } from './ResultView.js';
 import { CopyButton } from './CopyButton.js';
 import { Select } from './Select.js';
-import { analyzeFetchXml, executeFetchXml, getEntityDetail, previewFetchXml, type FetchXmlAnalysis, type FetchXmlCompletionItem, type FetchXmlPayload } from './dataverse-data.js';
+import { analyzeFetchXml, executeFetchXml, getEntityDetail, previewFetchXml, type FetchXmlAnalysis, type FetchXmlCompletionItem } from './dataverse-data.js';
+import {
+  FETCH_XML_OPERATORS,
+  addConditionRow,
+  buildFetchXmlPayload,
+  buildRawFetchXml,
+  createConditionRow,
+  createLinkRow,
+  formatDiagnosticsCount,
+  removeConditionRow,
+  replaceConditionRow,
+  type ConditionRow,
+  type LinkRow
+} from './dataverse/fetchxml-builder.js';
 import type { DataverseAttribute, DataverseEntityDetail, DataverseRecordPage, DataverseState, DiagnosticItem, ToastFn } from './ui-types.js';
 import { applyMonacoAppTheme, attachMonacoVim, MonacoVimToggle, type MonacoVimAttachment, useMonacoVimPreference } from './monaco-support.js';
-
-type ConditionRow = { id: number; attribute: string; operator: string; value: string };
-type LinkRow = {
-  id: number;
-  name: string;
-  from: string;
-  to: string;
-  linkType: 'inner' | 'outer';
-  alias: string;
-  attributes: string[];
-  conditions: ConditionRow[];
-};
 
 type RelationshipsNode = {
   id: string;
@@ -52,59 +53,6 @@ type RelationshipsDrag =
   | { kind: 'node'; pointerId: number; nodeId: string; offsetX: number; offsetY: number }
   | { kind: 'pan'; pointerId: number; startClientX: number; startClientY: number; startViewBox: RelationshipsViewBox };
 
-const OPERATORS = [
-  'eq',
-  'ne',
-  'gt',
-  'ge',
-  'lt',
-  'le',
-  'like',
-  'not-like',
-  'begins-with',
-  'not-begin-with',
-  'ends-with',
-  'not-end-with',
-  'in',
-  'not-in',
-  'between',
-  'not-between',
-  'null',
-  'not-null',
-  'above',
-  'under',
-  'eq-or-above',
-  'eq-or-under',
-  'contain-values',
-  'not-contain-values',
-  'eq-userid',
-  'ne-userid',
-  'eq-businessid',
-  'ne-businessid',
-  'yesterday',
-  'today',
-  'tomorrow',
-  'last-x-hours',
-  'next-x-hours',
-  'last-x-days',
-  'next-x-days',
-  'last-x-weeks',
-  'next-x-weeks',
-  'last-x-months',
-  'next-x-months',
-  'last-x-years',
-  'next-x-years',
-  'this-month',
-  'this-year',
-  'this-week',
-  'last-month',
-  'last-year',
-  'last-week',
-  'next-month',
-  'next-year',
-  'next-week'
-] as const;
-
 const SYSTEM_ENTITIES = new Set([
   'systemuser',
   'team',
@@ -131,30 +79,6 @@ const SYSTEM_ENTITIES = new Set([
   'slaitem'
 ]);
 
-function nextId() {
-  return Date.now() + Math.floor(Math.random() * 1000);
-}
-
-function addConditionRow(rows: ConditionRow[]) {
-  return [...rows, { id: nextId(), attribute: '', operator: '', value: '' }];
-}
-
-function replaceConditionRow(rows: ConditionRow[], id: number, patch: Partial<ConditionRow>) {
-  return rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
-}
-
-function removeConditionRow(rows: ConditionRow[], id: number) {
-  return rows.filter((row) => row.id !== id);
-}
-
-function formatDiagnosticsCount(items: DiagnosticItem[]) {
-  const errors = items.filter((item) => item.level === 'error').length;
-  const warnings = items.filter((item) => item.level === 'warning').length;
-  if (errors) return `${errors} issue${errors === 1 ? '' : 's'}`;
-  if (warnings) return `${warnings} advisory warning${warnings === 1 ? '' : 's'}`;
-  return 'IntelliSense ready';
-}
-
 export function FetchXmlTab(props: { dataverse: DataverseState; environment: string; environmentUrl?: string; toast: ToastFn }) {
   const { dataverse, environment, environmentUrl, toast } = props;
   const entityMap = useMemo(() => {
@@ -167,7 +91,7 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
   const [entityName, setEntityName] = useState('');
   const [entityDetail, setEntityDetail] = useState<DataverseEntityDetail | null>(null);
   const [selectedAttrs, setSelectedAttrs] = useState<string[]>([]);
-  const [conditions, setConditions] = useState<ConditionRow[]>([{ id: nextId(), attribute: '', operator: '', value: '' }]);
+  const [conditions, setConditions] = useState<ConditionRow[]>([createConditionRow()]);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [distinct, setDistinct] = useState(false);
   const [filterType, setFilterType] = useState<'and' | 'or'>('and');
@@ -240,30 +164,19 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
     setRawXml(buildRawFetchXml(entityDetail.logicalName, selectedAttrs));
   }
 
-  function buildPreviewPayload(): FetchXmlPayload {
-    const activeEntityName = entityName || entityDetail?.logicalName || '';
-    return {
-      environmentAlias: environment,
-      entity: activeEntityName,
-      entitySetName: entityDetail?.entitySetName,
-      attributes: selectedAttrs,
+  function buildPreviewPayload() {
+    return buildFetchXmlPayload({
+      environment,
+      entityName,
+      entityDetail,
+      selectedAttrs,
       distinct,
-      top: 50,
       filterType,
-      conditions: conditions.filter((row) => row.attribute && row.operator).map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined })),
-      orders: orderAttribute ? [{ attribute: orderAttribute, descending: orderDescending }] : [],
-      linkEntities: links
-        .filter((link) => link.name && link.from && link.to)
-        .map((link) => ({
-          name: link.name,
-          from: link.from,
-          to: link.to,
-          alias: link.alias || undefined,
-          linkType: link.linkType,
-          attributes: link.attributes.length ? link.attributes : undefined,
-          conditions: link.conditions.filter((row) => row.attribute && row.operator).map((row) => ({ attribute: row.attribute, operator: row.operator, value: row.value || undefined }))
-        }))
-    };
+      conditions,
+      orderAttribute,
+      orderDescending,
+      links
+    });
   }
 
   const activeEntityName = entityName || entityDetail?.logicalName || '';
@@ -412,7 +325,7 @@ export function FetchXmlTab(props: { dataverse: DataverseState; environment: str
                     placeholder="select…"
                     value={row.operator}
                     onChange={(next) => setConditions((current) => replaceConditionRow(current, row.id, { operator: next }))}
-                    options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
+                    options={[{ value: '', label: 'select…' }, ...FETCH_XML_OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
                   />
                   <input value={row.value} placeholder="value" onChange={(event) => setConditions((current) => replaceConditionRow(current, row.id, { value: event.target.value }))} />
                   <button type="button" className="condition-remove" onClick={() => setConditions((current) => removeConditionRow(current, row.id))}>
@@ -813,7 +726,7 @@ function FetchXmlLinksEditor(props: { dataverse: DataverseState; environment: st
                     placeholder="select entity…"
                     value={link.name}
                     onChange={(next) => {
-                      updateLink(link.id, { name: next, from: '', attributes: [], conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }] });
+                      updateLink(link.id, { name: next, from: '', attributes: [], conditions: [createConditionRow()] });
                       void loadLinkDetail(link.id, next);
                     }}
                     options={[
@@ -904,7 +817,7 @@ function FetchXmlLinksEditor(props: { dataverse: DataverseState; environment: st
                         placeholder="select…"
                         value={row.operator}
                         onChange={(next) => updateLink(link.id, { conditions: replaceConditionRow(link.conditions, row.id, { operator: next }) })}
-                        options={[{ value: '', label: 'select…' }, ...OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
+                        options={[{ value: '', label: 'select…' }, ...FETCH_XML_OPERATORS.map((operator) => ({ value: operator, label: operator }))]}
                       />
                       <input
                         value={row.value}
@@ -930,35 +843,11 @@ function FetchXmlLinksEditor(props: { dataverse: DataverseState; environment: st
           );
         })}
       </div>
-      <button
-        className="btn btn-ghost"
-        type="button"
-        style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }}
-        onClick={() =>
-          setLinks((current) => [
-            ...current,
-            {
-              id: nextId(),
-              name: '',
-              from: '',
-              to: '',
-              linkType: 'inner',
-              alias: '',
-              attributes: [],
-              conditions: [{ id: nextId(), attribute: '', operator: '', value: '' }]
-            }
-          ])
-        }
-      >
+      <button className="btn btn-ghost" type="button" style={{ marginTop: 6, padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setLinks((current) => [...current, createLinkRow()])}>
         + Add join
       </button>
     </div>
   );
-}
-
-function buildRawFetchXml(entityName: string, attributes: string[]) {
-  const attrs = attributes.map((attribute) => `    <attribute name="${attribute}" />`).join('\n');
-  return `<fetch top="50">\n  <entity name="${entityName}">\n${attrs || '    <all-attributes />'}\n  </entity>\n</fetch>`;
 }
 
 export function RelationshipsTab(props: { dataverse: DataverseState; environment: string; loadEntityDetail: (logicalName: string) => Promise<void>; toast: ToastFn }) {

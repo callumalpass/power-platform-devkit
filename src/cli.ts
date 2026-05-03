@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
 import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
+import { renderCompletionScript, renderMainHelp, resolveCliCommandName } from './cli-command-registry.js';
 import { migrateLegacyConfig } from './migrate.js';
 import { detectApi, isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import { argumentFailure, hasFlag, positionalArgs, printFailure, printResult, readBody, readConfigOptions, readFlag, readHeaderFlags, readQueryFlags } from './cli-utils.js';
@@ -15,30 +16,6 @@ import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfig
 import { VERSION } from './version.js';
 import { getCachedUpdateCheck, formatUpdateNotice, runBackgroundUpdateCheck, runUpdateCommand, shouldRunBackgroundUpdateCheck, shouldShowUpdateNotice } from './update.js';
 import { runSetupCli } from './setup-cli.js';
-
-const TOP_LEVEL_COMMANDS = [
-  'auth',
-  'env',
-  'request',
-  'whoami',
-  'ping',
-  'token',
-  'dv',
-  'flow',
-  'graph',
-  'sharepoint',
-  'sp',
-  'bap',
-  'powerapps',
-  'canvas-authoring',
-  'mcp',
-  'setup',
-  'migrate-config',
-  'update',
-  'version',
-  'completion',
-  'help'
-];
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
@@ -59,7 +36,7 @@ async function main(args: string[]): Promise<number> {
 }
 
 async function runCommand(command: string | undefined, rest: string[]): Promise<number> {
-  switch (command) {
+  switch (resolveCliCommandName(command) ?? command) {
     case 'auth':
       return runAuth(rest);
     case 'env':
@@ -79,7 +56,6 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
     case 'graph':
       return runApiAlias('graph', rest);
     case 'sharepoint':
-    case 'sp':
       return runApiAlias('sharepoint', rest);
     case 'bap':
       return runApiAlias('bap', rest);
@@ -827,24 +803,7 @@ function runCompletion(args: string[]): number {
     return 0;
   }
   const shell = positionalArgs(args)[0] ?? 'zsh';
-  const words = TOP_LEVEL_COMMANDS.join(' ');
-  if (shell === 'powershell') {
-    process.stdout.write(
-      [
-        '@(',
-        `  ${TOP_LEVEL_COMMANDS.map((command) => `'${command}'`).join(',')}`,
-        ') | ForEach-Object {',
-        '  Register-ArgumentCompleter -CommandName pp -ScriptBlock { param($wordToComplete) $_ | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, \'ParameterValue\', $_) } }',
-        '}'
-      ].join('\n') + '\n'
-    );
-    return 0;
-  }
-  if (shell === 'bash') {
-    process.stdout.write(`complete -W "${words}" pp\n`);
-    return 0;
-  }
-  process.stdout.write(`#compdef pp\n_arguments "1: :((${words}))"\n`);
+  process.stdout.write(`${renderCompletionScript(shell)}\n`);
   return 0;
 }
 
@@ -912,38 +871,7 @@ function readLoginInput(args: string[]) {
 }
 
 function printHelp(): void {
-  process.stdout.write(
-    [
-      'pp',
-      '',
-      'CLI for Power Platform auth, environments, requests, and MCP access.',
-      '',
-      'Usage:',
-      '  pp <command> [args]',
-      '',
-      'Commands:',
-      '  auth            Manage accounts',
-      '  env             Manage named environments',
-      '  request         Send an authenticated request',
-      '  flow            Validate, inspect, or request against Power Automate',
-      '  whoami          Dataverse WhoAmI for an environment',
-      '  ping            Basic connectivity check',
-      '  token           Print a token for an environment',
-      '  dv              Shortcut for "request --api dv"',
-      '  graph           Shortcut for "request --api graph"',
-      '  sharepoint      Shortcut for "request --api sharepoint"',
-      '  sp              Alias for "sharepoint"',
-      '  bap             Shortcut for "request --api bap"',
-      '  powerapps       Shortcut for "request --api powerapps"',
-      '  canvas-authoring  Canvas authoring helper commands and request shortcut',
-      '  mcp             Start the MCP server',
-      '  setup           Open the browser-based Setup Manager',
-      '  migrate-config  Migrate legacy config into pp config',
-      '  update          Check GitHub releases for updates',
-      '  version         Print the current version',
-      '  completion      Print shell completion script'
-    ].join('\n') + '\n'
-  );
+  process.stdout.write(`${renderMainHelp()}\n`);
 }
 
 function printAuthHelp(): void {
