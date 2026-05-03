@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -162,9 +163,11 @@ export async function copyDesktopRuntimePackages(paths) {
 
   const extensionPackageJson = require.resolve('@azure/msal-node-extensions/package.json');
   const extensionRequire = createRequire(extensionPackageJson);
+  const keytarPackageJson = extensionRequire.resolve('keytar/package.json');
+  await ensureKeytarNativePackage(keytarPackageJson);
   await copyNodePackage(paths, '@azure/msal-node-extensions', extensionPackageJson);
   await copyNodePackage(paths, '@azure/msal-node-runtime', extensionRequire.resolve('@azure/msal-node-runtime/package.json'));
-  await copyNodePackage(paths, 'keytar', extensionRequire.resolve('keytar/package.json'));
+  await copyNodePackage(paths, 'keytar', keytarPackageJson);
   assertNativePackageReadiness(paths);
 }
 
@@ -182,6 +185,36 @@ function assertNativePackageReadiness(paths) {
   if (!existsSync(keytarNode)) {
     throw new Error('Windows desktop secure cache packaging requires keytar.node. Run pnpm approve-builds for keytar, then reinstall or rebuild dependencies.');
   }
+}
+
+async function ensureKeytarNativePackage(packageJsonPath) {
+  if (process.platform !== 'win32') return;
+
+  const packageRoot = path.dirname(packageJsonPath);
+  const keytarNode = path.join(packageRoot, 'build', 'Release', 'keytar.node');
+  if (existsSync(keytarNode)) return;
+
+  await runNpmScript(packageRoot, 'install');
+
+  if (!existsSync(keytarNode)) {
+    throw new Error('Windows desktop secure cache packaging requires keytar.node, but keytar did not produce build/Release/keytar.node.');
+  }
+}
+
+function runNpmScript(cwd, script) {
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return new Promise((resolve, reject) => {
+    const child = spawn(npmCommand, ['run', script], {
+      cwd,
+      stdio: 'inherit',
+      shell: false
+    });
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${npmCommand} run ${script} exited with code ${code ?? 'unknown'}.`));
+    });
+  });
 }
 
 export async function buildDesktop(paths, options = {}) {
