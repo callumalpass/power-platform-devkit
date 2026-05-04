@@ -30,6 +30,13 @@ const entries = [
     plugins: [setupRendererEmbedPlugin()]
   }
 ];
+if (platform === 'win32') {
+  entries.push({
+    name: 'pp-secure-cache',
+    main: path.join(repoRoot, 'src', 'secure-cache.ts'),
+    windowsIcon: windowsIconPath
+  });
+}
 
 await mkdir(seaDir, { recursive: true });
 await rm(outputDir, { recursive: true, force: true });

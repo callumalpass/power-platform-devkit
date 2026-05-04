@@ -84,6 +84,15 @@ export const CLI_COMMANDS: CliCommandMetadata[] = [
   },
   { name: 'mcp', description: 'Start the MCP server', usage: 'pp mcp [--config-dir DIR] [--allow-interactive-auth]' },
   { name: 'setup', description: 'Open the browser-based Setup Manager', usage: 'pp setup [flags]' },
+  {
+    name: 'credential-store',
+    description: 'Choose file or OS-backed token cache storage',
+    usage: 'pp credential-store status|enable [args]',
+    subcommands: [
+      { name: 'status', description: 'Show the effective credential store mode', usage: 'pp credential-store status' },
+      { name: 'enable', description: 'Persist file, os, or auto mode', usage: 'pp credential-store enable file|os|auto' }
+    ]
+  },
   { name: 'migrate-config', description: 'Migrate legacy config into pp config', usage: 'pp migrate-config [--source-config PATH] [--source-dir DIR] [--config-dir DIR] [--apply]' },
   { name: 'update', description: 'Check GitHub releases for updates', usage: 'pp update [flags]' },
   { name: 'version', description: 'Print the current version', usage: 'pp version' },

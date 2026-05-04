@@ -170,6 +170,7 @@ jobs:
             throw 'ISCC.exe not found after installing Inno Setup.'
           }
           & $iscc "/DMyAppVersion=${{ steps.package_version.outputs.version }}" "packaging/windows/pp.iss"
+          & $iscc "/DMyAppVersion=${{ steps.package_version.outputs.version }}" "packaging/windows/pp-secure-cache.iss"
 
       - name: Create tarball
         if: matrix.platform != 'win32'
@@ -209,6 +210,7 @@ jobs:
           name: pp-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.sha }}
           path: |
             release/${{ matrix.platform }}-${{ matrix.arch }}/pp*
+            !release/${{ matrix.platform }}-${{ matrix.arch }}/pp-secure-cache.exe
             release/installer/*.exe
             release/*.tar.gz
             release/*.zip

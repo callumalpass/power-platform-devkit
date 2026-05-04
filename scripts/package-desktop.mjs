@@ -31,6 +31,9 @@ async function createConfig() {
     }
   };
   delete config.extraMetadata;
+  if (process.platform === 'win32') {
+    delete config.asarUnpack;
+  }
 
   for (const platform of ['win', 'linux', 'mac']) {
     if (config[platform]?.icon) {

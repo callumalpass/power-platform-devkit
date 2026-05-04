@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { getCredentialStoreDir, type ConfigStoreOptions } from './config.js';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { getConfigDir, type ConfigStoreOptions } from './config.js';
 
 const DEFAULT_CREDENTIAL_STORE_COMMAND_TIMEOUT_MS = 10_000;
 const LINUX_SECRET_SERVICE_COMMAND_TIMEOUT_MS = 2_000;
@@ -30,8 +30,16 @@ export function isCredentialStoreUnavailableError(error: unknown): boolean {
 export function createOsCredentialStore(options: ConfigStoreOptions = {}, service = 'pp'): CredentialStore | undefined {
   if (process.platform === 'darwin') return new MacosKeychainCredentialStore(service);
   if (process.platform === 'linux') return new LinuxSecretServiceCredentialStore(service);
-  if (process.platform === 'win32') return new WindowsDpapiCredentialStore(options, service);
+  if (process.platform === 'win32') return new WindowsSecureCacheHelperCredentialStore(options, service);
   return undefined;
+}
+
+export async function probeOsCredentialStore(options: ConfigStoreOptions = {}, service = 'pp'): Promise<boolean> {
+  if (process.platform === 'win32') {
+    const result = await runSecureCacheHelper(options, { action: 'status', service, key: '' });
+    return result.status === 0 && readSecureCacheResponse(result).ok;
+  }
+  return Boolean(createOsCredentialStore(options, service));
 }
 
 class MacosKeychainCredentialStore implements CredentialStore {
@@ -89,7 +97,7 @@ class LinuxSecretServiceCredentialStore implements CredentialStore {
   }
 }
 
-class WindowsDpapiCredentialStore implements CredentialStore {
+class WindowsSecureCacheHelperCredentialStore implements CredentialStore {
   readonly kind = 'os' as const;
 
   constructor(
@@ -98,39 +106,52 @@ class WindowsDpapiCredentialStore implements CredentialStore {
   ) {}
 
   async get(key: string): Promise<string | undefined> {
-    const path = this.pathForKey(key);
-    let encrypted: string;
-    try {
-      encrypted = await readFile(path, 'utf8');
-    } catch {
-      return undefined;
+    const result = await runSecureCacheHelper(this.options, { action: 'get', service: this.service, key });
+    const response = readSecureCacheResponse(result);
+    if (response.ok) {
+      if (result.status === 0) return response.value;
+      throw secureCacheFailure('Windows secure cache read failed', result, response);
     }
-    const result = await runPowerShell(WINDOWS_DPAPI_DECRYPT_SCRIPT, encrypted);
-    if (result.status === 0) return result.stdout;
-    if (isWindowsDpapiUnreadableBlob(result)) {
-      await rm(path, { force: true }).catch(() => undefined);
-      return undefined;
-    }
-    throw commandFailure('Windows DPAPI decrypt failed', result);
+    if (response.code === 'NOT_FOUND') return undefined;
+    throw secureCacheFailure('Windows secure cache read failed', result, response);
   }
 
   async set(key: string, value: string): Promise<void> {
-    const result = await runPowerShell(WINDOWS_DPAPI_ENCRYPT_SCRIPT, value);
-    if (result.status !== 0) throw commandFailure('Windows DPAPI encrypt failed', result);
-    const path = this.pathForKey(key);
-    await mkdir(join(getCredentialStoreDir(this.options), 'dpapi', this.service), { recursive: true, mode: 0o700 });
-    await writeFile(path, result.stdout, { encoding: 'utf8', mode: 0o600 });
-    await chmod(path, 0o600).catch(() => undefined);
+    const result = await runSecureCacheHelper(this.options, { action: 'set', service: this.service, key, value });
+    const response = readSecureCacheResponse(result);
+    if (response.ok) {
+      if (result.status === 0) return;
+      throw secureCacheFailure('Windows secure cache write failed', result, response);
+    }
+    throw secureCacheFailure('Windows secure cache write failed', result, response);
   }
 
   async delete(key: string): Promise<void> {
-    await rm(this.pathForKey(key), { force: true });
-  }
-
-  private pathForKey(key: string): string {
-    return join(getCredentialStoreDir(this.options), 'dpapi', this.service, `${encodeKey(key)}.blob`);
+    const result = await runSecureCacheHelper(this.options, { action: 'delete', service: this.service, key });
+    const response = readSecureCacheResponse(result);
+    if (response.ok) {
+      if (result.status === 0) return;
+      throw secureCacheFailure('Windows secure cache delete failed', result, response);
+    }
+    throw secureCacheFailure('Windows secure cache delete failed', result, response);
   }
 }
+
+type SecureCacheRequest = {
+  action: 'status' | 'get' | 'set' | 'delete';
+  service: string;
+  key: string;
+  value?: string;
+  configDir?: string;
+};
+
+type SecureCacheResponse =
+  | { ok: true; value?: string }
+  | {
+      ok: false;
+      code?: string;
+      error: string;
+    };
 
 type CommandResult = {
   status: number;
@@ -138,10 +159,6 @@ type CommandResult = {
   stderr: string;
   error?: NodeJS.ErrnoException;
 };
-
-function runPowerShell(script: string, input: string): Promise<CommandResult> {
-  return runCommand(process.env.ComSpec ? 'powershell.exe' : 'pwsh', ['-NoProfile', '-NonInteractive', '-Command', script], input);
-}
 
 function runCommand(command: string, args: string[], input?: string, timeoutMs = DEFAULT_CREDENTIAL_STORE_COMMAND_TIMEOUT_MS): Promise<CommandResult> {
   return new Promise((resolve) => {
@@ -188,11 +205,49 @@ function runCommand(command: string, args: string[], input?: string, timeoutMs =
   });
 }
 
+function runSecureCacheHelper(options: ConfigStoreOptions, request: SecureCacheRequest): Promise<CommandResult> {
+  const helperPath = resolveSecureCacheHelperPath();
+  if (!helperPath) {
+    return Promise.resolve({
+      status: 127,
+      stdout: '',
+      stderr: 'PP secure cache add-on is not installed.'
+    });
+  }
+  const input = JSON.stringify({
+    ...request,
+    configDir: getConfigDir(options)
+  });
+  return runCommand(helperPath, [], input);
+}
+
 function commandFailure(prefix: string, result: CommandResult): Error {
   if (result.error?.code === 'ENOENT') return new CredentialStoreUnavailableError(`${prefix}: command not found.`);
   if (result.status === 124) return new CredentialStoreUnavailableError(`${prefix}: ${trimTrailingNewline(result.stderr) || 'command timed out.'}`);
   const detail = trimTrailingNewline(result.stderr || result.error?.message || `exit ${result.status}`);
   return new Error(detail ? `${prefix}: ${detail}` : prefix);
+}
+
+function secureCacheFailure(prefix: string, result: CommandResult, response: SecureCacheResponse): Error {
+  if (result.status === 127) return new CredentialStoreUnavailableError(`${prefix}: ${response.ok ? 'helper unavailable' : response.error || 'helper unavailable'}`);
+  if (!response.ok && response.code === 'UNAVAILABLE') return new CredentialStoreUnavailableError(`${prefix}: ${response.error}`);
+  if (result.status === 124) return new CredentialStoreUnavailableError(`${prefix}: ${trimTrailingNewline(result.stderr) || 'command timed out.'}`);
+  const detail = !response.ok ? response.error : trimTrailingNewline(result.stderr || `exit ${result.status}`);
+  return new Error(detail ? `${prefix}: ${detail}` : prefix);
+}
+
+function readSecureCacheResponse(result: CommandResult): SecureCacheResponse {
+  if (result.status === 127 && !result.stdout) {
+    return { ok: false, code: 'UNAVAILABLE', error: trimTrailingNewline(result.stderr) || 'PP secure cache add-on is not installed.' };
+  }
+  try {
+    const parsed = JSON.parse(result.stdout) as Partial<SecureCacheResponse>;
+    if (parsed.ok === true) return typeof parsed.value === 'string' ? { ok: true, value: parsed.value } : { ok: true };
+    if (parsed.ok === false && typeof parsed.error === 'string') {
+      return { ok: false, code: typeof parsed.code === 'string' ? parsed.code : undefined, error: parsed.error };
+    }
+  } catch {}
+  return { ok: false, error: trimTrailingNewline(result.stderr || result.stdout || `secure cache helper exited with ${result.status}`) };
 }
 
 function isMacosNotFound(stderr: string): boolean {
@@ -222,32 +277,20 @@ function linuxSecretServiceUnavailable(result: CommandResult): CredentialStoreUn
   return new CredentialStoreUnavailableError(secretServiceUnavailableMessage(result));
 }
 
-function isWindowsDpapiUnreadableBlob(result: CommandResult): boolean {
-  return /CryptographicException|FromBase64String|Invalid length for a Base-64|not a valid Base-64|The parameter is incorrect|Key not valid for use in specified state/i.test(result.stderr);
-}
-
-function encodeKey(key: string): string {
-  return Buffer.from(key, 'utf8').toString('base64url');
-}
-
 function trimTrailingNewline(value: string): string {
   return value.replace(/[\r\n]+$/, '');
 }
 
-const WINDOWS_DPAPI_ENCRYPT_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Security
-$plain = [Console]::In.ReadToEnd()
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($plain)
-$protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Console]::Out.Write([Convert]::ToBase64String($protected))
-`;
-
-const WINDOWS_DPAPI_DECRYPT_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Security
-$raw = [Console]::In.ReadToEnd().Trim()
-$protected = [Convert]::FromBase64String($raw)
-$bytes = [System.Security.Cryptography.ProtectedData]::Unprotect($protected, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Console]::Out.Write([System.Text.Encoding]::UTF8.GetString($bytes))
-`;
+function resolveSecureCacheHelperPath(): string | undefined {
+  const executable = process.platform === 'win32' ? 'pp-secure-cache.exe' : 'pp-secure-cache';
+  const configured = process.env.PP_SECURE_CACHE_HELPER;
+  if (configured && existsSync(configured)) return configured;
+  const currentDir = dirname(process.execPath);
+  const candidates = [
+    join(currentDir, 'secure-cache', executable),
+    join(dirname(currentDir), 'secure-cache', executable),
+    join(currentDir, executable),
+    ...(process.platform === 'win32' ? [process.env.ProgramFiles ? join(process.env.ProgramFiles, 'PP', 'secure-cache', executable) : undefined] : [])
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => existsSync(candidate));
+}

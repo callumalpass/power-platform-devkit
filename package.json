@@ -1,6 +1,6 @@
 {
   "name": "pp",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "CLI, setup manager, MCP server, and desktop app for working with Microsoft Power Platform.",
   "type": "module",
   "license": "MIT",
@@ -126,13 +126,13 @@
   },
   "dependencies": {
     "@azure/msal-node": "^5.1.5",
-    "@azure/msal-node-extensions": "^5.1.5",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "jq-wasm": "1.1.0-jq-1.8.1",
     "yaml": "^2.8.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@azure/msal-node-extensions": "^5.1.5",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
     "@types/node": "^22.13.10",

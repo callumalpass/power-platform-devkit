@@ -75,7 +75,7 @@ await executeApiRequest({ environmentAlias: 'dev', api: 'dv', path: '/WhoAmI', r
 
 ## Auth
 
-The library uses the same config and MSAL cache as the CLI. Interactive account caches use OS credential storage by default with file fallback; to isolate a tool or test suite, pass `configDir`, and use `credentialStore: 'file'` when you need fully local deterministic cache files.
+The library uses the same config and MSAL cache as the CLI. Windows defaults to file-based token cache storage unless `credentialStore: 'os'` is set and the secure-cache add-on is installed; macOS and Linux default to `auto`. To isolate a tool or test suite, pass `configDir`, and use `credentialStore: 'file'` when you need fully local deterministic cache files.
 
 ```ts
 import { loginAccount } from 'pp/accounts';

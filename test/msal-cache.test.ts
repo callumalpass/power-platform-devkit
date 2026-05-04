@@ -210,7 +210,7 @@ test('MSAL extension cache behavior', async (t) => {
     installFakeExtensions(persistence);
 
     const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
-    persistence.loadResponses.push(new Error('DPAPIEncryptedFileError: The parameter is incorrect'), new Error('DPAPIEncryptedFileError: The parameter is incorrect'));
+    persistence.loadResponses.push(new Error('EncryptedFileError: The parameter is incorrect'), new Error('EncryptedFileError: The parameter is incorrect'));
     const context = cacheContext(nextCache, true);
 
     await plugin.beforeCacheAccess(context as never);

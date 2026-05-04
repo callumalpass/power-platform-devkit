@@ -15,7 +15,7 @@ Desktop app, Setup Manager, CLI, MCP server, and library for working with Micros
 - **CLI** -- `pp`, the command-line tool for scripted and terminal use.
 - **MCP server** -- `pp-mcp`, a stdio server for AI clients.
 
-Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Current release assets include CLI, Setup Manager, and MCP binaries for Windows, macOS (arm64), and Linux (x64), plus PP Desktop as a Windows installer component and standalone macOS/Linux Electron archives.
+Install prebuilt binaries from [GitHub Releases](../../releases), or [build from source](#build-from-source) for development. Current release assets include CLI, Setup Manager, and MCP binaries for Windows, macOS (arm64), and Linux (x64), plus PP Desktop as a Windows installer component, an optional Windows secure-cache add-on, and standalone macOS/Linux Electron archives.
 
 ### Windows
 
@@ -29,6 +29,12 @@ Download `pp-installer.exe` from the latest [GitHub Release](../../releases) and
 Leave **Add pp command-line tools to PATH** checked if you want to use `pp`, `pp setup`, and `pp-mcp` from PowerShell or from MCP client configs without a full path. If you skip PATH registration, launch Setup Manager from the Start menu and point MCP clients at `C:\Program Files\PP\pp-mcp.exe`.
 
 PP Desktop is the full Windows workspace. Setup Manager is the smaller browser-based auth and configuration surface. Both use the same config and auth cache as the CLI and MCP server, so accounts and environments created in one surface are available to the others. Use `pp setup` for the lightweight browser flow and PP Desktop for the full graphical workspace. Desktop talks to its backend through Electron IPC; Setup Manager binds to `127.0.0.1` with a random per-run token.
+
+The standard Windows installer uses file-based MSAL token cache storage and does not install the secure-cache helper. To opt in to Windows protected token-cache storage, install the separate `pp-secure-cache-addon.exe` release asset, then run:
+
+```powershell
+pp credential-store enable os
+```
 
 ### macOS
 
@@ -133,7 +139,7 @@ The `pp auth login` command supports multiple authentication methods:
 - `--env-token` -- Read a token from an environment variable (`--env-var` required)
 - `--static-token` -- Use a fixed token string (`--token` required)
 
-Interactive `user` and `device-code` accounts store their MSAL token cache in OS-backed secure persistence when available. `--credential-store auto` is the default: pp uses Microsoft's MSAL cache persistence extension for Keychain on macOS, DPAPI-protected storage on Windows, and Secret Service on Linux. Headless/CI environments fall back to the existing `0600` file cache, and Windows single-executable builds can fall back to the bounded legacy DPAPI bridge when native addons are unavailable. Use `--credential-store os` to require OS-backed storage or `--credential-store file` for deterministic local test/config directories.
+Interactive `user` and `device-code` accounts store their MSAL token cache in the configured credential store. Windows defaults to `file` for enterprise-friendly installs; macOS and Linux default to `auto`. Use `pp credential-store status` to inspect the effective mode, `pp credential-store enable file|os|auto` to persist a mode, or pass `--credential-store auto|os|file` for one command. On Windows, `os` mode requires the separate secure-cache add-on; on macOS it uses Keychain, and on Linux it uses Secret Service when available.
 
 ### API shortcuts
 
@@ -375,7 +381,7 @@ Build self-contained executables with:
 pnpm run build:sea
 ```
 
-This emits `pp`, `pp-setup`, and `pp-mcp` for the current host under `release/<platform>-<arch>/`, with `.exe` extensions on Windows.
+This emits `pp`, `pp-setup`, and `pp-mcp` for the current host under `release/<platform>-<arch>/`, with `.exe` extensions on Windows. Windows builds also emit `pp-secure-cache.exe` for the separate secure-cache add-on.
 
 Build the Electron desktop directory with:
 
@@ -383,4 +389,4 @@ Build the Electron desktop directory with:
 pnpm run package:desktop
 ```
 
-The SEA build emits `pp`, `pp-setup`, and `pp-mcp` under `release/<platform>-<arch>/`. The Electron packaging step emits the desktop app under `release/electron/`; CI archives this as `pp-desktop-linux-x64.tar.gz` on Linux and `pp-desktop-darwin-arm64.zip` on macOS. The Inno Setup installer definition at `packaging/windows/pp.iss` emits `release/installer/pp-installer.exe`, installs into `Program Files\PP`, offers Desktop, Setup Manager, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates Start menu shortcuts for PP Desktop and PP Setup Manager, and registers uninstall support.
+The SEA build emits `pp`, `pp-setup`, and `pp-mcp` under `release/<platform>-<arch>/`; on Windows it also emits the separate `pp-secure-cache.exe` helper used only by the secure-cache add-on. The Electron packaging step emits the desktop app under `release/electron/`; CI archives this as `pp-desktop-linux-x64.tar.gz` on Linux and `pp-desktop-darwin-arm64.zip` on macOS. The Inno Setup installer definition at `packaging/windows/pp.iss` emits `release/installer/pp-installer.exe`, installs into `Program Files\PP`, offers Desktop, Setup Manager, MCP, and CLI components, optionally adds command-line tools to `PATH`, creates Start menu shortcuts for PP Desktop and PP Setup Manager, and registers uninstall support. `packaging/windows/pp-secure-cache.iss` emits `release/installer/pp-secure-cache-addon.exe`, which installs only the opt-in Windows secure-cache helper.

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { access, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, win32 as win32Path } from 'node:path';
@@ -53,10 +54,15 @@ export interface BrowserProfile {
   lastVerificationUrl?: string;
 }
 
+export interface GlobalSettings {
+  credentialStore?: CredentialStoreMode;
+}
+
 export interface GlobalConfig {
   accounts: Record<string, Account>;
   environments: Record<string, Environment>;
   browserProfiles: Record<string, BrowserProfile>;
+  settings: GlobalSettings;
 }
 
 const accountBaseSchema = z.object({
@@ -117,10 +123,15 @@ const browserProfileSchema = z.object({
   lastVerificationUrl: z.string().optional()
 });
 
+const settingsSchema = z.object({
+  credentialStore: z.enum(['auto', 'os', 'file']).optional()
+});
+
 const globalConfigSchema = z.object({
   accounts: z.record(z.string(), accountSchema).default({}),
   environments: z.record(z.string(), environmentSchema).default({}),
-  browserProfiles: z.record(z.string(), browserProfileSchema).default({})
+  browserProfiles: z.record(z.string(), browserProfileSchema).default({}),
+  settings: settingsSchema.default({})
 });
 
 export interface ConfigStoreOptions {
@@ -157,8 +168,12 @@ export function getCredentialStoreDir(options: ConfigStoreOptions = {}): string 
 }
 
 export function getCredentialStoreMode(options: ConfigStoreOptions = {}): CredentialStoreMode {
-  const value = options.credentialStore ?? process.env.PP_CREDENTIAL_STORE;
-  return value === 'os' || value === 'file' || value === 'auto' ? value : 'auto';
+  if (options.credentialStore === 'os' || options.credentialStore === 'file' || options.credentialStore === 'auto') return options.credentialStore;
+  const envValue = process.env.PP_CREDENTIAL_STORE;
+  if (envValue === 'os' || envValue === 'file' || envValue === 'auto') return envValue;
+  const configured = readConfiguredCredentialStoreMode(options);
+  if (configured) return configured;
+  return process.platform === 'win32' ? 'file' : 'auto';
 }
 
 export function getSavedRequestsPath(options: ConfigStoreOptions = {}): string {
@@ -280,6 +295,14 @@ export async function removeEnvironment(alias: string, options: ConfigStoreOptio
   return written.success ? ok(existed, written.diagnostics) : fail(...written.diagnostics);
 }
 
+export async function saveCredentialStoreMode(mode: CredentialStoreMode, options: ConfigStoreOptions = {}): Promise<OperationResult<CredentialStoreMode>> {
+  const loaded = await loadConfig(options);
+  if (!loaded.success || !loaded.data) return fail(...loaded.diagnostics);
+  loaded.data.settings = { ...(loaded.data.settings ?? {}), credentialStore: mode };
+  const written = await writeConfig(loaded.data, options);
+  return written.success ? ok(mode, written.diagnostics) : fail(...written.diagnostics);
+}
+
 export async function ensureEnvironmentAccess(
   alias: string,
   method: string,
@@ -308,6 +331,16 @@ async function exists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+function readConfiguredCredentialStoreMode(options: ConfigStoreOptions): CredentialStoreMode | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(getConfigPath(options), 'utf8')) as { settings?: { credentialStore?: unknown } };
+    const value = parsed.settings?.credentialStore;
+    return value === 'os' || value === 'file' || value === 'auto' ? value : undefined;
+  } catch {
+    return undefined;
   }
 }
 

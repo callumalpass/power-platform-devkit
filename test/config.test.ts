@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, win32 as win32Path } from 'node:path';
-import { ensureEnvironmentAccess, getCredentialStoreMode, getDefaultConfigDir, loadConfig, removeAccount, saveAccount, saveEnvironment, type Account, type Environment } from '../src/config.js';
+import {
+  ensureEnvironmentAccess,
+  getCredentialStoreMode,
+  getDefaultConfigDir,
+  loadConfig,
+  removeAccount,
+  saveAccount,
+  saveCredentialStoreMode,
+  saveEnvironment,
+  type Account,
+  type Environment
+} from '../src/config.js';
 
 function tempConfigDir() {
   return mkdtemp(join(tmpdir(), 'pp-config-test-'));
@@ -27,7 +38,7 @@ test('loadConfig returns an empty config when no config file exists', async () =
   const configDir = await tempConfigDir();
   const result = await loadConfig({ configDir });
   assert.equal(result.success, true);
-  assert.deepEqual(result.data, { accounts: {}, environments: {}, browserProfiles: {} });
+  assert.deepEqual(result.data, { accounts: {}, environments: {}, browserProfiles: {}, settings: {} });
 });
 
 test('saveAccount and saveEnvironment persist normalized config JSON', async () => {
@@ -87,18 +98,35 @@ test('getDefaultConfigDir follows platform conventions', () => {
   assert.equal(getDefaultConfigDir('win32', { APPDATA: 'C:\\Users\\Alex\\AppData\\Roaming' }, 'C:\\Users\\Alex'), win32Path.resolve('C:\\Users\\Alex\\AppData\\Roaming\\pp'));
 });
 
-test('getCredentialStoreMode accepts explicit and environment modes', () => {
+test('getCredentialStoreMode accepts explicit, environment, and saved modes', async () => {
+  const configDir = await tempConfigDir();
   const previous = process.env.PP_CREDENTIAL_STORE;
   try {
     delete process.env.PP_CREDENTIAL_STORE;
-    assert.equal(getCredentialStoreMode(), 'auto');
-    assert.equal(getCredentialStoreMode({ credentialStore: 'file' }), 'file');
+    assert.equal(getCredentialStoreMode({ configDir }), 'auto');
+    await saveCredentialStoreMode('file', { configDir });
+    assert.equal(getCredentialStoreMode({ configDir }), 'file');
+    assert.equal(getCredentialStoreMode({ configDir, credentialStore: 'os' }), 'os');
     process.env.PP_CREDENTIAL_STORE = 'os';
-    assert.equal(getCredentialStoreMode(), 'os');
+    assert.equal(getCredentialStoreMode({ configDir }), 'os');
     process.env.PP_CREDENTIAL_STORE = 'invalid';
-    assert.equal(getCredentialStoreMode(), 'auto');
+    assert.equal(getCredentialStoreMode({ configDir }), 'file');
   } finally {
     if (previous === undefined) delete process.env.PP_CREDENTIAL_STORE;
     else process.env.PP_CREDENTIAL_STORE = previous;
   }
+});
+
+test('getCredentialStoreMode defaults to file mode on Windows', async (t) => {
+  const configDir = await tempConfigDir();
+  const previousPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  const previous = process.env.PP_CREDENTIAL_STORE;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  delete process.env.PP_CREDENTIAL_STORE;
+  t.after(() => {
+    if (previousPlatform) Object.defineProperty(process, 'platform', previousPlatform);
+    if (previous === undefined) delete process.env.PP_CREDENTIAL_STORE;
+    else process.env.PP_CREDENTIAL_STORE = previous;
+  });
+  assert.equal(getCredentialStoreMode({ configDir }), 'file');
 });

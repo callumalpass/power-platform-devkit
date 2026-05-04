@@ -151,7 +151,7 @@ export async function migrateLegacyConfig(options: MigrateConfigOptions = {}): P
     );
   }
 
-  const migratedConfig: GlobalConfig = { accounts, environments, browserProfiles: {} };
+  const migratedConfig: GlobalConfig = { accounts, environments, browserProfiles: {}, settings: {} };
 
   let backupPath: string | undefined;
   if (options.apply) {

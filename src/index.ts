@@ -32,6 +32,7 @@ export {
   loadConfig,
   removeAccount,
   removeEnvironment,
+  saveCredentialStoreMode,
   saveAccount,
   saveEnvironment,
   writeConfig,
@@ -42,7 +43,8 @@ export {
   type CredentialStoreMode,
   type Environment,
   type EnvironmentAccessMode,
-  type GlobalConfig
+  type GlobalConfig,
+  type GlobalSettings
 } from './config.js';
 
 export { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';

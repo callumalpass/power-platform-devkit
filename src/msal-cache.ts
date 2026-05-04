@@ -74,6 +74,11 @@ async function acquireFallbackCacheLock(cacheKey: string, options: ConfigStoreOp
 export async function createMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): Promise<ICachePlugin> {
   const mode = getCredentialStoreMode(options);
   if (mode === 'file') return createFileMsalCachePlugin(cacheKey, options, accountName);
+  if (process.platform === 'win32') {
+    const legacyPlugin = await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode);
+    if (legacyPlugin) return legacyPlugin;
+    return createFileMsalCachePlugin(cacheKey, options, accountName);
+  }
   if (mode === 'auto' && isAutoExtensionRecentlyUnavailable(options)) {
     return (await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode)) ?? createFileMsalCachePlugin(cacheKey, options, accountName);
   }
@@ -95,7 +100,7 @@ export async function createMsalCachePlugin(cacheKey: string, options: ConfigSto
 
 export async function deleteMsalCache(key: string, options: ConfigStoreOptions): Promise<void> {
   const mode = getCredentialStoreMode(options);
-  if (mode !== 'file') {
+  if (mode !== 'file' && process.platform !== 'win32') {
     try {
       const persistence = await createExtensionPersistence(key, options);
       await persistence.delete();
@@ -403,7 +408,7 @@ function isCredentialPersistenceUnavailable(error: unknown): boolean {
 }
 
 function isUnreadablePersistenceCache(error: unknown): boolean {
-  return /FilePersistenceWithDPAPI|DPAPIEncryptedFileError|Encryption\/Decryption failed|Unprotect|decrypt|The parameter is incorrect|Key not valid for use in specified state|Unexpected token|Unterminated string|not valid JSON/i.test(
+  return /FilePersistenceWithDataProtection|EncryptedFileError|Encryption\/Decryption failed|Unprotect|decrypt|The parameter is incorrect|Key not valid for use in specified state|Unexpected token|Unterminated string|not valid JSON/i.test(
     errorMessage(error)
   );
 }

@@ -378,7 +378,7 @@ export function CanvasTab(props: {
                     <a href={pendingSession.deviceCode.verificationUri} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
                       {pendingSession.deviceCode.verificationUri}
                     </a>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.1em' }}>{pendingSession.deviceCode.userCode}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, letterSpacing: '0.08em' }}>{pendingSession.deviceCode.userCode}</span>
                     <CopyButton value={pendingSession.deviceCode.userCode} label="copy code" title="Copy device code" toast={toast} />
                   </div>
                 </div>

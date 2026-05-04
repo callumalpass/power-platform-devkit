@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuthService } from '../src/auth.js';
 import { getCredentialStoreDir, getMsalCacheDir, loadConfig, saveAccount } from '../src/config.js';
-import { createOsCredentialStore } from '../src/credential-store.js';
+import { createWindowsDpapiCredentialStore } from '../src/windows-dpapi-store.js';
 import { discoverAccessibleEnvironments } from '../src/services/environments.js';
 
 test('AuthService.removeAccount deletes MSAL caches for account cache keys', async () => {
@@ -108,13 +108,12 @@ process.stdin.on('end', () => {
   });
 
   const credentialKey = 'msal:work-cache';
-  const blobDir = join(getCredentialStoreDir({ configDir }), 'dpapi', 'pp');
+  const blobDir = join(getCredentialStoreDir({ configDir }), 'secure-cache', 'pp');
   const blobPath = join(blobDir, `${Buffer.from(credentialKey, 'utf8').toString('base64url')}.blob`);
   await mkdir(blobDir, { recursive: true });
   await writeFile(blobPath, Buffer.from('not a DPAPI blob', 'utf8').toString('base64'), 'utf8');
 
-  const store = createOsCredentialStore({ configDir }, 'pp');
-  if (!store) assert.fail('expected Windows credential store');
+  const store = createWindowsDpapiCredentialStore({ configDir }, 'pp');
 
   assert.equal(await store.get(credentialKey), undefined);
   assert.equal(existsSync(blobPath), false);

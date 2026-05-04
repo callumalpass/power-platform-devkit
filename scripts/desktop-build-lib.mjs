@@ -160,6 +160,7 @@ export async function copyDesktopIcons(paths) {
 export async function copyDesktopRuntimePackages(paths) {
   const targetNodeModules = path.join(paths.desktopDir, 'node_modules');
   await rm(targetNodeModules, { recursive: true, force: true });
+  if (process.platform === 'win32') return;
 
   const extensionPackageJson = require.resolve('@azure/msal-node-extensions/package.json');
   const extensionRequire = createRequire(extensionPackageJson);

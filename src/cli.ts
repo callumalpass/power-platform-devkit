@@ -5,6 +5,8 @@ import process from 'node:process';
 import type { LoginAccountInput } from './auth.js';
 import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
 import { renderCompletionScript, renderMainHelp, resolveCliCommandName } from './cli-command-registry.js';
+import { getConfigDir, getCredentialStoreMode, saveCredentialStoreMode, type CredentialStoreMode } from './config.js';
+import { probeOsCredentialStore } from './credential-store.js';
 import { migrateLegacyConfig } from './migrate.js';
 import { detectApi, isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
 import { argumentFailure, hasFlag, positionalArgs, printFailure, printResult, readBody, readConfigOptions, readFlag, readHeaderFlags, readQueryFlags } from './cli-utils.js';
@@ -77,6 +79,8 @@ async function runCommand(command: string | undefined, rest: string[]): Promise<
       return runSetupCli(rest);
     case 'migrate-config':
       return runMigrateConfig(rest);
+    case 'credential-store':
+      return runCredentialStore(rest);
     case 'update':
       return runUpdateCommand(rest);
     case 'version':
@@ -255,6 +259,51 @@ async function runEnv(args: string[]): Promise<number> {
     return 0;
   }
   printEnvHelp();
+  return 1;
+}
+
+async function runCredentialStore(args: string[]): Promise<number> {
+  if (args.length === 0 || isHelpToken(args[0])) {
+    printCredentialStoreHelp();
+    return 0;
+  }
+
+  const [subcommand, ...rest] = args;
+  const configOptions = readConfigOptions(rest);
+
+  if (subcommand === 'status') {
+    const mode = getCredentialStoreMode(configOptions);
+    const osAvailable = mode === 'os' || mode === 'auto' ? await probeOsCredentialStore(configOptions).catch(() => false) : undefined;
+    printResult(
+      {
+        credentialStore: mode,
+        configDir: getConfigDir(configOptions),
+        ...(osAvailable === undefined ? {} : { osAvailable })
+      },
+      rest
+    );
+    return 0;
+  }
+
+  if (subcommand === 'enable') {
+    const mode = readCredentialStoreMode(positionalArgs(rest)[0]);
+    if (!mode) return printFailure(argumentFailure('CREDENTIAL_STORE_USAGE', 'Usage: pp credential-store enable file|os|auto [--config-dir DIR]'), rest);
+    if (mode === 'os') {
+      const available = await probeOsCredentialStore(configOptions).catch(() => false);
+      if (!available) {
+        return printFailure(
+          argumentFailure('CREDENTIAL_STORE_ADDON_MISSING', 'Secure credential cache add-on is not installed. Install pp-secure-cache-addon.exe or use "pp credential-store enable file".'),
+          rest
+        );
+      }
+    }
+    const saved = await saveCredentialStoreMode(mode, configOptions);
+    if (!saved.success) return printFailure(saved, rest);
+    printResult({ credentialStore: mode, configDir: getConfigDir(configOptions), note: 'You may need to sign in again if the selected cache does not already contain tokens.' }, rest);
+    return 0;
+  }
+
+  printCredentialStoreHelp();
   return 1;
 }
 
@@ -870,6 +919,10 @@ function readLoginInput(args: string[]) {
   return { success: true as const, data: input, diagnostics: [] };
 }
 
+function readCredentialStoreMode(value: string | undefined): CredentialStoreMode | undefined {
+  return value === 'file' || value === 'os' || value === 'auto' ? value : undefined;
+}
+
 function printHelp(): void {
   process.stdout.write(`${renderMainHelp()}\n`);
 }
@@ -965,6 +1018,25 @@ function printEnvDiscoverHelp(): void {
 
 function printEnvRemoveHelp(): void {
   process.stdout.write(['pp env remove', '', 'Remove one environment.', '', 'Usage:', '  pp env remove <alias>'].join('\n') + '\n');
+}
+
+function printCredentialStoreHelp(): void {
+  process.stdout.write(
+    [
+      'pp credential-store',
+      '',
+      'Inspect or choose where interactive MSAL token caches are stored.',
+      '',
+      'Usage:',
+      '  pp credential-store status [--config-dir DIR]',
+      '  pp credential-store enable file|os|auto [--config-dir DIR]',
+      '',
+      'Modes:',
+      '  file  Store the token cache as a local per-user file',
+      '  os    Use the PP secure cache add-on on Windows, Keychain on macOS, or Secret Service on Linux',
+      '  auto  Prefer OS storage when available and fall back to file storage'
+    ].join('\n') + '\n'
+  );
 }
 
 function printRequestHelp(): void {
