@@ -5,60 +5,31 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getMsalCacheDir } from '../src/config.js';
-import { createMsalCachePlugin, setMsalExtensionsLoaderForTest } from '../src/msal-cache.js';
+import { CredentialStoreUnavailableError, setCredentialStoreFactoryForTest, type CredentialStore } from '../src/credential-store.js';
+import { createMsalCachePlugin } from '../src/msal-cache.js';
 
-class FakePersistence {
-  value: string | null = null;
-  deleted = 0;
-  afterAccesses = 0;
-  loadResponses: Array<string | null | Error> = [];
-  corruptLoadsAfterSave = false;
+class FakeCredentialStore implements CredentialStore {
+  readonly kind = 'os' as const;
+  readonly values = new Map<string, string>();
+  readonly deleted: string[] = [];
+  unavailable = false;
+  corruptReads = false;
 
-  async save(contents: string): Promise<void> {
-    this.value = contents;
+  async get(key: string): Promise<string | undefined> {
+    if (this.unavailable) throw new CredentialStoreUnavailableError('fake store unavailable');
+    const value = this.values.get(key);
+    if (this.corruptReads && value !== undefined) return '{"Account":';
+    return value;
   }
 
-  async load(): Promise<string | null> {
-    const response = this.loadResponses.length ? this.loadResponses.shift() : this.value;
-    if (response instanceof Error) throw response;
-    if (this.corruptLoadsAfterSave && this.value !== null) return '{"Account":';
-    return response ?? null;
+  async set(key: string, value: string): Promise<void> {
+    if (this.unavailable) throw new CredentialStoreUnavailableError('fake store unavailable');
+    this.values.set(key, value);
   }
 
-  async delete(): Promise<boolean> {
-    this.deleted += 1;
-    this.value = null;
-    return true;
-  }
-
-  async reloadNecessary(): Promise<boolean> {
-    return true;
-  }
-
-  getFilePath(): string {
-    return 'fake-msal-cache';
-  }
-
-  async verifyPersistence(): Promise<boolean> {
-    return true;
-  }
-
-  async createForPersistenceValidation(): Promise<FakePersistence> {
-    return new FakePersistence();
-  }
-}
-
-class FakePersistenceCachePlugin {
-  constructor(private readonly persistence: FakePersistence) {}
-
-  async beforeCacheAccess(context: FakeTokenCacheContext): Promise<void> {
-    const cache = await this.persistence.load();
-    if (cache) context.tokenCache.deserialize(cache);
-  }
-
-  async afterCacheAccess(context: FakeTokenCacheContext): Promise<void> {
-    this.persistence.afterAccesses += 1;
-    if (context.cacheHasChanged) await this.persistence.save(context.tokenCache.serialize());
+  async delete(key: string): Promise<void> {
+    this.deleted.push(key);
+    this.values.delete(key);
   }
 }
 
@@ -69,16 +40,6 @@ type FakeTokenCacheContext = {
     deserialize(value: string): void;
   };
 };
-
-function installFakeExtensions(persistence: FakePersistence): void {
-  setMsalExtensionsLoaderForTest(async () => ({
-    DataProtectionScope: { CurrentUser: 'CurrentUser' },
-    PersistenceCreator: {
-      createPersistence: async () => persistence
-    },
-    PersistenceCachePlugin: FakePersistenceCachePlugin as never
-  }));
-}
 
 function cacheContext(value: string, cacheHasChanged = false): FakeTokenCacheContext & { deserialized?: string } {
   const context: FakeTokenCacheContext & { deserialized?: string } = {
@@ -93,10 +54,11 @@ function cacheContext(value: string, cacheHasChanged = false): FakeTokenCacheCon
   return context;
 }
 
-test('MSAL extension cache behavior', async (t) => {
-  t.after(() => setMsalExtensionsLoaderForTest());
+test('MSAL cache behavior', async (t) => {
+  t.after(() => setCredentialStoreFactoryForTest());
 
   await t.test('serializes fallback file cache access for the same cache key', async () => {
+    setCredentialStoreFactoryForTest();
     const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-lock-'));
     const cacheKey = `work-cache-lock-${Date.now()}`;
     const firstCache = '{"Account":{"id":"first"}}';
@@ -126,98 +88,75 @@ test('MSAL extension cache behavior', async (t) => {
     assert.equal(secondDeserialized, firstCache);
   });
 
-  await t.test('migrates existing file cache before deleting it', async () => {
+  await t.test('migrates existing file cache to the OS credential store before deleting it', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-migrate-'));
     const cacheKey = `work-cache-migrate-${Date.now()}`;
     const fileCache = '{"Account":{"id":"cached"}}';
     const fileCachePath = join(getMsalCacheDir({ configDir }), `${cacheKey}.json`);
+    const store = new FakeCredentialStore();
+    setCredentialStoreFactoryForTest(() => store);
     await mkdir(getMsalCacheDir({ configDir }), { recursive: true });
     await writeFile(fileCachePath, fileCache, 'utf8');
 
-    const persistence = new FakePersistence();
-    installFakeExtensions(persistence);
-
     const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
-    assert.equal(persistence.value, fileCache);
-    assert.equal(existsSync(fileCachePath), false);
-
     const context = cacheContext('{}');
     await plugin.beforeCacheAccess(context as never);
+
+    assert.equal(store.values.get(`msal:${cacheKey}`), fileCache);
+    assert.equal(existsSync(fileCachePath), false);
     assert.equal(context.deserialized, fileCache);
   });
 
-  await t.test('falls back to file mode when extension loading is unavailable in auto mode', async () => {
+  await t.test('falls back to file mode when the OS credential store is unavailable in auto mode', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-file-fallback-'));
     const cacheKey = `work-cache-fallback-${Date.now()}`;
     const fileCache = '{"Account":{"id":"file"}}';
     const fileCachePath = join(getMsalCacheDir({ configDir }), `${cacheKey}.json`);
+    setCredentialStoreFactoryForTest(() => undefined);
     await mkdir(getMsalCacheDir({ configDir }), { recursive: true });
     await writeFile(fileCachePath, fileCache, 'utf8');
-
-    setMsalExtensionsLoaderForTest(async () => {
-      throw Object.assign(new Error("Cannot find module '../build/Release/keytar.node'"), { code: 'MODULE_NOT_FOUND' });
-    });
 
     const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
     const context = cacheContext('{}');
     await plugin.beforeCacheAccess(context as never);
     assert.equal(context.deserialized, fileCache);
-    setMsalExtensionsLoaderForTest();
   });
 
-  await t.test('does not re-read persistence after the official after hook writes cache', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-write-no-reread-'));
-    const cacheKey = `work-cache-write-${Date.now()}`;
-    const nextCache = '{"Account":{"id":"next"}}';
-    const persistence = new FakePersistence();
-    persistence.loadResponses.push(null);
-    installFakeExtensions(persistence);
-
-    const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
-    persistence.corruptLoadsAfterSave = true;
-    await plugin.afterCacheAccess(cacheContext(nextCache, true) as never);
-
-    const fileCachePath = join(getMsalCacheDir({ configDir }), `${cacheKey}.json`);
-    assert.equal(existsSync(fileCachePath), false);
-    assert.equal(persistence.value, nextCache);
-    assert.equal(persistence.deleted, 0);
-  });
-
-  await t.test('keeps the file cache when migration falls back after failed persistence verification', async () => {
+  await t.test('keeps the file cache when secure-store verification fails in auto mode', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-migrate-fallback-'));
     const cacheKey = `work-cache-migrate-fallback-${Date.now()}`;
     const fileCache = '{"Account":{"id":"migrated-file"}}';
     const fileCachePath = join(getMsalCacheDir({ configDir }), `${cacheKey}.json`);
+    const store = new FakeCredentialStore();
+    store.corruptReads = true;
+    setCredentialStoreFactoryForTest(() => store);
     await mkdir(getMsalCacheDir({ configDir }), { recursive: true });
     await writeFile(fileCachePath, fileCache, 'utf8');
 
-    const persistence = new FakePersistence();
-    persistence.corruptLoadsAfterSave = true;
-    installFakeExtensions(persistence);
-
-    await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
+    const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
+    const context = cacheContext('{}');
+    await plugin.beforeCacheAccess(context as never);
 
     assert.equal(existsSync(fileCachePath), true);
     assert.equal(await readFile(fileCachePath, 'utf8'), fileCache);
-    assert.equal(persistence.deleted > 0, true);
+    assert.equal(context.deserialized, fileCache);
   });
 
-  await t.test('runs the official after hook after dropping unreadable persistence', async () => {
-    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-unreadable-'));
-    const cacheKey = `work-cache-unreadable-${Date.now()}`;
-    const nextCache = '{"Account":{"id":"recovered"}}';
-    const persistence = new FakePersistence();
-    installFakeExtensions(persistence);
+  await t.test('reads and writes the OS credential store when it is available', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'pp-msal-cache-secure-'));
+    const cacheKey = `work-cache-secure-${Date.now()}`;
+    const existingCache = '{"Account":{"id":"secure"}}';
+    const nextCache = '{"Account":{"id":"next"}}';
+    const store = new FakeCredentialStore();
+    store.values.set(`msal:${cacheKey}`, existingCache);
+    setCredentialStoreFactoryForTest(() => store);
 
-    const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'auto' }, 'work');
-    persistence.loadResponses.push(new Error('EncryptedFileError: The parameter is incorrect'), new Error('EncryptedFileError: The parameter is incorrect'));
+    const plugin = await createMsalCachePlugin(cacheKey, { configDir, credentialStore: 'os' }, 'work');
     const context = cacheContext(nextCache, true);
-
     await plugin.beforeCacheAccess(context as never);
     await plugin.afterCacheAccess(context as never);
 
-    assert.equal(persistence.afterAccesses, 1);
-    assert.equal(persistence.value, nextCache);
-    assert.equal(persistence.deleted > 0, true);
+    assert.equal(context.deserialized, existingCache);
+    assert.equal(store.values.get(`msal:${cacheKey}`), nextCache);
   });
 });

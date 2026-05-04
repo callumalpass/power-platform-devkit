@@ -6,39 +6,11 @@ import { createOsCredentialStore, isCredentialStoreUnavailableError, type Creden
 
 const MSAL_CREDENTIAL_SERVICE = 'pp';
 const MSAL_CREDENTIAL_PREFIX = 'msal:';
-const AUTO_EXTENSION_UNAVAILABLE_RETRY_MS = 30_000;
 const CROSS_PROCESS_LOCK_RETRY_MS = 100;
 const CROSS_PROCESS_LOCK_TIMEOUT_MS = 120_000;
 const CROSS_PROCESS_LOCK_STALE_MS = 10 * 60_000;
 
-const autoExtensionUnavailableUntil = new Map<string, number>();
 const fallbackCacheLocks = new Map<string, Promise<void>>();
-
-type MsalPersistence = {
-  save(contents: string): Promise<void>;
-  load(): Promise<string | null>;
-  delete(): Promise<boolean>;
-  reloadNecessary(lastSync: number): Promise<boolean>;
-  getFilePath(): string;
-  verifyPersistence(): Promise<boolean>;
-  createForPersistenceValidation(): Promise<MsalPersistence>;
-};
-
-type MsalExtensionsModule = {
-  DataProtectionScope: { CurrentUser: string };
-  PersistenceCreator: {
-    createPersistence(config: Record<string, unknown>): Promise<MsalPersistence>;
-  };
-  PersistenceCachePlugin: new (persistence: MsalPersistence) => ICachePlugin;
-};
-
-type MsalExtensionsLoader = () => Promise<MsalExtensionsModule>;
-
-let msalExtensionsLoader: MsalExtensionsLoader = async () => (await import('@azure/msal-node-extensions')) as unknown as MsalExtensionsModule;
-
-export function setMsalExtensionsLoaderForTest(loader?: MsalExtensionsLoader): void {
-  msalExtensionsLoader = loader ?? (async () => (await import('@azure/msal-node-extensions')) as unknown as MsalExtensionsModule);
-}
 
 async function withFallbackCacheLock<T>(cacheKey: string, options: ConfigStoreOptions, fn: () => Promise<T>): Promise<T> {
   const release = await acquireFallbackCacheLock(cacheKey, options);
@@ -74,45 +46,18 @@ async function acquireFallbackCacheLock(cacheKey: string, options: ConfigStoreOp
 export async function createMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): Promise<ICachePlugin> {
   const mode = getCredentialStoreMode(options);
   if (mode === 'file') return createFileMsalCachePlugin(cacheKey, options, accountName);
-  if (process.platform === 'win32') {
-    const legacyPlugin = await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode);
-    if (legacyPlugin) return legacyPlugin;
-    return createFileMsalCachePlugin(cacheKey, options, accountName);
-  }
-  if (mode === 'auto' && isAutoExtensionRecentlyUnavailable(options)) {
-    return (await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode)) ?? createFileMsalCachePlugin(cacheKey, options, accountName);
-  }
 
-  try {
-    return await createExtensionMsalCachePlugin(cacheKey, options, accountName, mode);
-  } catch (error) {
-    if (mode === 'auto' && isCredentialPersistenceUnavailable(error)) {
-      markAutoExtensionUnavailable(options);
-      return (await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode)) ?? createFileMsalCachePlugin(cacheKey, options, accountName);
-    }
-    if (mode === 'os' && isCredentialPersistenceUnavailable(error)) {
-      const legacyPlugin = await createLegacySecureMsalCachePlugin(cacheKey, options, accountName, mode);
-      if (legacyPlugin) return legacyPlugin;
-    }
-    throw error;
-  }
+  const securePlugin = await createSecureMsalCachePlugin(cacheKey, options, accountName, mode);
+  return securePlugin ?? createFileMsalCachePlugin(cacheKey, options, accountName);
 }
 
 export async function deleteMsalCache(key: string, options: ConfigStoreOptions): Promise<void> {
   const mode = getCredentialStoreMode(options);
-  if (mode !== 'file' && process.platform !== 'win32') {
-    try {
-      const persistence = await createExtensionPersistence(key, options);
-      await persistence.delete();
-    } catch (error) {
-      if (!(mode === 'auto' && isCredentialPersistenceUnavailable(error))) throw error;
-    }
-  }
 
   await withFallbackCacheLock(key, options, async () => {
     if (mode !== 'file') {
       try {
-        await deleteLegacySecureCache(key, options);
+        await deleteSecureCache(key, options);
       } catch (error) {
         if (!(mode === 'auto' && isCredentialStoreUnavailableError(error))) throw error;
       }
@@ -134,78 +79,6 @@ export function accountCredentialCacheKeys(account: { name?: string; tokenCacheK
   return [...keys];
 }
 
-async function createExtensionMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string, mode: Exclude<CredentialStoreMode, 'file'>): Promise<ICachePlugin> {
-  const extensions = await msalExtensionsLoader();
-  const persistence = await createExtensionPersistence(cacheKey, options, extensions);
-  await migrateLegacyCachesToPersistence(persistence, cacheKey, options, accountName, mode);
-  return new VerifiedPersistenceCachePlugin(new extensions.PersistenceCachePlugin(persistence), persistence, cacheKey, options, accountName, mode);
-}
-
-async function createExtensionPersistence(cacheKey: string, options: ConfigStoreOptions, extensions?: MsalExtensionsModule): Promise<MsalPersistence> {
-  const resolvedExtensions = extensions ?? (await msalExtensionsLoader());
-  return resolvedExtensions.PersistenceCreator.createPersistence({
-    cachePath: msalExtensionCachePath(cacheKey, options),
-    dataProtectionScope: resolvedExtensions.DataProtectionScope.CurrentUser,
-    serviceName: MSAL_CREDENTIAL_SERVICE,
-    accountName: msalCredentialKey(cacheKey),
-    usePlaintextFileOnLinux: false
-  });
-}
-
-class VerifiedPersistenceCachePlugin implements ICachePlugin {
-  private skipNextOfficialAfter = false;
-
-  constructor(
-    private readonly plugin: ICachePlugin,
-    private readonly persistence: MsalPersistence,
-    private readonly cacheKey: string,
-    private readonly options: ConfigStoreOptions,
-    private readonly accountName: string,
-    private readonly mode: Exclude<CredentialStoreMode, 'file'>
-  ) {}
-
-  async beforeCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
-    try {
-      await this.plugin.beforeCacheAccess(cacheContext);
-    } catch (error) {
-      if (!isUnreadablePersistenceCache(error)) throw error;
-      try {
-        await this.plugin.beforeCacheAccess(cacheContext);
-        return;
-      } catch (retryError) {
-        if (!isUnreadablePersistenceCache(retryError)) throw retryError;
-      }
-      await this.persistence.delete().catch(() => false);
-      this.skipNextOfficialAfter = true;
-    }
-  }
-
-  async afterCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
-    if (this.skipNextOfficialAfter) {
-      this.skipNextOfficialAfter = false;
-      await this.afterOfficialCacheAccess(cacheContext);
-      return;
-    }
-
-    await this.afterOfficialCacheAccess(cacheContext);
-  }
-
-  private async afterOfficialCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
-    try {
-      await this.plugin.afterCacheAccess(cacheContext);
-    } catch (error) {
-      const serialized = cacheContext.cacheHasChanged ? cacheContext.tokenCache.serialize() : undefined;
-      if (this.mode === 'auto' && isRecoverablePersistenceWriteFailure(error) && serialized !== undefined) {
-        await withFallbackCacheLock(this.cacheKey, this.options, async () => {
-          await writeMsalFileCache(this.cacheKey, serialized, this.options, this.accountName);
-        });
-        return;
-      }
-      throw error;
-    }
-  }
-}
-
 function createFileMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string): ICachePlugin {
   return createLockedFallbackCachePlugin(cacheKey, options, {
     beforeCacheAccess: async (context) => {
@@ -219,7 +92,7 @@ function createFileMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions
   });
 }
 
-async function createLegacySecureMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string, mode: Exclude<CredentialStoreMode, 'file'>): Promise<ICachePlugin | undefined> {
+async function createSecureMsalCachePlugin(cacheKey: string, options: ConfigStoreOptions, accountName: string, mode: Exclude<CredentialStoreMode, 'file'>): Promise<ICachePlugin | undefined> {
   const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
   if (!store) {
     if (mode === 'auto') return undefined;
@@ -228,7 +101,7 @@ async function createLegacySecureMsalCachePlugin(cacheKey: string, options: Conf
 
   return createLockedFallbackCachePlugin(cacheKey, options, {
     beforeCacheAccess: async (context) => {
-      const secureCache = await readLegacySecureCache(cacheKey, options, mode, store);
+      const secureCache = await readSecureCache(cacheKey, options, mode, store);
       if (secureCache) {
         context.tokenCache.deserialize(secureCache);
         return;
@@ -236,38 +109,15 @@ async function createLegacySecureMsalCachePlugin(cacheKey: string, options: Conf
 
       const fileCache = await readMsalFileCache(cacheKey, options);
       if (!fileCache) return;
-      const storage = await writeVerifiedLegacySecureCache(store, cacheKey, fileCache, options, accountName, mode);
+      const storage = await writeVerifiedSecureCache(store, cacheKey, fileCache, options, accountName, mode);
       if (storage === 'secure') await deleteMsalFileCache(cacheKey, options);
       context.tokenCache.deserialize(fileCache);
     },
     afterCacheAccess: async (context) => {
       if (!context.cacheHasChanged) return;
-      const storage = await writeVerifiedLegacySecureCache(store, cacheKey, context.tokenCache.serialize(), options, accountName, mode);
+      const storage = await writeVerifiedSecureCache(store, cacheKey, context.tokenCache.serialize(), options, accountName, mode);
       if (storage === 'secure') await deleteMsalFileCache(cacheKey, options);
     }
-  });
-}
-
-async function migrateLegacyCachesToPersistence(
-  persistence: MsalPersistence,
-  cacheKey: string,
-  options: ConfigStoreOptions,
-  accountName: string,
-  mode: Exclude<CredentialStoreMode, 'file'>
-): Promise<void> {
-  await withFallbackCacheLock(cacheKey, options, async () => {
-    const existing = await readValidPersistenceCache(persistence, mode);
-    if (existing) return;
-
-    const fileCache = await readMsalFileCache(cacheKey, options);
-    const legacySecureCache = fileCache ? undefined : await readLegacySecureCache(cacheKey, options, mode);
-    const source = fileCache ?? legacySecureCache;
-    if (!source) return;
-
-    const storage = await saveVerifiedPersistenceCache(persistence, source, cacheKey, options, accountName, mode);
-    if (storage !== 'persistence') return;
-    await deleteMsalFileCache(cacheKey, options);
-    await deleteLegacySecureCache(cacheKey, options).catch(() => undefined);
   });
 }
 
@@ -305,53 +155,7 @@ function createLockedFallbackCachePlugin(cacheKey: string, options: ConfigStoreO
   };
 }
 
-async function readValidPersistenceCache(persistence: MsalPersistence, mode: Exclude<CredentialStoreMode, 'file'>): Promise<string | undefined> {
-  try {
-    const cache = await persistence.load();
-    if (!cache) return undefined;
-    if (isValidMsalCache(cache)) return cache;
-    await persistence.delete().catch(() => false);
-    return undefined;
-  } catch (error) {
-    if (isUnreadablePersistenceCache(error)) {
-      await persistence.delete().catch(() => false);
-      return undefined;
-    }
-    if (mode === 'auto' && isCredentialPersistenceUnavailable(error)) return undefined;
-    throw error;
-  }
-}
-
-async function saveVerifiedPersistenceCache(
-  persistence: MsalPersistence,
-  value: string,
-  cacheKey: string,
-  options: ConfigStoreOptions,
-  accountName: string,
-  mode: Exclude<CredentialStoreMode, 'file'>
-): Promise<'persistence' | 'file'> {
-  try {
-    await persistence.save(value);
-    await verifyPersistenceCache(persistence, value);
-    return 'persistence';
-  } catch (error) {
-    await persistence.delete().catch(() => false);
-    if (mode === 'auto' && isRecoverablePersistenceWriteFailure(error)) {
-      await writeMsalFileCache(cacheKey, value, options, accountName);
-      return 'file';
-    }
-    throw error;
-  }
-}
-
-async function verifyPersistenceCache(persistence: MsalPersistence, expected: string): Promise<void> {
-  const written = await persistence.load();
-  if (written === expected && isValidMsalCache(written)) return;
-  await persistence.delete().catch(() => false);
-  throw new Error('OS credential storage returned a corrupted or truncated MSAL cache after write.');
-}
-
-async function readLegacySecureCache(cacheKey: string, options: ConfigStoreOptions, mode: Exclude<CredentialStoreMode, 'file'>, existingStore?: CredentialStore): Promise<string | undefined> {
+async function readSecureCache(cacheKey: string, options: ConfigStoreOptions, mode: Exclude<CredentialStoreMode, 'file'>, existingStore?: CredentialStore): Promise<string | undefined> {
   const store = existingStore ?? createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
   if (!store) {
     if (mode === 'auto') return undefined;
@@ -369,7 +173,7 @@ async function readLegacySecureCache(cacheKey: string, options: ConfigStoreOptio
   }
 }
 
-async function writeVerifiedLegacySecureCache(
+async function writeVerifiedSecureCache(
   store: CredentialStore,
   cacheKey: string,
   value: string,
@@ -384,7 +188,7 @@ async function writeVerifiedLegacySecureCache(
     await store.delete(msalCredentialKey(cacheKey)).catch(() => undefined);
     throw new Error('OS credential storage returned a corrupted or truncated MSAL cache after write.');
   } catch (error) {
-    if (mode === 'auto' && (isCredentialStoreUnavailableError(error) || isRecoverablePersistenceWriteFailure(error))) {
+    if (mode === 'auto' && isRecoverableSecureCacheWriteFailure(error)) {
       await writeMsalFileCache(cacheKey, value, options, accountName);
       return 'file';
     }
@@ -392,29 +196,13 @@ async function writeVerifiedLegacySecureCache(
   }
 }
 
-async function deleteLegacySecureCache(cacheKey: string, options: ConfigStoreOptions): Promise<void> {
+async function deleteSecureCache(cacheKey: string, options: ConfigStoreOptions): Promise<void> {
   const store = createOsCredentialStore(options, MSAL_CREDENTIAL_SERVICE);
   if (store) await store.delete(msalCredentialKey(cacheKey));
 }
 
-function isCredentialPersistenceUnavailable(error: unknown): boolean {
-  const message = errorMessage(error);
-  return (
-    isCredentialStoreUnavailableError(error) ||
-    /Cannot find module|MODULE_NOT_FOUND|bindings unavailable|not supported on this platform|Persistence could not be verified|Persistence check failed|LibSecret|Secret Service|D-Bus|keychain|ENOENT/i.test(
-      message
-    )
-  );
-}
-
-function isUnreadablePersistenceCache(error: unknown): boolean {
-  return /FilePersistenceWithDataProtection|EncryptedFileError|Encryption\/Decryption failed|Unprotect|decrypt|The parameter is incorrect|Key not valid for use in specified state|Unexpected token|Unterminated string|not valid JSON/i.test(
-    errorMessage(error)
-  );
-}
-
-function isRecoverablePersistenceWriteFailure(error: unknown): boolean {
-  return isCredentialPersistenceUnavailable(error) || /corrupted or truncated MSAL cache after write/i.test(errorMessage(error));
+function isRecoverableSecureCacheWriteFailure(error: unknown): boolean {
+  return isCredentialStoreUnavailableError(error) || /corrupted or truncated MSAL cache after write/i.test(errorMessage(error));
 }
 
 function errorMessage(error: unknown): string {
@@ -468,28 +256,12 @@ function msalFileCachePath(key: string, options: ConfigStoreOptions): string {
   return join(getMsalCacheDir(options), `${key}.json`);
 }
 
-function msalExtensionCachePath(key: string, options: ConfigStoreOptions): string {
-  return join(getCredentialStoreDir(options), 'msal-node-extensions', `${encodeKey(key)}.cache`);
-}
-
 function msalCredentialKey(key: string): string {
   return `${MSAL_CREDENTIAL_PREFIX}${key}`;
 }
 
 function encodeKey(key: string): string {
   return Buffer.from(key, 'utf8').toString('base64url');
-}
-
-function isAutoExtensionRecentlyUnavailable(options: ConfigStoreOptions): boolean {
-  return (autoExtensionUnavailableUntil.get(autoExtensionScope(options)) ?? 0) > Date.now();
-}
-
-function markAutoExtensionUnavailable(options: ConfigStoreOptions): void {
-  autoExtensionUnavailableUntil.set(autoExtensionScope(options), Date.now() + AUTO_EXTENSION_UNAVAILABLE_RETRY_MS);
-}
-
-function autoExtensionScope(options: ConfigStoreOptions): string {
-  return `${process.platform}:${getCredentialStoreDir(options)}`;
 }
 
 function fallbackCacheLockScope(cacheKey: string, options: ConfigStoreOptions): string {

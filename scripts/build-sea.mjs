@@ -51,9 +51,7 @@ for (const entry of entries) {
     target: 'node22',
     format: 'cjs',
     outfile: path.join(seaDir, `${entry.name}.cjs`),
-    // Keep the MSAL native persistence extension external; SEA cannot embed native addons.
     packages: 'bundle',
-    external: ['@azure/msal-node-extensions'],
     plugins: entry.plugins
   });
 }

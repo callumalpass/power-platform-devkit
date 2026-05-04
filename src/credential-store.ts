@@ -16,6 +16,10 @@ export interface CredentialStore {
   delete(key: string): Promise<void>;
 }
 
+type CredentialStoreFactory = (options?: ConfigStoreOptions, service?: string) => CredentialStore | undefined;
+
+let credentialStoreFactory: CredentialStoreFactory = createDefaultOsCredentialStore;
+
 export class CredentialStoreUnavailableError extends Error {
   constructor(message: string) {
     super(message);
@@ -28,6 +32,14 @@ export function isCredentialStoreUnavailableError(error: unknown): boolean {
 }
 
 export function createOsCredentialStore(options: ConfigStoreOptions = {}, service = 'pp'): CredentialStore | undefined {
+  return credentialStoreFactory(options, service);
+}
+
+export function setCredentialStoreFactoryForTest(factory?: CredentialStoreFactory): void {
+  credentialStoreFactory = factory ?? createDefaultOsCredentialStore;
+}
+
+function createDefaultOsCredentialStore(options: ConfigStoreOptions = {}, service = 'pp'): CredentialStore | undefined {
   if (process.platform === 'darwin') return new MacosKeychainCredentialStore(service);
   if (process.platform === 'linux') return new LinuxSecretServiceCredentialStore(service);
   if (process.platform === 'win32') return new WindowsSecureCacheHelperCredentialStore(options, service);
