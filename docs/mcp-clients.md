@@ -6,6 +6,8 @@ The MCP server is the `pp-mcp` executable. It is installed by the Windows instal
 
 `pp-mcp` reads the same pp config and auth cache as PP Desktop and the CLI. Windows installs default to file-based token cache storage; `--credential-store os` requires the separate secure-cache add-on. macOS and Linux default to `auto`, which prefers OS credential storage when available and can fall back to file storage. A common setup is to sign in and add environments in PP Desktop or with `pp auth login` / `pp env add`, then point your MCP client at `pp-mcp`.
 
+If a tool returns `MCP_AUTH_REQUIRED`, ask the MCP client to call `pp.auth.start` for the account. The start/status result includes either a browser login URL or a device-code URL and code that the assistant can pass to the user. Poll `pp.auth.status` with the returned `sessionId` until it is `completed`, then retry the original tool.
+
 If the Windows installer did not add pp to `PATH`, use the full command path in client configs:
 
 ```text

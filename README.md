@@ -252,14 +252,17 @@ pp mcp        # or: pp-mcp
 Options:
 
 - `--config-dir DIR` -- Override config directory
-- `--allow-interactive-auth` -- Enable browser-based auth prompts (disabled by default in MCP mode)
+- `--allow-interactive-auth` -- Compatibility flag for older clients; MCP request tools do not launch browser or device-code prompts directly
 - `--tool-name-style dotted|underscore` -- Expose default dotted tool names (`pp.account.list`) or Copilot-compatible underscore names (`pp_account_list`)
+
+MCP authentication is session-based. Use `pp.auth.start` to begin an interactive browser or device-code login, pass the returned URL or code to the user, then poll `pp.auth.status` until the session is `completed`. Once completed, retry the original request tool. Normal request, ping, token, and environment tools only use cached/silent auth and return an `MCP_AUTH_REQUIRED` diagnostic when user action is needed.
 
 ### Tool names
 
 By default, tools are namespaced under `pp.`:
 
 - `pp.account.list`, `pp.account.inspect`, `pp.account.login`, `pp.account.remove`
+- `pp.auth.start`, `pp.auth.status`, `pp.auth.cancel`
 - `pp.environment.list`, `pp.environment.inspect`, `pp.environment.add`, `pp.environment.discover`, `pp.environment.remove`
 - `pp.request`, `pp.dv_request`, `pp.flow_request`, `pp.graph_request`, `pp.sharepoint_request`, `pp.bap_request`, `pp.powerapps_request`
 - `pp.whoami`, `pp.ping`, `pp.token`

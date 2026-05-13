@@ -36,16 +36,20 @@ export interface AuthSessionCreateInput {
   preferredFlow?: 'interactive' | 'device-code';
   forcePrompt?: boolean;
   environmentAlias?: string;
+  includeApis?: string[];
   excludeApis?: string[];
   allowInteractiveAuth: boolean;
   configOptions?: ConfigStoreOptions;
 }
 
 type AuthSessionSubscriber = (session: AuthSession) => void;
+export type AuthSessionLogin = typeof loginAccount;
 
 export class AuthSessionStore {
   private readonly sessions = new Map<string, AuthSession>();
   private readonly subscribers = new Map<string, Set<AuthSessionSubscriber>>();
+
+  constructor(private readonly login: AuthSessionLogin = loginAccount) {}
 
   async createSession(input: AuthSessionCreateInput): Promise<AuthSession> {
     const environments = await listConfiguredEnvironments(input.configOptions);
@@ -56,7 +60,7 @@ export class AuthSessionStore {
       });
     }
 
-    const targets = buildLoginTargets(input.account.name, environments.data, input.environmentAlias, input.excludeApis).map((target) => ({
+    const targets = buildLoginTargets(input.account.name, environments.data, input.environmentAlias, input.includeApis, input.excludeApis).map((target) => ({
       ...target,
       id: randomUUID(),
       status: 'pending' as const
@@ -83,6 +87,23 @@ export class AuthSessionStore {
   getSession(id: string): AuthSession | undefined {
     const session = this.sessions.get(id);
     return session ? cloneSession(session) : undefined;
+  }
+
+  waitForFirstActionOrTerminal(id: string): Promise<AuthSession | undefined> {
+    const session = this.getSession(id);
+    if (!session || isFirstActionOrTerminal(session)) return Promise.resolve(session);
+    return new Promise((resolve) => {
+      let resolved = false;
+      let unsubscribe: () => void = () => undefined;
+      const complete = (next: AuthSession) => {
+        if (!isFirstActionOrTerminal(next) || resolved) return;
+        resolved = true;
+        unsubscribe();
+        resolve(next);
+      };
+      unsubscribe = this.subscribe(id, complete);
+      if (resolved) unsubscribe();
+    });
   }
 
   cancelSession(id: string): AuthSession | undefined {
@@ -131,7 +152,7 @@ export class AuthSessionStore {
   private async runSession(id: string, input: AuthSessionCreateInput, loginTargets: LoginTarget[]): Promise<void> {
     let activeTargetIndex = -1;
     try {
-      const result = await loginAccount(
+      const result = await this.login(
         input.account,
         {
           preferredFlow: input.preferredFlow ?? 'interactive',
@@ -231,10 +252,17 @@ export class AuthSessionStore {
   }
 }
 
-function buildLoginTargets(accountName: string, environments: Array<{ alias: string; account: string; url: string }>, selectedEnvironmentAlias?: string, excludeApis?: string[]): LoginTarget[] {
+function buildLoginTargets(
+  accountName: string,
+  environments: Array<{ alias: string; account: string; url: string }>,
+  selectedEnvironmentAlias?: string,
+  includeApis?: string[],
+  excludeApis?: string[]
+): LoginTarget[] {
+  const included = includeApis?.length ? new Set(includeApis) : undefined;
   const excluded = new Set(excludeApis ?? []);
   const targets: LoginTarget[] = [];
-  if (!excluded.has('dv')) {
+  if (apiIncluded('dv', included, excluded)) {
     const relevantEnvironments = [
       ...environments.filter((environment) => environment.alias === selectedEnvironmentAlias),
       ...environments.filter((environment) => environment.account === accountName && environment.alias !== selectedEnvironmentAlias)
@@ -243,11 +271,20 @@ function buildLoginTargets(accountName: string, environments: Array<{ alias: str
       targets.push({ resource: normalizeOrigin(environment.url), label: `Dataverse (${environment.alias})`, api: 'dv' });
     }
   }
-  if (!excluded.has('flow')) targets.push({ resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' });
-  if (!excluded.has('powerapps')) targets.push({ resource: 'https://service.powerapps.com', label: 'Power Apps', api: 'powerapps' });
-  if (!excluded.has('bap')) targets.push({ resource: 'https://api.bap.microsoft.com', label: 'Platform Admin', api: 'bap' });
-  if (!excluded.has('graph')) targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
-  return dedupeLoginTargets(targets);
+  if (apiIncluded('flow', included, excluded)) targets.push({ resource: 'https://service.flow.microsoft.com', label: 'Flow', api: 'flow' });
+  if (apiIncluded('powerapps', included, excluded)) targets.push({ resource: 'https://service.powerapps.com', label: 'Power Apps', api: 'powerapps' });
+  if (apiIncluded('bap', included, excluded)) targets.push({ resource: 'https://api.bap.microsoft.com', label: 'Platform Admin', api: 'bap' });
+  if (apiIncluded('graph', included, excluded)) targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
+  const deduped = dedupeLoginTargets(targets);
+  return deduped.length ? deduped : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }];
+}
+
+function apiIncluded(api: string, included: Set<string> | undefined, excluded: Set<string>): boolean {
+  return !excluded.has(api) && (!included || included.has(api));
+}
+
+function isFirstActionOrTerminal(session: AuthSession): boolean {
+  return session.status === 'waiting_for_user' || session.status === 'completed' || session.status === 'failed' || session.status === 'cancelled';
 }
 
 function dedupeLoginTargets(targets: LoginTarget[]): LoginTarget[] {

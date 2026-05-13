@@ -1,13 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import type { LoginAccountInput } from './auth.js';
+import type { LoginAccountInput, PublicClientLoginOptions } from './auth.js';
 import { saveAccount, type Account, type ConfigStoreOptions } from './config.js';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 import { API_KINDS, ENVIRONMENT_TOKEN_API_KINDS, REQUEST_ALIAS_API_KINDS, type ApiKind } from './request.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { VERSION } from './version.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
+import { AuthSessionStore, type AuthSession, type AuthSessionCreateInput } from './ui-auth-sessions.js';
 
 export interface PpMcpServerOptions extends ConfigStoreOptions {
   allowInteractiveAuth?: boolean;
@@ -30,6 +32,35 @@ const outputSchema = z.object({
   )
 });
 
+const accountKindSchema = z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']);
+const authApiSchema = z.enum(['dv', 'flow', 'powerapps', 'bap', 'graph']);
+
+const accountInputSchema = z.object({
+  name: z.string(),
+  kind: accountKindSchema,
+  tenantId: z.string().optional(),
+  clientId: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  loginHint: z.string().optional(),
+  tokenCacheKey: z.string().optional(),
+  prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
+  fallbackToDeviceCode: z.boolean().optional(),
+  clientSecretEnv: z.string().optional(),
+  environmentVariable: z.string().optional(),
+  token: z.string().optional(),
+  description: z.string().optional()
+});
+
+const authStartInputSchema = accountInputSchema.extend({
+  configDir: z.string().optional(),
+  allowInteractiveAuth: z.boolean().optional(),
+  preferredFlow: z.enum(['interactive', 'device-code']).optional(),
+  forcePrompt: z.boolean().optional(),
+  environment: z.string().optional(),
+  apis: z.array(authApiSchema).optional(),
+  excludeApis: z.array(authApiSchema).optional()
+});
+
 export function createPpMcpServer(options: PpMcpServerOptions = {}): McpServer {
   const server = new McpServer({ name: 'pp', version: VERSION });
   registerTools(server, options);
@@ -44,6 +75,8 @@ export async function startPpMcpServer(options: PpMcpServerOptions = {}): Promis
 }
 
 function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
+  const authSessions = new AuthSessionStore();
+
   server.registerTool(
     toolName('pp.account.list', defaults),
     {
@@ -74,22 +107,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
     {
       title: 'Save Account',
       description: 'Create or update one account.',
-      inputSchema: z.object({
-        configDir: z.string().optional(),
-        name: z.string(),
-        kind: z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']),
-        tenantId: z.string().optional(),
-        clientId: z.string().optional(),
-        scopes: z.array(z.string()).optional(),
-        loginHint: z.string().optional(),
-        tokenCacheKey: z.string().optional(),
-        prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
-        fallbackToDeviceCode: z.boolean().optional(),
-        clientSecretEnv: z.string().optional(),
-        environmentVariable: z.string().optional(),
-        token: z.string().optional(),
-        description: z.string().optional()
-      }),
+      inputSchema: accountInputSchema.extend({ configDir: z.string().optional() }),
       outputSchema
     },
     async ({ configDir, ...input }) => toolResult(await saveAccount(input as Account, config(configDir, defaults)))
@@ -107,32 +125,76 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
   );
 
   server.registerTool(
+    toolName('pp.auth.start', defaults),
+    {
+      title: 'Start Auth Session',
+      description: 'Start an interactive or device-code auth session. Return the session id and any current browser URL or device code; poll pp.auth.status until completed.',
+      inputSchema: authStartInputSchema,
+      outputSchema
+    },
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, apis, excludeApis, ...input }) =>
+      toolResult(
+        await startMcpAuthSession(authSessions, {
+          account: input as LoginAccountInput,
+          preferredFlow,
+          forcePrompt,
+          environmentAlias: environment,
+          includeApis: apis,
+          excludeApis,
+          allowInteractiveAuth: allowInteractiveAuth ?? true,
+          configOptions: config(configDir, defaults)
+        })
+      )
+  );
+
+  server.registerTool(
+    toolName('pp.auth.status', defaults),
+    {
+      title: 'Get Auth Session Status',
+      description: 'Poll an auth session started by pp.auth.start or pp.account.login.',
+      inputSchema: z.object({ sessionId: z.string() }),
+      outputSchema
+    },
+    async ({ sessionId }) => toolResult(readAuthSession(authSessions, sessionId))
+  );
+
+  server.registerTool(
+    toolName('pp.auth.cancel', defaults),
+    {
+      title: 'Cancel Auth Session',
+      description: 'Cancel an auth session started by pp.auth.start or pp.account.login.',
+      inputSchema: z.object({ sessionId: z.string() }),
+      outputSchema
+    },
+    async ({ sessionId }) => toolResult(cancelAuthSession(authSessions, sessionId))
+  );
+
+  server.registerTool(
     toolName('pp.account.login', defaults),
     {
       title: 'Login Account',
-      description: 'Create or update one account and run a login flow.',
-      inputSchema: z.object({
-        configDir: z.string().optional(),
-        allowInteractiveAuth: z.boolean().optional(),
-        preferredFlow: z.enum(['interactive', 'device-code']).optional(),
-        forcePrompt: z.boolean().optional(),
-        name: z.string(),
-        kind: z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']),
-        tenantId: z.string().optional(),
-        clientId: z.string().optional(),
-        scopes: z.array(z.string()).optional(),
-        loginHint: z.string().optional(),
-        prompt: z.enum(['select_account', 'login', 'consent', 'none']).optional(),
-        fallbackToDeviceCode: z.boolean().optional(),
-        clientSecretEnv: z.string().optional(),
-        environmentVariable: z.string().optional(),
-        token: z.string().optional(),
-        description: z.string().optional()
-      }),
+      description: 'Create or update one account and run a login flow. User and device-code accounts return an auth session; poll pp.auth.status until completed.',
+      inputSchema: authStartInputSchema,
       outputSchema
     },
-    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, ...input }) =>
-      toolResult(await loginAccount(input as LoginAccountInput, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }, config(configDir, defaults)))
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, apis, excludeApis, ...input }) => {
+      const account = input as LoginAccountInput;
+      if (isUserInteractiveAccount(account)) {
+        return toolResult(
+          await startMcpAuthSession(authSessions, {
+            account,
+            preferredFlow,
+            forcePrompt,
+            environmentAlias: environment,
+            includeApis: apis,
+            excludeApis,
+            allowInteractiveAuth: allowInteractiveAuth ?? true,
+            configOptions: config(configDir, defaults)
+          })
+        );
+      }
+      return toolResult(await loginAccount(account, { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth, preferredFlow, forcePrompt }, config(configDir, defaults)));
+    }
   );
 
   server.registerTool(
@@ -173,10 +235,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema
     },
-    async ({ alias, url, account, displayName, accessMode, configDir, allowInteractiveAuth }) =>
-      toolResult(
-        await addConfiguredEnvironment({ alias, url, account, displayName, accessMode }, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth })
-      )
+    async ({ alias, url, account, displayName, accessMode, configDir }) =>
+      mcpToolResult(await addConfiguredEnvironment({ alias, url, account, displayName, accessMode }, config(configDir, defaults), { allowInteractive: false }))
   );
 
   server.registerTool(
@@ -191,8 +251,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema
     },
-    async ({ account, configDir, allowInteractiveAuth }) =>
-      toolResult(await discoverAccessibleEnvironments(account, config(configDir, defaults), { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }))
+    async ({ account, configDir }) => mcpToolResult(await discoverAccessibleEnvironments(account, config(configDir, defaults), { allowInteractive: false }))
   );
 
   server.registerTool(
@@ -242,8 +301,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: requestSchema,
       outputSchema
     },
-    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir, allowInteractiveAuth }) =>
-      toolResult(
+    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir }) =>
+      mcpToolResult(
         await executeApiRequest(
           {
             environmentAlias: environment,
@@ -261,7 +320,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
             readIntent
           },
           config(configDir, defaults),
-          { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }
+          mcpSilentLoginOptions()
         )
       )
   );
@@ -275,8 +334,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         inputSchema: requestSchema.omit({ api: true }),
         outputSchema
       },
-      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir, allowInteractiveAuth }) =>
-        toolResult(
+      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir }) =>
+        mcpToolResult(
           await executeApiRequest(
             {
               environmentAlias: environment,
@@ -294,7 +353,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
               readIntent
             },
             config(configDir, defaults),
-            { allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth }
+            mcpSilentLoginOptions()
           )
         )
     );
@@ -313,13 +372,13 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema
     },
-    async ({ environment, account, configDir, allowInteractiveAuth }) =>
-      toolResult(
+    async ({ environment, account, configDir }) =>
+      mcpToolResult(
         await runWhoAmICheck(
           {
             environmentAlias: environment,
             accountName: account,
-            allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth
+            allowInteractive: false
           },
           config(configDir, defaults)
         )
@@ -340,14 +399,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema
     },
-    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth }) =>
-      toolResult(
+    async ({ environment, account, api = 'dv', configDir }) =>
+      mcpToolResult(
         await runConnectivityPing(
           {
             environmentAlias: environment,
             accountName: account,
             api,
-            allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth
+            allowInteractive: false
           },
           config(configDir, defaults)
         )
@@ -369,15 +428,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       }),
       outputSchema
     },
-    async ({ environment, account, api = 'dv', configDir, allowInteractiveAuth, preferredFlow }) =>
-      toolResult(
+    async ({ environment, account, api = 'dv', configDir }) =>
+      mcpToolResult(
         await getEnvironmentToken(
           {
             environmentAlias: environment,
             accountName: account,
             api,
-            allowInteractive: allowInteractiveAuth ?? defaults.allowInteractiveAuth,
-            preferredFlow
+            allowInteractive: false
           },
           config(configDir, defaults)
         )
@@ -395,6 +453,61 @@ function config(configDir: string | undefined, defaults: PpMcpServerOptions): Co
 
 function toolName(name: string, options: PpMcpServerOptions): string {
   return options.toolNameStyle === 'underscore' ? name.replaceAll('.', '_') : name;
+}
+
+function isUserInteractiveAccount(input: LoginAccountInput): boolean {
+  return input.kind === 'user' || input.kind === 'device-code';
+}
+
+async function startMcpAuthSession(authSessions: AuthSessionStore, input: AuthSessionCreateInput): Promise<OperationResult<AuthSession>> {
+  const session = await authSessions.createSession(input);
+  return ok((await authSessions.waitForFirstActionOrTerminal(session.id)) ?? session);
+}
+
+function readAuthSession(authSessions: AuthSessionStore, sessionId: string): OperationResult<AuthSession> {
+  const session = authSessions.getSession(sessionId);
+  return session ? ok(session) : authSessionNotFound(sessionId);
+}
+
+function cancelAuthSession(authSessions: AuthSessionStore, sessionId: string): OperationResult<AuthSession> {
+  const session = authSessions.cancelSession(sessionId);
+  return session ? ok(session) : authSessionNotFound(sessionId);
+}
+
+function authSessionNotFound(sessionId: string): OperationResult<AuthSession> {
+  return fail(
+    createDiagnostic('error', 'MCP_AUTH_SESSION_NOT_FOUND', `Auth session ${sessionId} was not found.`, {
+      source: 'pp/mcp',
+      hint: 'Start a new session with pp.auth.start.'
+    })
+  );
+}
+
+function mcpSilentLoginOptions(): PublicClientLoginOptions {
+  return { allowInteractive: false, openInteractiveBrowser: false, terminalPrompts: false };
+}
+
+function mcpToolResult<T>(result: OperationResult<T>) {
+  return toolResult(addMcpAuthRequiredHint(result));
+}
+
+function addMcpAuthRequiredHint<T>(result: OperationResult<T>): OperationResult<T> {
+  if (result.success || !diagnosticsRequireUserAuth(result.diagnostics)) return result;
+  return fail(
+    createDiagnostic('error', 'MCP_AUTH_REQUIRED', 'Authentication is required before this MCP tool can continue.', {
+      source: 'pp/mcp',
+      hint: 'Call pp.auth.start for the account, pass the returned URL or device code to the user, poll pp.auth.status until completed, then retry this tool.'
+    }),
+    ...result.diagnostics
+  );
+}
+
+function diagnosticsRequireUserAuth(diagnostics: Diagnostic[]): boolean {
+  return diagnostics.some((diagnostic) =>
+    /Interactive authentication is disabled|no cached account|not authenticated|sign in required|login required/i.test(
+      [diagnostic.code, diagnostic.message, diagnostic.hint, diagnostic.detail].filter(Boolean).join('\n')
+    )
+  );
 }
 
 function toolResult(result: { success: boolean; data?: unknown; diagnostics: unknown[] }) {
