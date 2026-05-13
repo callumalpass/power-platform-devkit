@@ -52,10 +52,11 @@ function EditAccountBody(props: {
   tokenStatus: TokenEntry;
   confirm: ReturnType<typeof useConfirm>;
   refreshState: (silent?: boolean) => Promise<void>;
+  onLogin: (account: SetupAccount, options?: LoginOptions) => void;
   onClose: () => void;
   toast: ToastFn;
 }) {
-  const { account, tokenStatus, confirm, refreshState, onClose, toast } = props;
+  const { account, tokenStatus, confirm, refreshState, onLogin, onClose, toast } = props;
   const interactive = account.kind === 'user' || account.kind === 'device-code';
   const [browserProfile, setBrowserProfile] = useState<BrowserProfileStatus | null>(null);
   const [browserProfileBusy, setBrowserProfileBusy] = useState(false);
@@ -177,6 +178,7 @@ function EditAccountBody(props: {
 
   const tokenExpiry = tokenStatus?.authenticated ? formatTimeRemaining(tokenStatus.expiresAt) : null;
   const tokenClass = tokenState(tokenStatus);
+  const loginLabel = tokenStatus?.authenticated ? 'Log in again' : 'Log in';
 
   return (
     <>
@@ -215,6 +217,22 @@ function EditAccountBody(props: {
           </div>
         ) : null}
       </div>
+
+      {interactive ? (
+        <section className="drawer-section drawer-section-tight">
+          <div className="drawer-section-header">
+            <div>
+              <h3>Authentication</h3>
+              <p className="desc">Refresh cached Power Platform tokens for this account.</p>
+            </div>
+            <div className="btn-group">
+              <button className="btn btn-primary btn-sm" type="button" onClick={() => onLogin(account, { forcePrompt: true })}>
+                {loginLabel}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <form onSubmit={handleEditSubmit} className="drawer-form">
         <input type="hidden" name="name" defaultValue={account.name} />
@@ -553,6 +571,7 @@ export function AddAccountForm(props: {
 // ---------------------------------------------------------------------------
 
 type DrawerState = { mode: 'closed' } | { mode: 'new' } | { mode: 'edit'; accountName: string };
+type LoginOptions = { forcePrompt?: boolean };
 
 export function AccountsPanel(props: {
   accounts: SetupAccount[];
@@ -618,7 +637,7 @@ export function AccountsPanel(props: {
     });
   }
 
-  async function handleLogin(account: SetupAccount) {
+  async function handleLogin(account: SetupAccount, options: LoginOptions = {}) {
     const accountEnvironmentAlias =
       globalEnvironment && environments.some((environment) => environment.alias === globalEnvironment && environment.account === account.name) ? globalEnvironment : undefined;
     try {
@@ -630,6 +649,7 @@ export function AccountsPanel(props: {
           loginHint: account.loginHint || account.accountUsername,
           tenantId: account.tenantId,
           clientId: account.clientId,
+          forcePrompt: Boolean(options.forcePrompt),
           environmentAlias: accountEnvironmentAlias,
           excludeApis: ['dv', 'flow', 'powerapps', 'bap', 'graph'].filter((name) => !selectedApis[name])
         })
@@ -732,9 +752,9 @@ export function AccountsPanel(props: {
                   const interactive = account.kind === 'user' || account.kind === 'device-code';
                   const primaryAction = interactive
                     ? state === 'ok' && expiry?.cls === 'expiring-soon'
-                      ? { label: 'Re-auth', variant: 'btn-secondary' }
+                      ? { label: 'Re-auth', variant: 'btn-secondary', forcePrompt: true }
                       : state !== 'ok'
-                        ? { label: 'Log in', variant: 'btn-primary' }
+                        ? { label: 'Log in', variant: 'btn-primary', forcePrompt: false }
                         : null
                     : null;
                   const isSelected = drawer.mode === 'edit' && drawer.accountName === account.name;
@@ -778,7 +798,7 @@ export function AccountsPanel(props: {
                       <td className="setup-table-actions-col">
                         <div className="setup-row-actions" onClick={(event) => event.stopPropagation()}>
                           {primaryAction ? (
-                            <button type="button" className={`btn ${primaryAction.variant} btn-sm`} onClick={() => void handleLogin(account)}>
+                            <button type="button" className={`btn ${primaryAction.variant} btn-sm`} onClick={() => void handleLogin(account, { forcePrompt: primaryAction.forcePrompt })}>
                               {primaryAction.label}
                             </button>
                           ) : null}
@@ -786,6 +806,7 @@ export function AccountsPanel(props: {
                           <OverflowMenu
                             items={[
                               { label: 'Edit details', onClick: () => setDrawer({ mode: 'edit', accountName: account.name }) },
+                              ...(interactive ? [{ label: 'Log in again', onClick: () => void handleLogin(account, { forcePrompt: true }) }] : []),
                               { label: 'Remove account', destructive: true, onClick: () => handleRemove(account) }
                             ]}
                           />
@@ -834,6 +855,7 @@ export function AccountsPanel(props: {
                   tokenStatus={tokenStatus[editingAccount.name]}
                   confirm={confirm}
                   refreshState={refreshState}
+                  onLogin={(account, options) => void handleLogin(account, options)}
                   onClose={() => setDrawer({ mode: 'closed' })}
                   toast={toast}
                 />
