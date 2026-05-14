@@ -256,7 +256,7 @@ export function SetupTab(props: SetupTabProps) {
       </div>
 
       <div className={`dv-subpanel ${setupSubTab === 'tools' ? 'active' : ''}`}>
-        <ToolsPanel accounts={accounts} shellData={shellData} toast={toast} />
+        <ToolsPanel accounts={accounts} login={login} shellData={shellData} toast={toast} />
       </div>
 
       <ConfirmDialog request={confirm.request} onClose={confirm.close} />

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDesktopApiContext, handleDesktopApiRequest, type DesktopApiContext } from '../src/desktop-api.js';
 import { CanvasSessionStore } from '../src/ui-canvas-sessions.js';
+import { AuthSessionStore, type AuthSessionLogin } from '../src/ui-auth-sessions.js';
 import { ok } from '../src/diagnostics.js';
 
 function createContext(overrides: Partial<DesktopApiContext> = {}): DesktopApiContext {
@@ -68,6 +69,37 @@ test('handleDesktopApiRequest saves interactive accounts without starting login'
   const config = JSON.parse(await readFile(join(configDir, 'config.json'), 'utf8'));
   assert.equal(config.accounts.work.kind, 'user');
   assert.equal(config.accounts.work.loginHint, 'admin@example.com');
+});
+
+test('handleDesktopApiRequest starts SharePoint auth sessions with the requested host target', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-api-sharepoint-auth-'));
+  const seenTargets: Array<{ resource: string; label?: string; api?: string }> = [];
+  const login: AuthSessionLogin = async (account, options = {}) => {
+    seenTargets.push(...(options.loginTargets ?? []));
+    return ok({ account: { name: account.name }, resources: options.loginTargets?.map((target) => target.resource) ?? [] });
+  };
+  const context = createContext({
+    allowInteractiveAuth: true,
+    configOptions: { configDir },
+    authSessions: new AuthSessionStore(login)
+  });
+
+  const response = await handleDesktopApiRequest(context, {
+    method: 'POST',
+    path: '/api/auth/sessions',
+    body: {
+      name: 'work',
+      kind: 'user',
+      includeApis: ['sharepoint'],
+      sharePointUrl: 'https://contoso.sharepoint.com/sites/team/_api/web'
+    }
+  });
+
+  assert.equal(response.status, 202);
+  for (let attempt = 0; attempt < 20 && seenTargets.length === 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.deepEqual(seenTargets, [{ resource: 'https://contoso.sharepoint.com', label: 'SharePoint', api: 'sharepoint' }]);
 });
 
 test('handleDesktopApiRequest does not start hidden interactive auth during environment discovery', async () => {

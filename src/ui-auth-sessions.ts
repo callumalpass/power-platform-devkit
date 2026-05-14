@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import { DEFAULT_LOGIN_RESOURCE, type LoginAccountInput, type LoginTarget } from './auth.js';
 import type { ConfigStoreOptions } from './config.js';
-import { type OperationResult } from './diagnostics.js';
+import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { normalizeOrigin } from './request.js';
 import { loginAccount } from './services/accounts.js';
 import { listConfiguredEnvironments } from './services/environments.js';
@@ -36,6 +36,7 @@ export interface AuthSessionCreateInput {
   preferredFlow?: 'interactive' | 'device-code';
   forcePrompt?: boolean;
   environmentAlias?: string;
+  sharePointUrl?: string;
   includeApis?: string[];
   excludeApis?: string[];
   allowInteractiveAuth: boolean;
@@ -60,7 +61,15 @@ export class AuthSessionStore {
       });
     }
 
-    const targets = buildLoginTargets(input.account.name, environments.data, input.environmentAlias, input.includeApis, input.excludeApis).map((target) => ({
+    const loginTargets = buildLoginTargets(input.account.name, environments.data, input.environmentAlias, input.includeApis, input.excludeApis, input.sharePointUrl);
+    if (!loginTargets.success || !loginTargets.data) {
+      return this.createFailedSession(input.account.name, [], {
+        success: false,
+        diagnostics: loginTargets.diagnostics
+      });
+    }
+
+    const targets = loginTargets.data.map((target) => ({
       ...target,
       id: randomUUID(),
       status: 'pending' as const
@@ -257,8 +266,9 @@ function buildLoginTargets(
   environments: Array<{ alias: string; account: string; url: string }>,
   selectedEnvironmentAlias?: string,
   includeApis?: string[],
-  excludeApis?: string[]
-): LoginTarget[] {
+  excludeApis?: string[],
+  sharePointUrl?: string
+): OperationResult<LoginTarget[]> {
   const included = includeApis?.length ? new Set(includeApis) : undefined;
   const excluded = new Set(excludeApis ?? []);
   const targets: LoginTarget[] = [];
@@ -275,8 +285,20 @@ function buildLoginTargets(
   if (apiIncluded('powerapps', included, excluded)) targets.push({ resource: 'https://service.powerapps.com', label: 'Power Apps', api: 'powerapps' });
   if (apiIncluded('bap', included, excluded)) targets.push({ resource: 'https://api.bap.microsoft.com', label: 'Platform Admin', api: 'bap' });
   if (apiIncluded('graph', included, excluded)) targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
+  if (apiIncluded('sharepoint', included, excluded)) {
+    const resource = normalizeSharePointResource(sharePointUrl);
+    if (!resource) {
+      return fail(
+        createDiagnostic('error', 'SHAREPOINT_AUTH_URL_REQUIRED', 'SharePoint login requires a SharePoint URL so pp can request a token for the correct tenant host.', {
+          source: 'pp/ui-auth',
+          hint: 'Use a URL like https://contoso.sharepoint.com/sites/site.'
+        })
+      );
+    }
+    targets.push({ resource, label: 'SharePoint', api: 'sharepoint' });
+  }
   const deduped = dedupeLoginTargets(targets);
-  return deduped.length ? deduped : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }];
+  return ok(deduped.length ? deduped : [{ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' }]);
 }
 
 function apiIncluded(api: string, included: Set<string> | undefined, excluded: Set<string>): boolean {
@@ -294,6 +316,17 @@ function dedupeLoginTargets(targets: LoginTarget[]): LoginTarget[] {
     seen.add(target.resource);
     return true;
   });
+}
+
+function normalizeSharePointResource(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (!/\.sharepoint\.com$/i.test(url.hostname)) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 function cloneSession(session: AuthSession): AuthSession {

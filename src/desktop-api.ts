@@ -260,12 +260,15 @@ async function authSessionCreate(body: unknown, context: DesktopApiContext): Pro
   const input = readLoginInput(body);
   if (!input.success || !input.data) return json(400, input);
   const data = asRecord(body) ?? {};
+  const includeApis = Array.isArray(data.includeApis) ? data.includeApis.filter((value: unknown): value is string => typeof value === 'string') : undefined;
   const excludeApis = Array.isArray(data.excludeApis) ? data.excludeApis.filter((value: unknown): value is string => typeof value === 'string') : undefined;
   const session = await context.authSessions.createSession({
     account: input.data,
     preferredFlow: data.preferredFlow === 'device-code' ? 'device-code' : 'interactive',
     forcePrompt: Boolean(data.forcePrompt),
     environmentAlias: optionalString(data.environmentAlias),
+    sharePointUrl: optionalString(data.sharePointUrl),
+    includeApis,
     excludeApis,
     allowInteractiveAuth: context.allowInteractiveAuth,
     configOptions: context.configOptions

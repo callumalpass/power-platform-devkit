@@ -12,7 +12,7 @@ export const DEFAULT_LOGIN_RESOURCE = 'https://graph.microsoft.com';
 export interface LoginTarget {
   resource: string;
   label?: string;
-  api?: 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring';
+  api?: 'dv' | 'flow' | 'graph' | 'bap' | 'powerapps' | 'canvas-authoring' | 'sharepoint';
 }
 
 export interface TokenProvider {
@@ -460,9 +460,18 @@ function resolveScopes(account: Account, resource: string): string[] {
   if (normalized.endsWith('/.default')) return [normalized];
   if (account.kind === 'user' || account.kind === 'device-code') {
     if (normalized === 'https://graph.microsoft.com') return [`${normalized}/.default`];
+    if (isSharePointResource(normalized)) return [`${normalized}/.default`];
     return [`${normalized}/user_impersonation`];
   }
   return [`${normalized}/.default`];
+}
+
+function isSharePointResource(resource: string): boolean {
+  try {
+    return /\.sharepoint\.com$/i.test(new URL(resource).hostname);
+  } catch {
+    return /\.sharepoint\.com(?:\/|$)/i.test(resource);
+  }
 }
 
 function authorityForTenant(tenantId: string): string {

@@ -4,7 +4,8 @@ import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
 import type { AccountSummary, ApiEnvelope, ApiExecuteResponse, ShellState, ToastFn } from '../ui-types.js';
 import { normalizeSharePointWebUrl, shellQuote } from './health.js';
-import { TOOLS_SUB_TAB_LABELS, type ToolsSubTab } from './types.js';
+import { TOOLS_SUB_TAB_LABELS, type AuthSession, type ToolsSubTab } from './types.js';
+import type { useAuthSession } from './login.js';
 
 // ---------------------------------------------------------------------------
 // MCP info
@@ -51,8 +52,8 @@ function McpInfo(props: { shellData: ShellState | null; toast: ToastFn }) {
 // SharePoint check
 // ---------------------------------------------------------------------------
 
-function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) {
-  const { accounts, toast } = props;
+function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<typeof useAuthSession>; toast: ToastFn }) {
+  const { accounts, login, toast } = props;
   const [account, setAccount] = useState(accounts[0]?.name || '');
   const [siteUrl, setSiteUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -64,6 +65,41 @@ function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) 
 
   const requestUrl = normalizeSharePointWebUrl(siteUrl);
   const cli = account && requestUrl ? `pp sp ${shellQuote(requestUrl)} --account ${shellQuote(account)}` : '';
+  const selectedAccount = accounts.find((candidate) => candidate.name === account);
+  const canRunInteractiveLogin = selectedAccount?.kind === 'user' || selectedAccount?.kind === 'device-code';
+
+  async function signInSharePoint() {
+    if (!selectedAccount) {
+      toast('Choose an account first.', true);
+      return;
+    }
+    if (!canRunInteractiveLogin) {
+      toast('SharePoint sign-in is only available for user or device-code accounts.', true);
+      return;
+    }
+    if (!requestUrl) {
+      toast('Enter a SharePoint URL first.', true);
+      return;
+    }
+    try {
+      const started = await api<ApiEnvelope<AuthSession>>('/api/auth/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: selectedAccount.name,
+          kind: selectedAccount.kind === 'device-code' ? 'device-code' : 'user',
+          loginHint: selectedAccount.loginHint || selectedAccount.accountUsername,
+          tenantId: selectedAccount.tenantId,
+          clientId: selectedAccount.clientId,
+          forcePrompt: true,
+          includeApis: ['sharepoint'],
+          sharePointUrl: requestUrl
+        })
+      });
+      login.handleLoginStarted(started.data);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    }
+  }
 
   async function checkAccess() {
     if (!account) {
@@ -84,6 +120,7 @@ function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) 
           api: 'sharepoint',
           method: 'GET',
           path: requestUrl,
+          allowInteractive: false,
           softFail: true
         }),
         allowFailure: true
@@ -135,6 +172,9 @@ function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) 
           <input value={requestUrl || ''} readOnly placeholder="https://contoso.sharepoint.com/sites/site/_api/web" />
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" type="button" disabled={!canRunInteractiveLogin || !requestUrl} onClick={() => void signInSharePoint()}>
+            Sign in to SharePoint
+          </button>
           <button className="btn btn-primary" type="button" disabled={loading || !account || !requestUrl} onClick={() => void checkAccess()}>
             {loading ? 'Checking...' : 'Check SharePoint access'}
           </button>
@@ -157,7 +197,7 @@ function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) 
       {result ? (
         <div className="card-item" style={{ marginTop: 16 }}>
           <div className="card-item-info">
-            <div className="card-item-title">{result.success === false ? 'Access check failed' : 'Access check succeeded'}</div>
+            <div className="card-item-title">{result.success === false ? failedResultTitle(diagnostic) : 'Access check succeeded'}</div>
             {result.success === false ? (
               <div className="card-item-sub">{diagnostic?.message || 'SharePoint request failed.'}</div>
             ) : (
@@ -174,12 +214,20 @@ function SharePointPanel(props: { accounts: AccountSummary[]; toast: ToastFn }) 
   );
 }
 
+function failedResultTitle(diagnostic: { code?: string; message?: string; detail?: string } | null): string {
+  const text = `${diagnostic?.code ?? ''}\n${diagnostic?.message ?? ''}\n${diagnostic?.detail ?? ''}`;
+  if (/Interactive authentication is disabled|not authenticated|no cached account|sign in required|login required|AADSTS/i.test(text)) return 'SharePoint authentication failed';
+  if (/returned 401|returned 403/i.test(text)) return 'SharePoint permission check failed';
+  if (/returned 404/i.test(text)) return 'SharePoint endpoint not found';
+  return 'SharePoint check failed';
+}
+
 // ---------------------------------------------------------------------------
 // ToolsPanel  (combines SharePoint, Temp Tokens, MCP under a left rail)
 // ---------------------------------------------------------------------------
 
-export function ToolsPanel(props: { accounts: AccountSummary[]; shellData: ShellState | null; toast: ToastFn }) {
-  const { accounts, shellData, toast } = props;
+export function ToolsPanel(props: { accounts: AccountSummary[]; login: ReturnType<typeof useAuthSession>; shellData: ShellState | null; toast: ToastFn }) {
+  const { accounts, login, shellData, toast } = props;
   const [activeTool, setActiveTool] = useState<ToolsSubTab>('sharepoint');
 
   return (
@@ -192,7 +240,7 @@ export function ToolsPanel(props: { accounts: AccountSummary[]; shellData: Shell
         ))}
       </nav>
       <div>
-        {activeTool === 'sharepoint' ? <SharePointPanel accounts={accounts} toast={toast} /> : null}
+        {activeTool === 'sharepoint' ? <SharePointPanel accounts={accounts} login={login} toast={toast} /> : null}
         {activeTool === 'mcp' ? <McpInfo shellData={shellData} toast={toast} /> : null}
       </div>
     </div>

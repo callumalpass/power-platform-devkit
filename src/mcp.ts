@@ -33,7 +33,7 @@ const outputSchema = z.object({
 });
 
 const accountKindSchema = z.enum(['user', 'device-code', 'client-secret', 'environment-token', 'static-token']);
-const authApiSchema = z.enum(['dv', 'flow', 'powerapps', 'bap', 'graph']);
+const authApiSchema = z.enum(['dv', 'flow', 'powerapps', 'bap', 'graph', 'sharepoint']);
 
 const accountInputSchema = z.object({
   name: z.string(),
@@ -57,6 +57,7 @@ const authStartInputSchema = accountInputSchema.extend({
   preferredFlow: z.enum(['interactive', 'device-code']).optional(),
   forcePrompt: z.boolean().optional(),
   environment: z.string().optional(),
+  sharePointUrl: z.string().optional(),
   apis: z.array(authApiSchema).optional(),
   excludeApis: z.array(authApiSchema).optional()
 });
@@ -132,13 +133,14 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: authStartInputSchema,
       outputSchema
     },
-    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, apis, excludeApis, ...input }) =>
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, sharePointUrl, apis, excludeApis, ...input }) =>
       toolResult(
         await startMcpAuthSession(authSessions, {
           account: input as LoginAccountInput,
           preferredFlow,
           forcePrompt,
           environmentAlias: environment,
+          sharePointUrl,
           includeApis: apis,
           excludeApis,
           allowInteractiveAuth: allowInteractiveAuth ?? true,
@@ -177,7 +179,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: authStartInputSchema,
       outputSchema
     },
-    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, apis, excludeApis, ...input }) => {
+    async ({ configDir, allowInteractiveAuth, preferredFlow, forcePrompt, environment, sharePointUrl, apis, excludeApis, ...input }) => {
       const account = input as LoginAccountInput;
       if (isUserInteractiveAccount(account)) {
         return toolResult(
@@ -186,6 +188,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
             preferredFlow,
             forcePrompt,
             environmentAlias: environment,
+            sharePointUrl,
             includeApis: apis,
             excludeApis,
             allowInteractiveAuth: allowInteractiveAuth ?? true,
