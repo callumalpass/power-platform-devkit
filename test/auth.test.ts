@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AuthService } from '../src/auth.js';
+import { AuthService, resolveScopes } from '../src/auth.js';
 import { getCredentialStoreDir, getMsalCacheDir, loadConfig, saveAccount } from '../src/config.js';
 import { createWindowsDpapiCredentialStore } from '../src/windows-dpapi-store.js';
 import { discoverAccessibleEnvironments } from '../src/services/environments.js';
@@ -34,6 +34,18 @@ test('AuthService.removeAccount deletes MSAL caches for account cache keys', asy
   const config = await loadConfig(configOptions);
   assert.equal(config.success, true);
   assert.equal(config.data?.accounts.work, undefined);
+});
+
+test('resolveScopes uses resource-specific scopes for SharePoint even when account scopes are configured', () => {
+  const account = {
+    name: 'work',
+    kind: 'user' as const,
+    scopes: ['https://graph.microsoft.com/.default']
+  };
+
+  assert.deepEqual(resolveScopes(account, 'https://contoso.sharepoint.com'), ['https://contoso.sharepoint.com/.default']);
+  assert.deepEqual(resolveScopes(account, 'https://graph.microsoft.com'), ['https://graph.microsoft.com/.default']);
+  assert.deepEqual(resolveScopes(account, 'https://custom.example.test'), ['https://graph.microsoft.com/.default']);
 });
 
 test('environment discovery ignores corrupt OS-backed MSAL cache instead of surfacing raw JSON parse errors', async (t) => {

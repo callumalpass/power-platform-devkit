@@ -465,15 +465,16 @@ async function resolveStoredAccount(app: PublicClientApplication, account: UserA
   );
 }
 
-function resolveScopes(account: Account, resource: string): string[] {
-  if (account.scopes?.length) return account.scopes;
+export function resolveScopes(account: Account, resource: string): string[] {
   const normalized = normalizeResource(resource);
   if (normalized.endsWith('/.default')) return [normalized];
   if (account.kind === 'user' || account.kind === 'device-code') {
     if (normalized === 'https://graph.microsoft.com') return [`${normalized}/.default`];
     if (isSharePointResource(normalized)) return [`${normalized}/.default`];
+    if (account.scopes?.length) return account.scopes;
     return [`${normalized}/user_impersonation`];
   }
+  if (account.scopes?.length) return account.scopes;
   return [`${normalized}/.default`];
 }
 
