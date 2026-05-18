@@ -74,7 +74,15 @@ test('handleDesktopApiRequest saves interactive accounts without starting login'
 test('handleDesktopApiRequest starts SharePoint auth sessions with the requested host target', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-api-sharepoint-auth-'));
   const seenTargets: Array<{ resource: string; label?: string; api?: string }> = [];
+  const seenAccounts: Array<{ loginHint?: string; accountUsername?: string; homeAccountId?: string; localAccountId?: string; tokenCacheKey?: string }> = [];
   const login: AuthSessionLogin = async (account, options = {}) => {
+    seenAccounts.push({
+      loginHint: account.loginHint,
+      accountUsername: account.accountUsername,
+      homeAccountId: account.homeAccountId,
+      localAccountId: account.localAccountId,
+      tokenCacheKey: account.tokenCacheKey
+    });
     seenTargets.push(...(options.loginTargets ?? []));
     return ok({ account: { name: account.name }, resources: options.loginTargets?.map((target) => target.resource) ?? [] });
   };
@@ -90,6 +98,11 @@ test('handleDesktopApiRequest starts SharePoint auth sessions with the requested
     body: {
       name: 'work',
       kind: 'user',
+      loginHint: 'stale@example.com',
+      accountUsername: 'current@example.com',
+      homeAccountId: 'home-1',
+      localAccountId: 'local-1',
+      tokenCacheKey: 'work-cache',
       includeApis: ['sharepoint'],
       sharePointUrl: 'https://contoso.sharepoint.com/sites/team/_api/web'
     }
@@ -99,6 +112,15 @@ test('handleDesktopApiRequest starts SharePoint auth sessions with the requested
   for (let attempt = 0; attempt < 20 && seenTargets.length === 0; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+  assert.deepEqual(seenAccounts, [
+    {
+      loginHint: 'stale@example.com',
+      accountUsername: 'current@example.com',
+      homeAccountId: 'home-1',
+      localAccountId: 'local-1',
+      tokenCacheKey: 'work-cache'
+    }
+  ]);
   assert.deepEqual(seenTargets, [{ resource: 'https://contoso.sharepoint.com', label: 'SharePoint', api: 'sharepoint' }]);
 });
 

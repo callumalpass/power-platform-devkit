@@ -87,7 +87,11 @@ function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<
         body: JSON.stringify({
           name: selectedAccount.name,
           kind: selectedAccount.kind === 'device-code' ? 'device-code' : 'user',
-          loginHint: selectedAccount.loginHint || selectedAccount.accountUsername,
+          loginHint: selectedAccount.accountUsername || selectedAccount.loginHint,
+          accountUsername: selectedAccount.accountUsername,
+          homeAccountId: selectedAccount.homeAccountId,
+          localAccountId: selectedAccount.localAccountId,
+          tokenCacheKey: selectedAccount.tokenCacheKey,
           tenantId: selectedAccount.tenantId,
           clientId: selectedAccount.clientId,
           forcePrompt: true,

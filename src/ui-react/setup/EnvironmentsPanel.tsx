@@ -545,7 +545,11 @@ export function EnvironmentsPanel(props: {
         body: JSON.stringify({
           name: account.name,
           kind: account.kind === 'device-code' ? 'device-code' : 'user',
-          loginHint: account.loginHint || account.accountUsername,
+          loginHint: account.accountUsername || account.loginHint,
+          accountUsername: account.accountUsername,
+          homeAccountId: account.homeAccountId,
+          localAccountId: account.localAccountId,
+          tokenCacheKey: account.tokenCacheKey,
           tenantId: account.tenantId,
           clientId: account.clientId,
           excludeApis: ['dv', 'flow', 'powerapps', 'graph']

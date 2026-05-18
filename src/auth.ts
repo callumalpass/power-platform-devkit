@@ -40,6 +40,10 @@ export interface LoginAccountInput {
   clientId?: string;
   scopes?: string[];
   loginHint?: string;
+  accountUsername?: string;
+  homeAccountId?: string;
+  localAccountId?: string;
+  tokenCacheKey?: string;
   prompt?: 'select_account' | 'login' | 'consent' | 'none';
   fallbackToDeviceCode?: boolean;
   clientSecretEnv?: string;
@@ -319,6 +323,13 @@ function buildAccount(input: LoginAccountInput): Account {
     scopes: input.scopes,
     loginHint: input.loginHint
   };
+  const publicBase = {
+    ...base,
+    accountUsername: input.accountUsername,
+    homeAccountId: input.homeAccountId,
+    localAccountId: input.localAccountId,
+    tokenCacheKey: input.tokenCacheKey
+  };
 
   switch (input.kind) {
     case 'static-token':
@@ -339,10 +350,10 @@ function buildAccount(input: LoginAccountInput): Account {
         clientSecretEnv: input.clientSecretEnv
       };
     case 'device-code':
-      return { ...base, kind: 'device-code' };
+      return { ...publicBase, kind: 'device-code' };
     case 'user':
       return {
-        ...base,
+        ...publicBase,
         kind: 'user',
         prompt: input.prompt,
         fallbackToDeviceCode: input.fallbackToDeviceCode

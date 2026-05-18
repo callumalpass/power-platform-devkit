@@ -94,6 +94,30 @@ test('AuthSessionStore can target SharePoint auth for a specific tenant host', a
   assert.deepEqual(seenTargets, [{ resource: 'https://contoso.sharepoint.com', label: 'SharePoint', api: 'sharepoint' }]);
 });
 
+test('AuthSessionStore does not include SharePoint in default login targets', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-session-default-targets-'));
+  const seenTargets: Array<{ resource: string; label?: string; api?: string }> = [];
+  const login: AuthSessionLogin = async (account, options = {}) => {
+    seenTargets.push(...(options.loginTargets ?? []));
+    return ok({ account: { name: account.name }, resources: options.loginTargets?.map((target) => target.resource) ?? [] });
+  };
+  const store = new AuthSessionStore(login);
+
+  const created = await store.createSession({
+    account: { name: 'work', kind: 'user' },
+    allowInteractiveAuth: true,
+    configOptions: { configDir }
+  });
+
+  assert.equal(created.status, 'pending');
+  const completed = await waitForSession(store, created.id, (session) => session.status === 'completed');
+  assert.equal(completed.result?.success, true);
+  assert.equal(
+    seenTargets.some((target) => target.api === 'sharepoint'),
+    false
+  );
+});
+
 test('AuthSessionStore rejects SharePoint auth sessions without a SharePoint URL', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-session-sharepoint-missing-'));
   const store = new AuthSessionStore(async () => ok({}));

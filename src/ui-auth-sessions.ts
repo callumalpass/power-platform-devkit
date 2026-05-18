@@ -285,7 +285,7 @@ function buildLoginTargets(
   if (apiIncluded('powerapps', included, excluded)) targets.push({ resource: 'https://service.powerapps.com', label: 'Power Apps', api: 'powerapps' });
   if (apiIncluded('bap', included, excluded)) targets.push({ resource: 'https://api.bap.microsoft.com', label: 'Platform Admin', api: 'bap' });
   if (apiIncluded('graph', included, excluded)) targets.push({ resource: DEFAULT_LOGIN_RESOURCE, label: 'Graph', api: 'graph' });
-  if (apiIncluded('sharepoint', included, excluded)) {
+  if (included?.has('sharepoint')) {
     const resource = normalizeSharePointResource(sharePointUrl);
     if (!resource) {
       return fail(
