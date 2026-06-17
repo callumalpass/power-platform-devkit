@@ -188,6 +188,11 @@ export const UI_CSS = String.raw`
     html.dark .panel { border-color: var(--border); }
     .panel h2 { font-family: var(--sans); font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; letter-spacing: 0; line-height: 1.15; color: var(--ink); }
     .panel .desc { font-family: var(--sans); font-size: 0.875rem; color: var(--muted); margin-bottom: 20px; line-height: 1.5; font-weight: 400; max-width: 62ch; letter-spacing: 0; }
+    .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .panel-header h2 { margin-bottom: 0; }
+    .panel-header .desc { margin: 6px 0 0; }
+    .panel-header-copy { min-width: 0; }
+    .panel-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
     /* Entity sidebar */
     .entity-sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; }

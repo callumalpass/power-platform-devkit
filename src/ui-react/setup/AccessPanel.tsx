@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, readRecord } from '../utils.js';
 import { RecordDetailModal, useRecordDetail } from '../RecordDetailModal.js';
+import { PanelHeader } from '../PanelHeader.js';
 import type { ApiEnvelope, ApiExecuteResponse, ToastFn, UnknownRecord } from '../ui-types.js';
 import { summarizeAccessError } from './health.js';
 
@@ -207,12 +208,14 @@ export function AccessPanel(props: { active: boolean; environment: string; toast
   return (
     <>
       <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2>Identity</h2>
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadAccess(true)}>
-            {loading ? 'Loading...' : 'Refresh'}
-          </button>
-        </div>
+        <PanelHeader
+          title="Identity"
+          actions={
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => void loadAccess(true)}>
+              {loading ? 'Loading...' : 'Refresh'}
+            </button>
+          }
+        />
         <div className="metrics">
           {[
             ['Name', data.user?.fullname, undefined, undefined],

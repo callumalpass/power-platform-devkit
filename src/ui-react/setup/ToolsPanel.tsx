@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, optionList, readRecord } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
+import { PanelHeader } from '../PanelHeader.js';
 import type { AccountSummary, ApiEnvelope, ApiExecuteResponse, ShellState, ToastFn } from '../ui-types.js';
 import { normalizeSharePointWebUrl, shellQuote } from './health.js';
 import { TOOLS_SUB_TAB_LABELS, type AuthSession, type ToolsSubTab } from './types.js';
@@ -20,8 +21,7 @@ function McpInfo(props: { shellData: ShellState | null; toast: ToastFn }) {
   const tools = mcp?.tools ?? [];
   return (
     <div className="panel">
-      <h2>MCP Server</h2>
-      <p className="desc">The MCP server uses stdio transport. Launch it from your MCP client.</p>
+      <PanelHeader title="MCP Server" description="The MCP server uses stdio transport. Launch it from your MCP client." />
       {mcp ? (
         <>
           <div style={{ marginBottom: 12 }}>
@@ -159,8 +159,10 @@ function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<
 
   return (
     <div className="panel">
-      <h2>SharePoint</h2>
-      <p className="desc">Check whether an account can acquire a SharePoint REST token for a site. SharePoint requests are account-scoped, so no Power Platform environment is required.</p>
+      <PanelHeader
+        title="SharePoint"
+        description="Check whether an account can acquire a SharePoint REST token for a site. SharePoint requests are account-scoped, so no Power Platform environment is required."
+      />
 
       <div className="setup-add-form">
         <div className="form-row">
