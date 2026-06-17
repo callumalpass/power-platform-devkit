@@ -135,12 +135,14 @@ export function EnvironmentPickerModal({ environments, accounts, current, comman
       score: rankEnvironment(env, accountsByName.get(env.account || ''), q),
       lastUsed: recency[env.alias] || 0
     }));
-    const commandEntries: RankedCommand[] = commands.map((command) => ({
-      kind: 'command',
-      command,
-      score: rankCommand(command, q),
-      lastUsed: 0
-    }));
+    const commandEntries: RankedCommand[] = q
+      ? commands.map((command) => ({
+          kind: 'command',
+          command,
+          score: rankCommand(command, q),
+          lastUsed: 0
+        }))
+      : [];
     const list: RankedItem[] = [...environmentEntries, ...commandEntries];
     const filtered = q ? list.filter((entry) => entry.score >= 0) : list;
     filtered.sort((a, b) => {
@@ -253,9 +255,9 @@ export function EnvironmentPickerModal({ environments, accounts, current, comman
           <span className="env-picker-search-icon" aria-hidden="true">
             <Icon name="search" size={14} />
           </span>
-          <input ref={inputRef} type="text" value={query} placeholder="Search environments, commands, accounts, URLs..." onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} />
+          <input ref={inputRef} type="text" value={query} placeholder="Search environments. Type to find commands..." onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} />
           <span className="env-picker-count">
-            {ranked.length}/{(environments?.length || 0) + commands.length}
+            {ranked.length}/{query.trim() ? (environments?.length || 0) + commands.length : environments?.length || 0}
           </span>
         </div>
         <div className="env-picker-list" ref={listRef}>
