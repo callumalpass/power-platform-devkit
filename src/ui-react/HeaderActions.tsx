@@ -28,6 +28,16 @@ function relativeTime(timestamp: number): string {
   return `${hours}h ago`;
 }
 
+function copyDiagnosticText(item: ToastLogItem): void {
+  const level = item.isError ? 'error' : 'info';
+  void navigator.clipboard?.writeText(`[${level}] ${new Date(item.timestamp).toISOString()} ${item.message}`);
+}
+
+function copyDiagnosticLog(items: ToastLogItem[]): void {
+  const text = items.map((item) => `[${item.isError ? 'error' : 'info'}] ${new Date(item.timestamp).toISOString()} ${item.message}`).join('\n');
+  void navigator.clipboard?.writeText(text);
+}
+
 export function HeaderActions(props: Props) {
   const { appName, theme, onToggleTheme, toastLog, clearToastLog, toastTrayOpen, setToastTrayOpen, headerMenuOpen, setHeaderMenuOpen, openConfirm, openShortcutHelp } = props;
   const trayRef = useRef<HTMLDivElement>(null);
@@ -80,18 +90,23 @@ export function HeaderActions(props: Props) {
         {toastTrayOpen ? (
           <div className="header-popover toast-tray">
             <div className="header-popover-header">
-              <span>Recent</span>
+              <span>Diagnostics</span>
               {toastLog.length ? (
-                <button
-                  className="header-popover-action"
-                  type="button"
-                  onClick={() => {
-                    clearToastLog();
-                    setToastTrayOpen(false);
-                  }}
-                >
-                  Clear
-                </button>
+                <span className="header-popover-actions">
+                  <button className="header-popover-action" type="button" onClick={() => copyDiagnosticLog(toastLog)}>
+                    Copy
+                  </button>
+                  <button
+                    className="header-popover-action"
+                    type="button"
+                    onClick={() => {
+                      clearToastLog();
+                      setToastTrayOpen(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                </span>
               ) : null}
             </div>
             <div className="toast-tray-list">
@@ -100,11 +115,16 @@ export function HeaderActions(props: Props) {
                   <div key={item.id} className={`toast-tray-item ${item.isError ? 'error' : 'ok'}`}>
                     <span className="toast-tray-dot" aria-hidden="true" />
                     <span className="toast-tray-message">{item.message}</span>
-                    <span className="toast-tray-time">{relativeTime(item.timestamp)}</span>
+                    <span className="toast-tray-meta">
+                      <span className="toast-tray-time">{relativeTime(item.timestamp)}</span>
+                      <button type="button" className="toast-tray-copy" onClick={() => copyDiagnosticText(item)}>
+                        Copy
+                      </button>
+                    </span>
                   </div>
                 ))
               ) : (
-                <div className="toast-tray-empty">No notifications yet.</div>
+                <div className="toast-tray-empty">No diagnostics yet.</div>
               )}
             </div>
           </div>

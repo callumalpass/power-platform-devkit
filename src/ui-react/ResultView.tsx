@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { highlightJson, readRecord } from './utils.js';
 import { CopyButton } from './CopyButton.js';
 import { RecordDetailModal, formatCellValue, getLookupInfo, columnLabel, type RecordDetailTarget } from './RecordDetailModal.js';
@@ -49,6 +49,16 @@ function compareValues(a: unknown, b: unknown): number {
   if (b == null) return -1;
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   return String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true });
+}
+
+function rowMatchesFilter(row: UnknownRecord, columns: string[], filter: string): boolean {
+  if (!filter.trim()) return true;
+  const q = filter.toLowerCase();
+  return columns.some((column) =>
+    String(row[column] ?? '')
+      .toLowerCase()
+      .includes(q)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -147,15 +157,23 @@ function ResultTable(props: {
   const { records, primaryIdColumn, totalCount, highlightedRecordId, onRecordClick, expand, toast } = props;
   const [sort, setSort] = useState<SortState>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const [filter, setFilter] = useState('');
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
   const columns = useMemo(() => extractColumns(records), [records]);
+  const visibleColumns = useMemo(() => columns.filter((column) => !hiddenColumns.includes(column)), [columns, hiddenColumns]);
+  const filteredRecords = useMemo(() => records.filter((row) => rowMatchesFilter(row, columns, filter)), [columns, filter, records]);
 
   const sortedRecords = useMemo(() => {
-    if (!sort) return records;
+    if (!sort) return filteredRecords;
     const { column, direction } = sort;
-    const sorted = [...records].sort((a, b) => compareValues(a[column], b[column]));
+    const sorted = [...filteredRecords].sort((a, b) => compareValues(a[column], b[column]));
     return direction === 'desc' ? sorted.reverse() : sorted;
-  }, [records, sort]);
+  }, [filteredRecords, sort]);
+
+  useEffect(() => {
+    setHiddenColumns((current) => current.filter((column) => columns.includes(column)));
+  }, [columns]);
 
   function handleHeaderClick(column: string) {
     if (resizeRef.current) return;
@@ -186,17 +204,38 @@ function ResultTable(props: {
     document.addEventListener('mouseup', onUp);
   }, []);
 
+  function toggleColumn(column: string) {
+    if (!hiddenColumns.includes(column) && visibleColumns.length === 1) return;
+    setHiddenColumns((current) => (current.includes(column) ? current.filter((item) => item !== column) : [...current, column]));
+  }
+
   if (!columns.length) return null;
 
   const countLabel = totalCount != null && totalCount !== records.length ? `${records.length} of ${totalCount.toLocaleString()} records` : `${records.length} record${records.length === 1 ? '' : 's'}`;
+  const filteredLabel = filteredRecords.length === records.length ? countLabel : `${filteredRecords.length} of ${countLabel}`;
 
   return (
     <div className="rt-wrap">
+      <div className="rt-tools">
+        <input className="rt-filter" type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter rows..." aria-label="Filter result rows" />
+        <span className="rt-count">{filteredLabel}</span>
+        <details className="rt-column-menu">
+          <summary>Columns</summary>
+          <div className="rt-column-list">
+            {columns.map((column) => (
+              <label key={column} className="rt-column-option">
+                <input type="checkbox" checked={!hiddenColumns.includes(column)} onChange={() => toggleColumn(column)} />
+                <span>{columnLabel(column)}</span>
+              </label>
+            ))}
+          </div>
+        </details>
+      </div>
       <div className={`rt-scroll ${expand ? 'rt-scroll-expanded' : ''}`}>
         <table className="rt-table" style={{ tableLayout: Object.keys(colWidths).length ? 'fixed' : undefined }}>
           <thead>
             <tr>
-              {columns.map((col) => {
+              {visibleColumns.map((col) => {
                 const isSorted = sort?.column === col;
                 const arrow = isSorted ? (sort!.direction === 'asc' ? ' \u2191' : ' \u2193') : '';
                 const width = colWidths[col];
@@ -223,7 +262,7 @@ function ResultTable(props: {
                   className={`${rowClickable ? 'rt-row-clickable' : ''} ${highlighted ? 'rt-row-highlight' : ''}`.trim()}
                   onClick={rowClickable ? () => onRecordClick!('__self__', rowId as string) : undefined}
                 >
-                  {columns.map((col) => {
+                  {visibleColumns.map((col) => {
                     const lookup = getLookupInfo(row, col);
                     return (
                       <Cell
@@ -242,6 +281,13 @@ function ResultTable(props: {
                 </tr>
               );
             })}
+            {!sortedRecords.length ? (
+              <tr>
+                <td className="rt-empty-row" colSpan={Math.max(visibleColumns.length, 1)}>
+                  No rows match the current filter.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

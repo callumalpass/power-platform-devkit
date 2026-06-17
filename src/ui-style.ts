@@ -92,9 +92,10 @@ export const UI_CSS = String.raw`
     .header-icon-btn.has-error .header-icon-badge { background: var(--danger); }
     .header-popover { position: absolute; top: calc(100% + 6px); right: 0; min-width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 60; overflow: hidden; animation: fadeIn 120ms ease; }
     .header-popover-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .header-popover-actions { display: inline-flex; align-items: center; gap: 10px; }
     .header-popover-action { background: none; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 0.6875rem; }
     .header-popover-action:hover { text-decoration: underline; }
-    .toast-tray { width: 320px; }
+    .toast-tray { width: 380px; }
     .toast-tray-list { max-height: 360px; overflow: auto; }
     .toast-tray-empty { padding: 20px 12px; text-align: center; color: var(--muted); font-size: 0.75rem; }
     .toast-tray-item { display: grid; grid-template-columns: 8px 1fr auto; gap: 8px; align-items: start; padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -102,7 +103,10 @@ export const UI_CSS = String.raw`
     .toast-tray-dot { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--ok); }
     .toast-tray-item.error .toast-tray-dot { background: var(--danger); }
     .toast-tray-message { font-size: 0.75rem; color: var(--ink); line-height: 1.4; word-break: break-word; }
+    .toast-tray-meta { display: grid; justify-items: end; gap: 4px; }
     .toast-tray-time { font-size: 0.625rem; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+    .toast-tray-copy { border: 0; background: transparent; color: var(--accent); cursor: pointer; padding: 0; font-size: 0.625rem; font-weight: 600; }
+    .toast-tray-copy:hover { text-decoration: underline; }
     .header-menu { min-width: 220px; padding: 4px; }
     .header-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: none; background: none; color: var(--ink); font: inherit; text-align: left; border-radius: 4px; cursor: pointer; }
     .header-menu-item:hover { background: var(--bg); }
@@ -156,7 +160,7 @@ export const UI_CSS = String.raw`
     .env-picker-footer { display: flex; gap: 16px; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 0.625rem; color: var(--muted-2); font-family: var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
     .env-picker-footer kbd { font-family: var(--mono); font-size: 0.625rem; padding: 1px 5px; margin-right: 4px; border: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--muted); letter-spacing: 0; text-transform: none; }
 
-    /* Tabs — numbered Swiss entries */
+    /* Tabs */
     .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 28px; overflow-x: auto; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
     .tabs-inner { max-width: none; min-width: max-content; margin: 0; display: flex; gap: 0; font-family: var(--sans); }
@@ -168,7 +172,8 @@ export const UI_CSS = String.raw`
     .tab.active::after { content: ""; position: absolute; left: 0; right: 12px; bottom: -1px; height: 3px; background: var(--accent); }
     .tab:last-child.active::after { right: 0; }
     .tab.active .tab-num { color: var(--highlight); }
-    .tab-num { font-family: var(--display); font-style: italic; font-feature-settings: "tnum"; font-size: 0.9375rem; font-weight: 400; color: var(--muted-2); letter-spacing: 0; transform: translateY(-2px); transition: color 120ms; font-optical-sizing: auto; font-variation-settings: "opsz" 60, "SOFT" 100, "WONK" 1; }
+    .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .tab-num { font-family: var(--mono); font-feature-settings: "tnum"; font-size: 0.6875rem; font-weight: 600; color: var(--muted-2); letter-spacing: 0; transition: color 120ms; }
     .tab-label { display: inline-block; }
     .tab-sep { width: 0; background: transparent; margin: 0 10px 0 -4px; flex-shrink: 0; align-self: center; height: 14px; border-left: 1px solid var(--border); }
 
@@ -909,7 +914,7 @@ export const UI_CSS = String.raw`
     .empty-state-compact { padding: 16px 12px; gap: 4px; }
     .empty-state-icon { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; color: var(--muted); margin-bottom: 6px; }
     .empty-state-compact .empty-state-icon { width: 24px; height: 24px; font-size: 0.9375rem; margin-bottom: 2px; }
-    .empty-state-title { font-family: var(--display); font-style: italic; font-size: 1rem; font-weight: 500; color: var(--ink); letter-spacing: 0; font-optical-sizing: auto; font-variation-settings: "opsz" 48, "SOFT" 60, "WONK" 1; }
+    .empty-state-title { font-family: var(--sans); font-size: 1rem; font-weight: 650; color: var(--ink); letter-spacing: 0; }
     .empty-state-desc { font-size: 0.75rem; line-height: 1.5; max-width: 360px; color: var(--muted); }
     .empty-state-action { margin-top: 8px; }
     .empty-state-hint { font-size: 0.8125rem; color: var(--muted); }
@@ -1161,6 +1166,18 @@ export const UI_CSS = String.raw`
     .result-toggle-btn { padding: 5px 14px; font-size: 0.6875rem; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--muted); transition: all 100ms; }
     .result-toggle-btn:hover { color: var(--ink); }
     .result-toggle-btn.active { background: var(--accent-soft); color: var(--accent); }
+    .rt-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .rt-filter { width: min(260px, 100%); min-height: 30px; padding: 6px 9px; font-size: 0.75rem; }
+    .rt-count { color: var(--muted); font-size: 0.6875rem; margin-right: auto; }
+    .rt-column-menu { position: relative; }
+    .rt-column-menu summary { min-height: 30px; display: inline-flex; align-items: center; padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--muted); cursor: pointer; font-size: 0.6875rem; font-weight: 600; list-style: none; }
+    .rt-column-menu summary::-webkit-details-marker { display: none; }
+    .rt-column-menu[open] summary, .rt-column-menu summary:hover { color: var(--ink); border-color: var(--muted-2); }
+    .rt-column-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 220px; max-height: 300px; overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); box-shadow: 0 10px 28px rgba(0,0,0,0.16); }
+    .rt-column-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius-sm); color: var(--ink); font-size: 0.75rem; cursor: pointer; }
+    .rt-column-option:hover { background: var(--bg); }
+    .rt-column-option input { width: auto; }
+    .rt-empty-row { text-align: center; color: var(--muted); padding: 18px 12px; }
 
     /* Record links */
     .record-link { color: var(--accent); cursor: pointer; }
@@ -1471,8 +1488,9 @@ export const UI_CSS = String.raw`
     button.record-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
     /* App loading bar */
-    .app-loading-bar { position: fixed; top: 0; left: 0; right: 0; height: 2px; background: transparent; z-index: 200; overflow: hidden; pointer-events: none; }
+    .app-loading-bar { position: fixed; top: 0; left: 0; right: 0; height: 24px; background: transparent; z-index: 200; overflow: hidden; pointer-events: none; display: flex; justify-content: flex-end; align-items: flex-start; }
     .app-loading-bar span { display: block; height: 100%; width: 40%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: app-loading-slide 1.1s ease-in-out infinite; }
+    .app-loading-label { position: absolute; top: 4px; right: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font-size: 0.625rem; font-weight: 650; }
     @keyframes app-loading-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
 
     /* Tooltip helper — use data-tooltip on the element */

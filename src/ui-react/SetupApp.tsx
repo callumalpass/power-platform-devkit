@@ -193,8 +193,9 @@ export function SetupApp() {
       </div>
 
       {stateLoading ? (
-        <div className="app-loading-bar" aria-hidden="true">
+        <div className="app-loading-bar" role="status" aria-label="Refreshing setup state">
           <span />
+          <strong className="app-loading-label">Refreshing setup</strong>
         </div>
       ) : null}
 

@@ -12,6 +12,7 @@ import { currentTabFromHash, PrimaryTabs, SETUP_TAB_ORDER, TAB_ORDER, type TabNa
 import { ToastViewport, useToasts } from './toasts.js';
 import { summarizeEnvironmentStatus } from './desktop-status.js';
 import { useDesktopHealth } from './useDesktopHealth.js';
+import { readWorkspaceMemory, saveWorkspaceMemory } from './workspace-memory.js';
 import { ConsoleTab } from './console/ConsoleTab.js';
 import { DataverseTab } from './dataverse/DataverseTab.js';
 import { AppsTab, type AppsState } from './apps/AppsTab.js';
@@ -50,6 +51,7 @@ export function App() {
   const envPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const envPickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const dataverseEntityDetailRequestSeqRef = useRef(0);
+  const workspaceSaveEnvironmentRef = useRef('');
   const confirm = useConfirm();
 
   const [consoleSeed, setConsoleSeed] = useState<ConsoleSeed | null>(null);
@@ -171,8 +173,14 @@ export function App() {
 
   useEffect(() => {
     dataverseEntityDetailRequestSeqRef.current += 1;
+    const memory = readWorkspaceMemory(globalEnvironment);
+    if (memory?.activeTab && availableTabs.includes(memory.activeTab)) {
+      setActiveTab(memory.activeTab);
+    }
     setDataverse((current) => ({
       ...current,
+      dvSubTab: memory?.dataverseSubTab ?? current.dvSubTab,
+      explorerSubTab: memory?.dataverseExplorerSubTab ?? current.explorerSubTab,
       entitiesEnvironment: '',
       entities: [],
       entitiesLoadError: '',
@@ -189,7 +197,20 @@ export function App() {
     }));
     setAppsState({ loadedEnvironment: '', items: [], current: null, filter: '' });
     setPlatformState({ loadedEnvironment: '', items: [], current: null, filter: '' });
-  }, [globalEnvironment]);
+  }, [availableTabs, globalEnvironment]);
+
+  useEffect(() => {
+    if (!globalEnvironment) return;
+    if (workspaceSaveEnvironmentRef.current !== globalEnvironment) {
+      workspaceSaveEnvironmentRef.current = globalEnvironment;
+      return;
+    }
+    saveWorkspaceMemory(globalEnvironment, {
+      activeTab,
+      dataverseSubTab: dataverse.dvSubTab,
+      dataverseExplorerSubTab: dataverse.explorerSubTab
+    });
+  }, [activeTab, dataverse.dvSubTab, dataverse.explorerSubTab, globalEnvironment]);
 
   useEffect(() => {
     const listener = (event: Event) => {
@@ -631,8 +652,9 @@ export function App() {
       </div>
 
       {stateLoading ? (
-        <div className="app-loading-bar" aria-hidden="true">
+        <div className="app-loading-bar" role="status" aria-label="Refreshing desktop state">
           <span />
+          <strong className="app-loading-label">Refreshing state</strong>
         </div>
       ) : null}
 
