@@ -25,10 +25,36 @@ type Props = {
   environments: EnvironmentEntry[];
   accounts: AccountEntry[];
   current: string;
+  commands?: EnvironmentPickerCommand[];
   onSelect: (alias: string) => void;
   onClose: () => void;
   toast?: (message: string, isError?: boolean) => void;
 };
+
+export type EnvironmentPickerCommand = {
+  id: string;
+  label: string;
+  detail?: string;
+  keywords?: string[];
+  run: () => void;
+};
+
+type RankedEnvironment = {
+  kind: 'environment';
+  env: EnvironmentEntry;
+  account: AccountEntry | undefined;
+  score: number;
+  lastUsed: number;
+};
+
+type RankedCommand = {
+  kind: 'command';
+  command: EnvironmentPickerCommand;
+  score: number;
+  lastUsed: number;
+};
+
+type RankedItem = RankedEnvironment | RankedCommand;
 
 function score(query: string, value: string): number {
   if (!query) return 0;
@@ -64,6 +90,17 @@ function rankEnvironment(env: EnvironmentEntry, account: AccountEntry | undefine
   return best;
 }
 
+function rankCommand(command: EnvironmentPickerCommand, query: string): number {
+  if (!query.trim()) return 0;
+  const candidates = [command.label, command.detail || '', ...(command.keywords || [])];
+  let best = -1;
+  for (const candidate of candidates) {
+    const s = score(query, candidate);
+    if (s > best) best = s;
+  }
+  return best;
+}
+
 function hostFromUrl(url: string | undefined): string {
   if (!url) return '';
   try {
@@ -73,7 +110,7 @@ function hostFromUrl(url: string | undefined): string {
   }
 }
 
-export function EnvironmentPickerModal({ environments, accounts, current, onSelect, onClose, toast }: Props) {
+export function EnvironmentPickerModal({ environments, accounts, current, commands = [], onSelect, onClose, toast }: Props) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,27 +126,38 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
 
   const recency = useMemo(() => readEnvironmentRecency(), []);
 
-  const ranked = useMemo(() => {
+  const ranked = useMemo<RankedItem[]>(() => {
     const q = query.trim();
-    const list = (environments || []).map((env) => ({
+    const environmentEntries: RankedEnvironment[] = (environments || []).map((env) => ({
+      kind: 'environment',
       env,
       account: accountsByName.get(env.account || ''),
       score: rankEnvironment(env, accountsByName.get(env.account || ''), q),
       lastUsed: recency[env.alias] || 0
     }));
+    const commandEntries: RankedCommand[] = commands.map((command) => ({
+      kind: 'command',
+      command,
+      score: rankCommand(command, q),
+      lastUsed: 0
+    }));
+    const list: RankedItem[] = [...environmentEntries, ...commandEntries];
     const filtered = q ? list.filter((entry) => entry.score >= 0) : list;
     filtered.sort((a, b) => {
       if (q) {
         if (b.score !== a.score) return b.score - a.score;
         return b.lastUsed - a.lastUsed;
       }
-      if (a.env.alias === current) return -1;
-      if (b.env.alias === current) return 1;
+      if (a.kind === 'environment' && a.env.alias === current) return -1;
+      if (b.kind === 'environment' && b.env.alias === current) return 1;
+      if (a.kind !== b.kind) return a.kind === 'environment' ? -1 : 1;
       if (a.lastUsed !== b.lastUsed) return b.lastUsed - a.lastUsed;
-      return a.env.alias.localeCompare(b.env.alias);
+      const aLabel = a.kind === 'environment' ? a.env.alias : a.command.label;
+      const bLabel = b.kind === 'environment' ? b.env.alias : b.command.label;
+      return aLabel.localeCompare(bLabel);
     });
     return filtered;
-  }, [environments, accountsByName, query, current, recency]);
+  }, [environments, accountsByName, commands, query, current, recency]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -127,7 +175,8 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
   function commit(index: number) {
     const target = ranked[index];
     if (!target) return;
-    onSelect(target.env.alias);
+    if (target.kind === 'environment') onSelect(target.env.alias);
+    else target.command.run();
     onClose();
   }
 
@@ -204,16 +253,34 @@ export function EnvironmentPickerModal({ environments, accounts, current, onSele
           <span className="env-picker-search-icon" aria-hidden="true">
             <Icon name="search" size={14} />
           </span>
-          <input ref={inputRef} type="text" value={query} placeholder="Search environments, accounts, URLs…" onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} />
+          <input ref={inputRef} type="text" value={query} placeholder="Search environments, commands, accounts, URLs..." onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} />
           <span className="env-picker-count">
-            {ranked.length}/{environments?.length || 0}
+            {ranked.length}/{(environments?.length || 0) + commands.length}
           </span>
         </div>
         <div className="env-picker-list" ref={listRef}>
           {ranked.length === 0 ? (
-            <div className="env-picker-empty">No matching environments.</div>
+            <div className="env-picker-empty">No matching environments or commands.</div>
           ) : (
             ranked.map((entry, index) => {
+              if (entry.kind === 'command') {
+                const isActive = index === activeIndex;
+                return (
+                  <div key={`command:${entry.command.id}`} data-index={index} className={`env-picker-item command ${isActive ? 'active' : ''}`} onMouseEnter={() => setActiveIndex(index)}>
+                    <button type="button" className="env-picker-item-select" aria-label={entry.command.label} onClick={() => commit(index)}>
+                      <div className="env-picker-item-main">
+                        <span className="env-picker-alias">{entry.command.label}</span>
+                        <span className="env-picker-badge">command</span>
+                      </div>
+                      {entry.command.detail ? (
+                        <div className="env-picker-item-meta">
+                          <span className="env-picker-command-detail">{entry.command.detail}</span>
+                        </div>
+                      ) : null}
+                    </button>
+                  </div>
+                );
+              }
               const env = entry.env;
               const account = entry.account;
               const isActive = index === activeIndex;

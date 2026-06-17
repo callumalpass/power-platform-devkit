@@ -4,12 +4,16 @@ import { SetupTab } from './SetupTab.js';
 import { EnvironmentPickerModal } from './EnvironmentPickerModal.js';
 import { HeaderActions } from './HeaderActions.js';
 import { ShortcutHelpModal } from './ShortcutHelpModal.js';
+import { EnvironmentStatusButton } from './EnvironmentStatus.js';
 import { ConfirmDialog, useConfirm } from './setup/ConfirmDialog.js';
 import { touchEnvironmentRecency } from './env-recency.js';
 import { SETUP_TAB_ORDER } from './app-tabs.js';
 import { ToastViewport, useToasts } from './toasts.js';
 import { isMonacoKeyboardEvent } from './keyboard.js';
+import { summarizeEnvironmentStatus } from './desktop-status.js';
+import { useDesktopHealth } from './useDesktopHealth.js';
 import type { ApiEnvelope, ShellState } from './ui-types.js';
+import type { EnvironmentPickerCommand } from './EnvironmentPickerModal.js';
 
 export function SetupApp() {
   const { toasts, pushToast, dismissToast, log: toastLog, clearLog: clearToastLog } = useToasts();
@@ -28,6 +32,9 @@ export function SetupApp() {
   const envPickerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const envPickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const confirm = useConfirm();
+  const accounts = useMemo(() => shellData?.accounts || [], [shellData]);
+  const environments = useMemo(() => shellData?.environments || [], [shellData]);
+  const desktopHealth = useDesktopHealth({ active: Boolean(shellData), accounts, environments, toast: pushToast });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -83,9 +90,36 @@ export function SetupApp() {
   }, []);
 
   const currentEnvData = useMemo(() => {
-    if (!globalEnvironment || !shellData?.environments) return undefined;
-    return shellData.environments.find((environment) => environment.alias === globalEnvironment);
-  }, [globalEnvironment, shellData]);
+    if (!globalEnvironment) return undefined;
+    return environments.find((environment) => environment.alias === globalEnvironment);
+  }, [globalEnvironment, environments]);
+
+  const environmentStatus = useMemo(
+    () => summarizeEnvironmentStatus(currentEnvData, accounts, desktopHealth.tokenStatus, desktopHealth.health),
+    [accounts, currentEnvData, desktopHealth.health, desktopHealth.tokenStatus]
+  );
+  const paletteCommands = useMemo<EnvironmentPickerCommand[]>(
+    () => [
+      {
+        id: 'refresh-state',
+        label: 'Refresh state',
+        detail: 'Reload accounts, environments, and setup metadata.',
+        keywords: ['reload', 'accounts', 'environments'],
+        run: () => void refreshState(false)
+      },
+      {
+        id: 'recheck-active-environment',
+        label: 'Re-check active environment',
+        detail: currentEnvData ? `Run API health checks for ${currentEnvData.alias}.` : 'Run setup health checks after adding an environment.',
+        keywords: ['health', 'auth', 'token', 'ping'],
+        run: () => {
+          if (currentEnvData) desktopHealth.recheckApi(currentEnvData.alias);
+          else desktopHealth.recheckHealth();
+        }
+      }
+    ],
+    [currentEnvData, desktopHealth, refreshState]
+  );
 
   return (
     <>
@@ -124,6 +158,17 @@ export function SetupApp() {
               </span>
             </button>
           </div>
+          <EnvironmentStatusButton
+            summary={environmentStatus}
+            onOpen={() => {
+              envPickerReturnFocusRef.current = envPickerTriggerRef.current;
+              setEnvPickerOpen(true);
+            }}
+            onRecheck={() => {
+              if (currentEnvData) desktopHealth.recheckApi(currentEnvData.alias);
+              else desktopHealth.recheckHealth();
+            }}
+          />
           <div className="header-flex-spacer" aria-hidden="true" />
           <HeaderActions
             appName="PP Setup Manager"
@@ -143,7 +188,7 @@ export function SetupApp() {
 
       <div className="app-main">
         <div className="tab-panel stack active" id="panel-setup">
-          <SetupTab active={true} shellData={shellData} globalEnvironment={globalEnvironment} refreshState={refreshState} toast={pushToast} />
+          <SetupTab active={true} shellData={shellData} globalEnvironment={globalEnvironment} desktopHealth={desktopHealth} refreshState={refreshState} toast={pushToast} />
         </div>
       </div>
 
@@ -158,6 +203,7 @@ export function SetupApp() {
           environments={shellData?.environments || []}
           accounts={shellData?.accounts || []}
           current={globalEnvironment}
+          commands={paletteCommands}
           toast={pushToast}
           onSelect={(alias) => {
             setGlobalEnvironment(alias);

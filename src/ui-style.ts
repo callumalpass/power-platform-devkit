@@ -121,6 +121,19 @@ export const UI_CSS = String.raw`
     .env-trigger-placeholder { color: var(--muted-2); font-weight: 400; font-style: normal; }
     .env-trigger-chevron { font-size: 0.5625rem; color: var(--muted-2); flex-shrink: 0; align-self: center; margin-left: 2px; }
 
+    .env-status { display: inline-flex; align-items: stretch; min-width: 220px; max-width: 360px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface) 78%, var(--bg)); overflow: hidden; flex-shrink: 1; }
+    .env-status-main { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; padding: 7px 10px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+    .env-status-main:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+    .env-status-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .env-status-copy { display: grid; min-width: 0; gap: 2px; }
+    .env-status-label { font-size: 0.75rem; font-weight: 650; line-height: 1.1; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-status-detail { font-size: 0.6875rem; color: var(--muted); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .env-status-recheck { border: 0; border-left: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.6875rem; font-weight: 600; padding: 0 10px; cursor: pointer; }
+    .env-status-recheck:hover { color: var(--ink); background: var(--bg); }
+    .env-status-recheck:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .env-status.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface)); }
+    .env-status.pending, .env-status.warning { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); background: color-mix(in srgb, var(--warn-soft) 45%, var(--surface)); }
+
     .env-picker-backdrop { align-items: flex-start; padding-top: 88px; }
     .rt-modal.env-picker-modal { width: 560px; max-width: 92vw; max-height: 70vh; padding: 0; }
     .env-picker-search { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
@@ -835,6 +848,15 @@ export const UI_CSS = String.raw`
     .setup-status-strip-spacer { flex: 1; }
     .setup-status-strip-actions { display: flex; gap: 6px; }
     .setup-status-issues { margin: -8px 0 14px; border-radius: var(--radius-sm); background: var(--warn-soft); padding: 10px 14px; display: grid; gap: 6px; animation: slideDown 150ms ease; }
+    .setup-checklist { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: -4px 0 16px; }
+    .setup-checklist-item { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
+    .setup-checklist-item:hover { border-color: var(--muted-2); background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
+    .setup-checklist-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .setup-checklist-item.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger-soft) 45%, var(--surface)); }
+    .setup-checklist-item.warning, .setup-checklist-item.pending { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); background: color-mix(in srgb, var(--warn-soft) 35%, var(--surface)); }
+    .setup-checklist-copy { display: grid; min-width: 0; gap: 3px; }
+    .setup-checklist-title { font-size: 0.75rem; font-weight: 700; line-height: 1.15; }
+    .setup-checklist-detail { font-size: 0.6875rem; color: var(--muted); line-height: 1.35; }
 
     /* Persistent login drawer */
     .login-drawer { margin-bottom: 14px; }
@@ -1536,6 +1558,8 @@ export const UI_CSS = String.raw`
     .env-picker-item-select { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 16px; width: 100%; padding: 10px 20px; border: none; background: transparent; color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
     .env-picker-item-select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .env-picker-item.active .env-picker-item-select { background: var(--accent-soft); }
+    .env-picker-item.command .env-picker-item-select { grid-template-columns: 1fr; }
+    .env-picker-command-detail { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .env-picker-item-copy { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; opacity: 0; transition: opacity 100ms, color 100ms, background 100ms; }
     .env-picker-item:hover .env-picker-item-copy, .env-picker-item.active .env-picker-item-copy, .env-picker-item-copy:focus-visible { opacity: 1; }
     .env-picker-item-copy:hover:not(:disabled) { color: var(--ink); background: var(--bg); }
@@ -1550,6 +1574,9 @@ export const UI_CSS = String.raw`
       .tab-panel.active { flex-direction: column; }
       .entity-sidebar, .inventory-sidebar { width: 100%; }
       .entity-list { max-height: 300px; }
+      .env-status { min-width: 0; max-width: none; flex: 1; }
+      .env-status-recheck { display: none; }
+      .setup-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .setup-grid, .form-row, .form-row.three { grid-template-columns: 1fr; }
       .header-meta { display: none; }
       .console-bar { flex-wrap: wrap; }
