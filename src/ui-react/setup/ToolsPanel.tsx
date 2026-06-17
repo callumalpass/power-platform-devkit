@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, optionList, readRecord } from '../utils.js';
 import { CopyButton } from '../CopyButton.js';
 import { Select } from '../Select.js';
@@ -52,16 +52,29 @@ function McpInfo(props: { shellData: ShellState | null; toast: ToastFn }) {
 // SharePoint check
 // ---------------------------------------------------------------------------
 
-function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<typeof useAuthSession>; toast: ToastFn }) {
-  const { accounts, login, toast } = props;
-  const [account, setAccount] = useState(accounts[0]?.name || '');
+export function defaultSharePointAccountName(accounts: AccountSummary[], shellData?: ShellState | null): string {
+  const accountNames = new Set(accounts.map((account) => account.name));
+  const environmentAccount = shellData?.environments?.find((environment) => accountNames.has(environment.account))?.account;
+  if (environmentAccount) return environmentAccount;
+  return accounts.find((account) => account.accountUsername || account.homeAccountId || account.localAccountId || account.tokenCacheKey)?.name ?? accounts[0]?.name ?? '';
+}
+
+function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<typeof useAuthSession>; shellData: ShellState | null; toast: ToastFn }) {
+  const { accounts, login, shellData, toast } = props;
+  const defaultAccount = defaultSharePointAccountName(accounts, shellData);
+  const autoSelectedAccountRef = useRef(defaultAccount);
+  const [account, setAccount] = useState(defaultAccount);
   const [siteUrl, setSiteUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SharePointCheckResult | null>(null);
 
   useEffect(() => {
-    if (!account && accounts[0]?.name) setAccount(accounts[0].name);
-  }, [accounts, account]);
+    const accountExists = accounts.some((candidate) => candidate.name === account);
+    if (defaultAccount && (!account || !accountExists || account === autoSelectedAccountRef.current)) {
+      autoSelectedAccountRef.current = defaultAccount;
+      setAccount(defaultAccount);
+    }
+  }, [accounts, account, defaultAccount]);
 
   const requestUrl = normalizeSharePointWebUrl(siteUrl);
   const cli = account && requestUrl ? `pp sp ${shellQuote(requestUrl)} --account ${shellQuote(account)}` : '';
@@ -156,7 +169,10 @@ function SharePointPanel(props: { accounts: AccountSummary[]; login: ReturnType<
             <Select
               aria-label="Account"
               value={account}
-              onChange={setAccount}
+              onChange={(value) => {
+                autoSelectedAccountRef.current = '';
+                setAccount(value);
+              }}
               options={optionList(
                 accounts.map((account) => account.name),
                 'select account'
@@ -244,7 +260,7 @@ export function ToolsPanel(props: { accounts: AccountSummary[]; login: ReturnTyp
         ))}
       </nav>
       <div>
-        {activeTool === 'sharepoint' ? <SharePointPanel accounts={accounts} login={login} toast={toast} /> : null}
+        {activeTool === 'sharepoint' ? <SharePointPanel accounts={accounts} login={login} shellData={shellData} toast={toast} /> : null}
         {activeTool === 'mcp' ? <McpInfo shellData={shellData} toast={toast} /> : null}
       </div>
     </div>

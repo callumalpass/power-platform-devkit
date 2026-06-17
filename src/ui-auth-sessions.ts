@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import { DEFAULT_LOGIN_RESOURCE, type LoginAccountInput, type LoginTarget } from './auth.js';
 import type { ConfigStoreOptions } from './config.js';
-import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
+import { createDiagnostic, fail, ok, type Diagnostic, type OperationResult } from './diagnostics.js';
 import { normalizeOrigin } from './request.js';
 import { loginAccount } from './services/accounts.js';
 import { listConfiguredEnvironments } from './services/environments.js';
@@ -207,7 +207,7 @@ export class AuthSessionStore {
           const failedTarget = draft.targets[activeTargetIndex] ?? draft.targets.find((target) => target.status !== 'completed');
           if (failedTarget) {
             failedTarget.status = 'failed';
-            failedTarget.error = result.diagnostics[0]?.message ?? 'Authentication failed.';
+            failedTarget.error = authSessionDiagnosticMessage(result.diagnostics[0]);
           }
         }
       });
@@ -259,6 +259,18 @@ export class AuthSessionStore {
     this.sessions.set(session.id, session);
     return cloneSession(session);
   }
+}
+
+function authSessionDiagnosticMessage(diagnostic: Diagnostic | undefined): string {
+  if (!diagnostic) return 'Authentication failed.';
+  const aadsts = extractAadstsDetail(diagnostic.detail) ?? extractAadstsDetail(diagnostic.message);
+  return aadsts ? `${diagnostic.message} ${aadsts}` : diagnostic.message;
+}
+
+function extractAadstsDetail(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = /AADSTS\d+:\s*.*?(?=\s+Trace ID:|\s+Correlation ID:|\s+Timestamp:|$)/s.exec(value);
+  return match?.[0].replace(/\s+/g, ' ').trim();
 }
 
 function buildLoginTargets(

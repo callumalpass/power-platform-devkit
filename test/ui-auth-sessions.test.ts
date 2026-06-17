@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ok } from '../src/diagnostics.js';
+import { createDiagnostic, fail, ok } from '../src/diagnostics.js';
 import { AuthSessionStore, type AuthSession, type AuthSessionLogin } from '../src/ui-auth-sessions.js';
 
 test('AuthSessionStore exposes interactive browser URLs while login continues in the background', async () => {
@@ -131,6 +131,31 @@ test('AuthSessionStore rejects SharePoint auth sessions without a SharePoint URL
 
   assert.equal(created.status, 'failed');
   assert.equal(created.result?.diagnostics[0]?.code, 'SHAREPOINT_AUTH_URL_REQUIRED');
+});
+
+test('AuthSessionStore surfaces AADSTS detail on failed auth targets', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-auth-session-aadsts-detail-'));
+  const store = new AuthSessionStore(async () =>
+    fail(
+      createDiagnostic('error', 'INTERACTIVE_LOGIN_FAILED', 'Failed to acquire a token for work on https://contoso.sharepoint.com.', {
+        source: 'pp/auth',
+        detail:
+          'invalid_resource: Error(s): 500014 - Timestamp: 2026-05-25 11:31:16Z - Description: AADSTS500014: The service principal for resource https://contoso.sharepoint.com is disabled. Trace ID: trace-id'
+      })
+    )
+  );
+
+  const created = await store.createSession({
+    account: { name: 'work', kind: 'user' },
+    allowInteractiveAuth: true,
+    includeApis: ['sharepoint'],
+    sharePointUrl: 'https://contoso.sharepoint.com/sites/team/_api/web',
+    configOptions: { configDir }
+  });
+
+  const failed = await waitForSession(store, created.id, (session) => session.status === 'failed');
+  assert.match(failed.targets[0]?.error ?? '', /AADSTS500014/);
+  assert.match(failed.targets[0]?.error ?? '', /service principal/);
 });
 
 async function waitForSession(store: AuthSessionStore, id: string, predicate: (session: AuthSession) => boolean): Promise<AuthSession> {

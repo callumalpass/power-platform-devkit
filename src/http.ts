@@ -35,10 +35,13 @@ export class HttpClient {
   async request<T>(request: HttpRequestOptions): Promise<OperationResult<HttpResponse<T>>> {
     try {
       const url = new URL(request.path, this.options.baseUrl);
+      const method = request.method ?? 'GET';
       applyQuery(url, request.query);
       const headers = new Headers({ ...(this.options.defaultHeaders ?? {}), ...(request.headers ?? {}) });
       if (this.options.tokenProvider) {
-        headers.set('authorization', `Bearer ${await this.options.tokenProvider.getAccessToken(this.options.authResource ?? url.origin)}`);
+        const token = await this.acquireToken(method, url.toString(), this.options.authResource ?? url.origin);
+        if (!token.success || !token.data) return fail(...token.diagnostics);
+        headers.set('authorization', `Bearer ${token.data}`);
       }
       const body = resolveRequestBody(request);
       if (request.body !== undefined && request.rawBody === undefined && !headers.has('content-type')) {
@@ -51,7 +54,6 @@ export class HttpClient {
           }, request.timeoutMs)
         : undefined;
       try {
-        const method = request.method ?? 'GET';
         const init: RequestInit = { method, headers };
         if (body !== undefined) init.body = body;
         if (controller) init.signal = controller.signal;
@@ -83,6 +85,27 @@ export class HttpClient {
       );
     }
   }
+
+  private async acquireToken(method: string, url: string, resource: string): Promise<OperationResult<string>> {
+    try {
+      return ok(await this.options.tokenProvider!.getAccessToken(resource));
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'HTTP_TOKEN_ACQUISITION_FAILED', errorMessage(error), {
+          source: 'pp/http',
+          detail: `${method} ${url}`
+        })
+      );
+    }
+  }
+}
+
+function errorMessage(error: unknown): string {
+  let message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && error.cause instanceof Error) {
+    message = `${message}: ${error.cause.message}`;
+  }
+  return message;
 }
 
 function applyQuery(url: URL, query: Record<string, HttpQueryValue> | undefined): void {

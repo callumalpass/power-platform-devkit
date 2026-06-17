@@ -49,3 +49,32 @@ test('HttpClient appends encoded query values to existing URL queries', async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+test('HttpClient reports token acquisition failures before dispatching the request', async () => {
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const client = new HttpClient({
+      baseUrl: 'https://contoso.sharepoint.com',
+      tokenProvider: {
+        getAccessToken: async () => {
+          throw new Error('AADSTS500014: The service principal for resource is disabled.');
+        }
+      }
+    });
+
+    const result = await client.request({ path: '/sites/site/_api/web' });
+
+    assert.equal(result.success, false);
+    assert.equal(result.diagnostics[0]?.code, 'HTTP_TOKEN_ACQUISITION_FAILED');
+    assert.match(result.diagnostics[0]?.message ?? '', /AADSTS500014/);
+    assert.deepEqual(calls, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

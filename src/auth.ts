@@ -371,16 +371,21 @@ async function acquireAndPersistPublicClientToken(
   const scopes = resolveScopes(account, resource);
   const storedAccount = await resolveStoredAccount(app, account);
   let result: AuthenticationResult | null = null;
+  let silentError: unknown;
 
   if (storedAccount) {
     try {
       result = await app.acquireTokenSilent({ account: storedAccount, scopes });
-    } catch {
+    } catch (error) {
+      silentError = error;
       result = null;
     }
   }
 
   if (!result) {
+    if (loginOptions.allowInteractive === false) {
+      throw new Error(`Interactive authentication is disabled for account ${account.name}.${silentError ? ` Silent token acquisition failed: ${errorMessage(silentError)}` : ''}`);
+    }
     const flow = loginOptions.preferredFlow ?? (account.kind === 'device-code' ? 'device-code' : 'interactive');
     if (flow === 'device-code') {
       result = await app.acquireTokenByDeviceCode({
@@ -397,9 +402,6 @@ async function acquireAndPersistPublicClientToken(
         }
       });
     } else {
-      if (loginOptions.allowInteractive === false) {
-        throw new Error(`Interactive authentication is disabled for account ${account.name}.`);
-      }
       result = await app.acquireTokenInteractive({
         scopes,
         prompt: loginOptions.forcePrompt ? PromptValue.LOGIN : account.kind === 'user' && account.prompt ? promptValue(account.prompt) : undefined,
@@ -430,7 +432,7 @@ async function acquireAndPersistPublicClientToken(
 }
 
 function loginFailureDiagnostic(account: Account, resource: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const normalizedResource = normalizeResource(resource);
   const isInteractive = account.kind === 'user' || account.kind === 'device-code';
   const code = isInteractive && /JSON/i.test(message) ? 'INTERACTIVE_LOGIN_RESPONSE_INVALID' : isInteractive ? 'INTERACTIVE_LOGIN_FAILED' : 'TOKEN_ACQUISITION_FAILED';
@@ -439,6 +441,10 @@ function loginFailureDiagnostic(account: Account, resource: string, error: unkno
     detail: message + (error instanceof Error && error.stack ? `\n\n${error.stack}` : ''),
     hint: isInteractive ? 'Try device code for this account or re-run login for just this API to isolate the failing resource.' : undefined
   });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function createPublicClientApplication(account: UserAccount, options: ConfigStoreOptions): Promise<PublicClientApplication> {
