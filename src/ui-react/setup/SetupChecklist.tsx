@@ -13,11 +13,12 @@ export function SetupChecklist(props: {
   const items = buildSetupChecklist(accounts, environments, tokenStatus, health);
   return (
     <section className="setup-checklist" aria-label="Setup checklist">
-      {items.map((item) => (
+      {items.map((item, index) => (
         <button
           key={item.key}
           type="button"
           className={`setup-checklist-item ${item.level}`}
+          aria-label={`Task ${index + 1}: ${item.detail}`}
           onClick={() => {
             if (item.action === 'recheck') onRecheck();
             else if (item.action) onJump(item.action);
