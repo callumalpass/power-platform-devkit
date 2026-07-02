@@ -92,6 +92,39 @@ test('query log captures redacted result previews only when requested', async ()
   }
 });
 
+test('query log uses configured result and request body capture when request intent does not override it', async () => {
+  const configDir = await prepareConfig();
+  await saveQueryLogSettings({ captureResults: true, captureRequestBody: true }, { configDir });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ created: true, id: 'row-1' }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+
+  try {
+    const result = await executeApiRequest(
+      {
+        environmentAlias: 'dev',
+        api: 'dv',
+        method: 'POST',
+        path: '/accounts',
+        body: { name: 'Acme' },
+        log: { source: 'desktop-console' }
+      },
+      { configDir }
+    );
+    assert.equal(result.success, true);
+    await flushQueryLogWrites();
+
+    const entries = await loadQueryLogEntries({ configDir });
+    const entry = entries.data?.[0];
+    assert.equal(entry?.source, 'desktop-console');
+    assert.equal(entry?.resultCaptured, true);
+    assert.match(entry?.responsePreview?.text ?? '', /created/);
+    assert.equal(entry?.requestBodyCaptured, true);
+    assert.match(entry?.requestBodyPreview?.text ?? '', /Acme/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('query log honors disabled settings and per-request overrides', async () => {
   const configDir = await prepareConfig();
   await saveQueryLogSettings({ enabled: false }, { configDir });

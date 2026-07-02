@@ -438,7 +438,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
             log: logRequest
               ? {
                   source: 'desktop-console',
-                  captureResults: logResults
+                  ...(logResults ? { captureResults: true } : {})
                 }
               : false
           }),
@@ -644,7 +644,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
             </label>
             <label className={`console-log-option ${!logRequest ? 'disabled' : ''}`}>
               <input type="checkbox" checked={logResults} disabled={!logRequest} onChange={(event) => setLogResults(event.target.checked)} />
-              <span>Capture result</span>
+              <span>Capture result for this request</span>
             </label>
           </div>
           <div className="console-request-tabs">
