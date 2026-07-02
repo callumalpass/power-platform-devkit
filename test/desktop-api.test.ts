@@ -31,6 +31,34 @@ test('handleDesktopApiRequest exposes desktop status metadata', async () => {
   assert.match(JSON.stringify(response.body), /pp-desktop/);
 });
 
+test('handleDesktopApiRequest exposes and saves query log settings', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-query-log-'));
+  const context = createContext({ configOptions: { configDir } });
+
+  const initial = await handleDesktopApiRequest(context, { method: 'GET', path: '/api/query-log/settings' });
+  assert.equal(initial.status, 200);
+  assert.equal(responseBody<{ settings: { enabled: boolean; captureResults: boolean } }>(initial.body).data.settings.enabled, true);
+  assert.equal(responseBody<{ settings: { enabled: boolean; captureResults: boolean } }>(initial.body).data.settings.captureResults, false);
+
+  const saved = await handleDesktopApiRequest(context, {
+    method: 'PUT',
+    path: '/api/query-log/settings',
+    body: {
+      settings: {
+        enabled: false,
+        captureResults: true,
+        captureRequestBody: true,
+        maxResultBytes: 4096,
+        maxFileBytes: 1048576
+      }
+    }
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(responseBody<{ enabled: boolean; captureResults: boolean; maxResultBytes: number }>(saved.body).data.enabled, false);
+  assert.equal(responseBody<{ enabled: boolean; captureResults: boolean; maxResultBytes: number }>(saved.body).data.captureResults, true);
+  assert.equal(responseBody<{ enabled: boolean; captureResults: boolean; maxResultBytes: number }>(saved.body).data.maxResultBytes, 4096);
+});
+
 test('handleDesktopApiRequest saves non-interactive accounts with POST /api/accounts', async () => {
   const configDir = await mkdtemp(join(tmpdir(), 'pp-desktop-api-'));
   const response = await handleDesktopApiRequest(createContext({ configOptions: { configDir } }), {

@@ -6,7 +6,22 @@ import type { ConfigStoreOptions } from './config.js';
 
 export type OutputFormat = 'json' | 'yaml' | 'text';
 
-const BOOLEAN_FLAGS = new Set(['--apply', '--allow-interactive-auth', '--device-code', '--force-prompt', '--lan', '--no-interactive-auth', '--pair', '--read', '--raw', '--with-signalr']);
+const BOOLEAN_FLAGS = new Set([
+  '--apply',
+  '--allow-interactive-auth',
+  '--device-code',
+  '--force-prompt',
+  '--lan',
+  '--log',
+  '--log-results',
+  '--no-interactive-auth',
+  '--no-log',
+  '--no-log-results',
+  '--pair',
+  '--read',
+  '--raw',
+  '--with-signalr'
+]);
 
 export function readFlag(args: string[], name: string): string | undefined {
   const aliases = name === '--environment' ? ['--env', '--environment'] : [name];

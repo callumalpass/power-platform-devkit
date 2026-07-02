@@ -18,12 +18,13 @@ import { DataverseTab } from './dataverse/DataverseTab.js';
 import { AppsTab, type AppsState } from './apps/AppsTab.js';
 import { CanvasTab, type CanvasState } from './canvas/CanvasTab.js';
 import { PlatformTab, type PlatformState } from './platform/PlatformTab.js';
+import { QueryLogTab } from './QueryLogTab.js';
 import { isMonacoKeyboardEvent } from './monaco-support.js';
 import { JsonViewer } from './JsonViewer.js';
 import type { ApiEnvelope, ApiExecuteResponse, DataverseEntityDetail, DataverseEntitySummary, DataverseRecordPage, DataverseState, PowerPlatformInventoryItem, ShellState } from './ui-types.js';
 import type { EnvironmentPickerCommand } from './EnvironmentPickerModal.js';
 
-type ConsoleSeed = { api: string; method: string; path: string };
+type ConsoleSeed = { api?: string; method?: string; path?: string; query?: Record<string, string> };
 
 const DEFAULT_RECORD_PREVIEW_TOP = 5;
 const MAX_RECORD_PREVIEW_TOP = 500;
@@ -572,6 +573,20 @@ export function App() {
               clearSeed={() => setConsoleSeed(null)}
               toast={pushToast}
               renderResponseBody={(value) => <JsonViewer value={value} />}
+            />
+          </div>
+        ) : null}
+
+        {!setupMode ? (
+          <div className={`tab-panel ${activeTab === 'log' ? 'active' : ''}`} id="panel-log">
+            <QueryLogTab
+              active={activeTab === 'log'}
+              initialSettings={shellData?.queryLog}
+              openConsole={(seed) => {
+                setConsoleSeed(seed);
+                setActiveTab('console');
+              }}
+              toast={pushToast}
             />
           </div>
         ) : null}

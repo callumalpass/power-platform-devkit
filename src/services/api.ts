@@ -1,20 +1,33 @@
 import { createTokenProvider, type PublicClientLoginOptions } from '../auth.js';
 import { getAccount, getEnvironment, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
+import { queueApiRequestLog, type QueryLogIntent } from '../query-log.js';
 import { accountForApi, executeRequest, resourceForApi, type EnvironmentTokenApi, type ExecuteRequestResult, type RequestInput } from '../request.js';
 
 export type ApiRequestResult<T = unknown> = ExecuteRequestResult<T>;
+export type LoggedApiRequestInput = RequestInput & { log?: QueryLogIntent };
 
 export async function executeApiRequest<T = unknown>(
-  input: RequestInput,
+  input: LoggedApiRequestInput,
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {}
 ): Promise<OperationResult<ApiRequestResult<T>>> {
-  return executeRequest<T>({
+  const started = Date.now();
+  const result = await executeRequest<T>({
     ...input,
     configOptions,
     loginOptions: { ...loginOptions, ...(input.loginOptions ?? {}) }
   });
+  if (input.log) {
+    queueApiRequestLog({
+      input,
+      result,
+      elapsedMs: Date.now() - started,
+      configOptions,
+      intent: input.log
+    });
+  }
+  return result;
 }
 
 export async function getEnvironmentToken(

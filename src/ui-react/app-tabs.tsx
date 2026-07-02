@@ -1,8 +1,9 @@
-export type TabName = 'setup' | 'console' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
+export type TabName = 'setup' | 'console' | 'log' | 'dataverse' | 'automate' | 'apps' | 'canvas' | 'platform';
 
 const TAB_LABELS: Record<TabName, string> = {
   setup: 'setup',
   console: 'console',
+  log: 'log',
   dataverse: 'dataverse',
   automate: 'automate',
   apps: 'apps',
@@ -10,7 +11,7 @@ const TAB_LABELS: Record<TabName, string> = {
   platform: 'platform'
 };
 
-const TAB_ORDER: TabName[] = ['setup', 'console', 'dataverse', 'automate', 'apps', 'canvas', 'platform'];
+const TAB_ORDER: TabName[] = ['setup', 'console', 'log', 'dataverse', 'automate', 'apps', 'canvas', 'platform'];
 const SETUP_TAB_ORDER: TabName[] = ['setup'];
 
 export function currentTabFromHash(tabs: readonly TabName[] = TAB_ORDER, fallback: TabName = 'dataverse'): TabName {
@@ -42,7 +43,7 @@ function tabNumber(tabName: TabName, tabs: readonly TabName[]): string {
 
 function FragmentTab(props: { index: number; tabs: readonly TabName[]; tabName: TabName; activeTab: TabName; setActiveTab: (tab: TabName) => void }) {
   const { index, tabs, tabName, activeTab, setActiveTab } = props;
-  const needsSep = tabs.length > 2 && index === 2;
+  const needsSep = tabs.length > 2 && index === 3;
   const number = tabNumber(tabName, tabs);
   return (
     <>

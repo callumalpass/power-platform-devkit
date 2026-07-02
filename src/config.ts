@@ -56,6 +56,15 @@ export interface BrowserProfile {
 
 export interface GlobalSettings {
   credentialStore?: CredentialStoreMode;
+  queryLog?: QueryLogSettings;
+}
+
+export interface QueryLogSettings {
+  enabled?: boolean;
+  captureResults?: boolean;
+  captureRequestBody?: boolean;
+  maxResultBytes?: number;
+  maxFileBytes?: number;
 }
 
 export interface GlobalConfig {
@@ -123,8 +132,17 @@ const browserProfileSchema = z.object({
   lastVerificationUrl: z.string().optional()
 });
 
+const queryLogSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  captureResults: z.boolean().optional(),
+  captureRequestBody: z.boolean().optional(),
+  maxResultBytes: z.number().int().positive().optional(),
+  maxFileBytes: z.number().int().positive().optional()
+});
+
 const settingsSchema = z.object({
-  credentialStore: z.enum(['auto', 'os', 'file']).optional()
+  credentialStore: z.enum(['auto', 'os', 'file']).optional(),
+  queryLog: queryLogSettingsSchema.optional()
 });
 
 const globalConfigSchema = z.object({
@@ -176,8 +194,23 @@ export function getCredentialStoreMode(options: ConfigStoreOptions = {}): Creden
   return process.platform === 'win32' ? 'file' : 'auto';
 }
 
+export function getQueryLogSettings(options: ConfigStoreOptions = {}): Required<QueryLogSettings> {
+  const configured = readConfiguredQueryLogSettings(options);
+  return {
+    enabled: configured?.enabled ?? true,
+    captureResults: configured?.captureResults ?? false,
+    captureRequestBody: configured?.captureRequestBody ?? false,
+    maxResultBytes: configured?.maxResultBytes ?? 256 * 1024,
+    maxFileBytes: configured?.maxFileBytes ?? 25 * 1024 * 1024
+  };
+}
+
 export function getSavedRequestsPath(options: ConfigStoreOptions = {}): string {
   return join(getConfigDir(options), 'saved-requests.json');
+}
+
+export function getQueryLogPath(options: ConfigStoreOptions = {}): string {
+  return join(getConfigDir(options), 'query-log.jsonl');
 }
 
 export function getCanvasSessionsPath(options: ConfigStoreOptions = {}): string {
@@ -303,6 +336,14 @@ export async function saveCredentialStoreMode(mode: CredentialStoreMode, options
   return written.success ? ok(mode, written.diagnostics) : fail(...written.diagnostics);
 }
 
+export async function saveQueryLogSettings(settings: QueryLogSettings, options: ConfigStoreOptions = {}): Promise<OperationResult<Required<QueryLogSettings>>> {
+  const loaded = await loadConfig(options);
+  if (!loaded.success || !loaded.data) return fail(...loaded.diagnostics);
+  loaded.data.settings = { ...(loaded.data.settings ?? {}), queryLog: sanitizeQueryLogSettings(settings) };
+  const written = await writeConfig(loaded.data, options);
+  return written.success ? ok(getQueryLogSettings(options), written.diagnostics) : fail(...written.diagnostics);
+}
+
 export async function ensureEnvironmentAccess(
   alias: string,
   method: string,
@@ -342,6 +383,28 @@ function readConfiguredCredentialStoreMode(options: ConfigStoreOptions): Credent
   } catch {
     return undefined;
   }
+}
+
+function readConfiguredQueryLogSettings(options: ConfigStoreOptions): QueryLogSettings | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(getConfigPath(options), 'utf8')) as { settings?: { queryLog?: unknown } };
+    const value = parsed.settings?.queryLog;
+    return sanitizeQueryLogSettings(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeQueryLogSettings(value: unknown): QueryLogSettings | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    ...(typeof record.enabled === 'boolean' ? { enabled: record.enabled } : {}),
+    ...(typeof record.captureResults === 'boolean' ? { captureResults: record.captureResults } : {}),
+    ...(typeof record.captureRequestBody === 'boolean' ? { captureRequestBody: record.captureRequestBody } : {}),
+    ...(Number.isInteger(record.maxResultBytes) && Number(record.maxResultBytes) > 0 ? { maxResultBytes: Number(record.maxResultBytes) } : {}),
+    ...(Number.isInteger(record.maxFileBytes) && Number(record.maxFileBytes) > 0 ? { maxFileBytes: Number(record.maxFileBytes) } : {})
+  };
 }
 
 async function enqueueConfigWrite(path: string, writer: () => Promise<void>): Promise<void> {

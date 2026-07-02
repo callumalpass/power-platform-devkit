@@ -292,6 +292,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       ])
       .optional(),
     readIntent: z.boolean().optional(),
+    log: z.boolean().optional(),
+    logResults: z.boolean().optional(),
     configDir: z.string().optional(),
     allowInteractiveAuth: z.boolean().optional()
   });
@@ -304,7 +306,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
       inputSchema: requestSchema,
       outputSchema
     },
-    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir }) =>
+    async ({ environment, account, path, method, api, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, log, logResults, configDir }) =>
       mcpToolResult(
         await executeApiRequest(
           {
@@ -320,7 +322,12 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
             responseType,
             timeoutMs,
             jq,
-            readIntent
+            readIntent,
+            log: {
+              source: 'mcp',
+              enabled: log === undefined && logResults ? true : log,
+              captureResults: logResults
+            }
           },
           config(configDir, defaults),
           mcpSilentLoginOptions()
@@ -337,7 +344,7 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
         inputSchema: requestSchema.omit({ api: true }),
         outputSchema
       },
-      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, configDir }) =>
+      async ({ environment, account, path, method, query, headers, body, rawBody, responseType, timeoutMs, jq, readIntent, log, logResults, configDir }) =>
         mcpToolResult(
           await executeApiRequest(
             {
@@ -353,7 +360,12 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
               responseType,
               timeoutMs,
               jq,
-              readIntent
+              readIntent,
+              log: {
+                source: 'mcp',
+                enabled: log === undefined && logResults ? true : log,
+                captureResults: logResults
+              }
             },
             config(configDir, defaults),
             mcpSilentLoginOptions()

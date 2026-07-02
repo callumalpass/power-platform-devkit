@@ -1049,6 +1049,49 @@ export const UI_CSS = String.raw`
     .history-time { font-size: 0.6875rem; color: var(--muted); }
     .history-api { font-size: 0.625rem; font-weight: 600; color: var(--muted); text-transform: uppercase; }
 
+    /* Query log */
+    .query-log-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); gap: 16px; align-items: start; }
+    .query-log-list-panel, .query-log-detail-panel { min-width: 0; }
+    .query-log-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+    .query-log-toolbar h2 { margin: 0; }
+    .query-log-path { margin-top: 4px; font-family: var(--mono); font-size: 0.6875rem; color: var(--muted); word-break: break-all; }
+    .query-log-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .query-log-filter { width: min(240px, 100%); padding: 6px 10px; font-size: 0.8125rem; }
+    .query-log-settings { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+    .query-log-setting { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted); cursor: pointer; user-select: none; }
+    .query-log-setting input { width: auto; margin: 0; }
+    .query-log-size-setting { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted); }
+    .query-log-size-setting input { width: 120px; padding: 4px 6px; font-family: var(--mono); font-size: 0.75rem; }
+    .query-log-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: calc(100dvh - var(--chrome-h) - 170px); }
+    .query-log-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    .query-log-table th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 0.625rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    .query-log-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; white-space: nowrap; }
+    html.dark .query-log-table td { border-bottom-color: var(--border); }
+    .query-log-table tr { cursor: pointer; }
+    .query-log-table tr:hover td { background: var(--bg); }
+    .query-log-table tr.selected td { background: var(--accent-soft); }
+    .query-log-request-path { display: inline-block; max-width: 42vw; margin-left: 8px; font-family: var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+    .query-log-detail-panel { position: sticky; top: 64px; max-height: calc(100dvh - var(--chrome-h) - 34px); overflow: auto; }
+    .query-log-detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .query-log-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .query-log-detail-header h2 { margin: 0; font-family: var(--mono); font-size: 0.875rem; word-break: break-all; }
+    .query-log-detail-sub { margin-top: 4px; color: var(--muted); font-size: 0.75rem; }
+    .query-log-detail-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .query-log-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+    .query-log-fields div { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+    .query-log-fields dt { color: var(--muted); font-size: 0.625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .query-log-fields dd { margin: 3px 0 0; font-family: var(--mono); font-size: 0.75rem; word-break: break-word; }
+    .query-log-detail-section { display: grid; gap: 6px; }
+    .query-log-detail-section h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .query-log-detail-section h3 span { font-family: var(--mono); font-size: 0.6875rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
+    .query-log-json { height: 220px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+    .query-log-preview { max-height: 320px; margin: 0; }
+    @media (max-width: 1100px) {
+      .query-log-layout { grid-template-columns: 1fr; }
+      .query-log-detail-panel { position: static; max-height: none; }
+      .query-log-request-path { max-width: 58vw; }
+    }
+
     /* Flow detail header */
     .flow-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
     .flow-header-info { flex: 1; min-width: 0; }
@@ -1524,6 +1567,10 @@ export const UI_CSS = String.raw`
     /* Console — hint line below the request bar */
     .console-bar-hint { font-size: 0.6875rem; color: var(--muted); margin: 6px 0 14px; display: flex; flex-wrap: wrap; gap: 0 4px; align-items: baseline; }
     .console-bar-hint kbd { font-family: var(--mono); font-size: 0.625rem; padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; color: var(--ink); background: var(--surface); }
+    .console-log-options { display: flex; align-items: center; gap: 14px; margin: -4px 0 12px; font-size: 0.75rem; color: var(--muted); }
+    .console-log-option { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+    .console-log-option input { margin: 0; width: auto; }
+    .console-log-option.disabled { opacity: 0.55; cursor: default; }
 
     /* Console — duplicate-key / body parse warnings */
     .console-field-warning { font-size: 0.75rem; color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border)); border-radius: var(--radius-sm); padding: 6px 10px; margin-bottom: 8px; line-height: 1.45; }

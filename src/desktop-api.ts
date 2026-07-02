@@ -2,11 +2,25 @@ import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
 import { summarizeAccount } from './auth.js';
 import { readCanvasYamlDirectory, readCanvasYamlFetchFiles, writeCanvasYamlFiles } from './canvas-yaml-files.js';
-import { getConfigDir, getConfigPath, getCredentialStoreMode, getEnvironment, getMsalCacheDir, saveAccount, saveEnvironment, type ConfigStoreOptions, type Environment } from './config.js';
+import {
+  getConfigDir,
+  getConfigPath,
+  getCredentialStoreMode,
+  getEnvironment,
+  getMsalCacheDir,
+  getQueryLogPath,
+  getQueryLogSettings,
+  saveAccount,
+  saveEnvironment,
+  saveQueryLogSettings,
+  type ConfigStoreOptions,
+  type Environment
+} from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { findDesktopRoute, type DesktopRoute } from './desktop-api-router.js';
 import { FetchXmlMetadataCatalog } from './fetchxml-language-service.js';
 import { FlowLanguageService } from './flow-language-service.js';
+import { clearQueryLog, loadQueryLogEntries, type QueryLogIntent } from './query-log.js';
 import { normalizeOrigin as normalizeRequestOrigin } from './request-executor.js';
 import { loadSavedRequests, replaceSavedRequests } from './saved-requests.js';
 import { checkAccountTokenStatus, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
@@ -103,6 +117,8 @@ const DESKTOP_ROUTES: RegisteredDesktopRoute[] = [
   { method: 'GET', path: /^\/api\/accounts\/[^/]+\/browser-profile$/, handler: (url, _body, context) => accountBrowserProfileGet(url, context) },
   { method: 'GET', path: /^\/api\/auth\/sessions\/[^/]+$/, handler: (url, _body, context) => authSessionGet(url, context) },
   { method: 'GET', path: '/api/ui/saved-requests', handler: (_url, _body, context) => savedRequestsList(context) },
+  { method: 'GET', path: '/api/query-log', handler: (url, _body, context) => queryLogList(url, context) },
+  { method: 'GET', path: '/api/query-log/settings', handler: (_url, _body, context) => queryLogSettingsGet(context) },
   { method: 'GET', path: '/api/canvas/sessions', handler: (_url, _body, context) => json(200, ok(context.canvasSessions.listSessions())) },
   { method: 'GET', path: /^\/api\/canvas\/sessions\/[^/]+$/, handler: (url, _body, context) => canvasSessionGet(url, context) },
   { method: 'GET', path: '/api/dv/entities', handler: (url, _body, context) => entityList(url, context) },
@@ -137,10 +153,12 @@ const DESKTOP_ROUTES: RegisteredDesktopRoute[] = [
   { method: 'PUT', path: /^\/api\/accounts\/[^/]+$/, handler: (url, body, context) => accountUpdate(url, body, context) },
   { method: 'PUT', path: /^\/api\/environments\/[^/]+$/, handler: (url, body, context) => environmentUpdate(url, body, context) },
   { method: 'PUT', path: '/api/ui/saved-requests', handler: (_url, body, context) => savedRequestsReplace(body, context) },
+  { method: 'PUT', path: '/api/query-log/settings', handler: (_url, body, context) => queryLogSettingsPut(body, context) },
 
   { method: 'DELETE', path: /^\/api\/accounts\/[^/]+\/browser-profile$/, handler: (url, _body, context) => accountBrowserProfileReset(url, context) },
   { method: 'DELETE', path: /^\/api\/accounts\/[^/]+$/, handler: (url, _body, context) => accountDelete(url, context) },
   { method: 'DELETE', path: /^\/api\/environments\/.+$/, handler: (url, _body, context) => environmentDelete(url, context) },
+  { method: 'DELETE', path: '/api/query-log', handler: (_url, _body, context) => queryLogClear(context) },
   { method: 'DELETE', path: /^\/api\/canvas\/sessions\/.+$/, handler: (url, _body, context) => canvasSessionDelete(url, context) }
 ];
 
@@ -208,6 +226,10 @@ async function loadDesktopState(context: DesktopApiContext): Promise<OperationRe
     configPath: getConfigPath(context.configOptions),
     msalCacheDir: getMsalCacheDir(context.configOptions),
     credentialStore: getCredentialStoreMode(context.configOptions),
+    queryLog: {
+      path: getQueryLogPath(context.configOptions),
+      settings: getQueryLogSettings(context.configOptions)
+    },
     allowInteractiveAuth: context.allowInteractiveAuth,
     accounts: accounts.data ?? [],
     environments: environments.data ?? [],
@@ -571,12 +593,50 @@ async function requestExecute(body: unknown, context: DesktopApiContext): Promis
       responseType: readResponseType(data.responseType),
       timeoutMs: readNumber(data.timeoutMs),
       jq: optionalString(data.jq),
-      readIntent: data.readIntent === undefined ? input.data.readIntent : Boolean(data.readIntent)
+      readIntent: data.readIntent === undefined ? input.data.readIntent : Boolean(data.readIntent),
+      log: readDesktopQueryLogIntent(data.log)
     },
     context.configOptions,
     { allowInteractive: input.data.allowInteractive }
   );
   return json(result.success || data.softFail === true ? 200 : 400, applyResponsePreviewLimit(result, readNumber(data.maxResponseBytes)));
+}
+
+async function queryLogList(url: URL, context: DesktopApiContext): Promise<DesktopApiResponse> {
+  const result = await loadQueryLogEntries(context.configOptions, readNumber(url.searchParams.get('limit')) ?? 200);
+  return json(result.success ? 200 : 400, result);
+}
+
+function queryLogSettingsGet(context: DesktopApiContext): DesktopApiResponse {
+  return json(
+    200,
+    ok({
+      path: getQueryLogPath(context.configOptions),
+      settings: getQueryLogSettings(context.configOptions)
+    })
+  );
+}
+
+async function queryLogSettingsPut(body: unknown, context: DesktopApiContext): Promise<DesktopApiResponse> {
+  const data = asRecord(body);
+  if (!data) return json(400, fail(createDiagnostic('error', 'INVALID_QUERY_LOG_SETTINGS_INPUT', 'Request body must be a JSON object.', { source: 'pp/desktop' })));
+  const source = asRecord(data.settings) ?? data;
+  const result = await saveQueryLogSettings(
+    {
+      enabled: typeof source.enabled === 'boolean' ? source.enabled : undefined,
+      captureResults: typeof source.captureResults === 'boolean' ? source.captureResults : undefined,
+      captureRequestBody: typeof source.captureRequestBody === 'boolean' ? source.captureRequestBody : undefined,
+      maxResultBytes: readPositiveInteger(source.maxResultBytes),
+      maxFileBytes: readPositiveInteger(source.maxFileBytes)
+    },
+    context.configOptions
+  );
+  return json(result.success ? 200 : 400, result);
+}
+
+async function queryLogClear(context: DesktopApiContext): Promise<DesktopApiResponse> {
+  const result = await clearQueryLog(context.configOptions);
+  return json(result.success ? 200 : 400, result);
 }
 
 async function savedRequestsList(context: DesktopApiContext): Promise<DesktopApiResponse> {
@@ -845,6 +905,30 @@ function readNumber(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  const parsed = readNumber(value);
+  if (parsed === undefined) return undefined;
+  const integer = Math.trunc(parsed);
+  return integer > 0 ? integer : undefined;
+}
+
+function readDesktopQueryLogIntent(value: unknown): QueryLogIntent | undefined {
+  if (value === undefined) return undefined;
+  if (value === false) return { source: 'desktop-console', enabled: false };
+  if (value === true) return { source: 'desktop-console' };
+  const data = asRecord(value);
+  if (!data) return undefined;
+  const rawSource = optionalString(data.source);
+  const source: QueryLogIntent['source'] = rawSource === 'desktop-action' ? 'desktop-action' : 'desktop-console';
+  return {
+    source,
+    enabled: typeof data.enabled === 'boolean' ? data.enabled : undefined,
+    captureResults: typeof data.captureResults === 'boolean' ? data.captureResults : undefined,
+    captureRequestBody: typeof data.captureRequestBody === 'boolean' ? data.captureRequestBody : undefined,
+    maxResultBytes: readPositiveInteger(data.maxResultBytes)
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

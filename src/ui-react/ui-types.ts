@@ -20,6 +20,56 @@ export type ApiExecuteResponse<T> = {
   request?: unknown;
 };
 
+export type QueryLogSettings = {
+  enabled: boolean;
+  captureResults: boolean;
+  captureRequestBody: boolean;
+  maxResultBytes: number;
+  maxFileBytes: number;
+};
+
+export type QueryLogPreview = {
+  contentType: 'json' | 'text' | 'void';
+  text: string;
+  truncated: boolean;
+  originalBytes: number;
+  shownBytes: number;
+  omittedBytes: number;
+};
+
+export type QueryLogEntry = {
+  version: 1;
+  id: string;
+  timestamp: string;
+  source: 'cli' | 'mcp' | 'desktop-console' | 'desktop-action';
+  api?: string;
+  method: string;
+  environmentAlias?: string;
+  accountName?: string;
+  path: string;
+  query?: Record<string, string>;
+  headers?: Record<string, string>;
+  responseType?: string;
+  jq?: unknown;
+  readIntent?: boolean;
+  requestBodyCaptured: boolean;
+  requestBodyPreview?: QueryLogPreview;
+  preparedRequest?: {
+    api: string;
+    baseUrl?: string;
+    path: string;
+    environmentAlias?: string;
+    accountName: string;
+  };
+  success: boolean;
+  status?: number;
+  elapsedMs: number;
+  diagnostics: DiagnosticItem[];
+  resultCaptured: boolean;
+  responsePreview?: QueryLogPreview;
+  responseHeaders?: Record<string, string>;
+};
+
 export type ToastFn = (message: string, isError?: boolean) => void;
 
 export type AccountSummary = {
@@ -46,6 +96,10 @@ export type ShellState = {
   configPath: string;
   msalCacheDir: string;
   credentialStore?: string;
+  queryLog?: {
+    path: string;
+    settings: QueryLogSettings;
+  };
   allowInteractiveAuth: boolean;
   accounts: AccountSummary[];
   environments: EnvironmentSummary[];

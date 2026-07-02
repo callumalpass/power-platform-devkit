@@ -84,7 +84,7 @@ type ConsoleRequestTab = 'query' | 'headers' | 'body';
 type ConsoleRailTab = 'history' | 'saved';
 type ConsoleHistoryEntry = { api: string; method: string; path: string; status: number; elapsed: number };
 type ConsoleSavedEntry = { api: string; method: string; path: string; name?: string };
-type ConsoleSeed = { api?: string; method?: string; path?: string } | null;
+type ConsoleSeed = { api?: string; method?: string; path?: string; query?: Record<string, string> } | null;
 type ConsoleResponsePreview = {
   text: string;
   truncated: boolean;
@@ -261,6 +261,8 @@ export function ConsoleTab(props: ConsoleTabProps) {
   const [renameIndex, setRenameIndex] = useState<number | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [responseFilter, setResponseFilter] = useState('');
+  const [logRequest, setLogRequest] = useState(() => localStorage.getItem('pp-console-log-request') !== 'false');
+  const [logResults, setLogResults] = useState(() => localStorage.getItem('pp-console-log-results') === 'true');
   const [sending, setSending] = useState(false);
   const [loadingFull, setLoadingFull] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -306,6 +308,14 @@ export function ConsoleTab(props: ConsoleTabProps) {
   useEffect(() => {
     persistConsoleItems('pp-console-history', history, 50);
   }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem('pp-console-log-request', logRequest ? 'true' : 'false');
+  }, [logRequest]);
+
+  useEffect(() => {
+    localStorage.setItem('pp-console-log-results', logResults ? 'true' : 'false');
+  }, [logResults]);
 
   const persistSavedRequests = useCallback(
     (entries: ConsoleSavedEntry[]) => {
@@ -356,6 +366,12 @@ export function ConsoleTab(props: ConsoleTabProps) {
     if (seed.api) setApiKey(seed.api);
     if (seed.method) setMethod(seed.method);
     if (seed.path) setPath(seed.path);
+    if (seed.query)
+      setQueryRows(
+        Object.entries(seed.query)
+          .map(([key, value]) => ({ key, value }))
+          .concat({ key: '', value: '' })
+      );
     clearSeed();
   }, [active, clearSeed, seed]);
 
@@ -418,7 +434,13 @@ export function ConsoleTab(props: ConsoleTabProps) {
             query: Object.keys(query).length ? query : undefined,
             headers: Object.keys(headers).length ? headers : undefined,
             body: parsedBody,
-            maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES
+            maxResponseBytes: fullResponse ? 0 : CONSOLE_RESPONSE_PREVIEW_BYTES,
+            log: logRequest
+              ? {
+                  source: 'desktop-console',
+                  captureResults: logResults
+                }
+              : false
           }),
           signal: controller.signal
         });
@@ -467,7 +489,7 @@ export function ConsoleTab(props: ConsoleTabProps) {
         }
       }
     },
-    [apiKey, body, bodyParseError, cancelInFlight, environment, headerRows, method, path, queryRows, sending, supportsBody, toast]
+    [apiKey, body, bodyParseError, cancelInFlight, environment, headerRows, logRequest, logResults, method, path, queryRows, sending, supportsBody, toast]
   );
 
   useEffect(() => {
@@ -614,6 +636,16 @@ export function ConsoleTab(props: ConsoleTabProps) {
           </div>
           <div className="console-bar-hint">
             <kbd>⏎</kbd> send · <kbd>Ctrl</kbd>+<kbd>⏎</kbd> send from any field · <kbd>Esc</kbd> cancel while sending · <kbd>?</kbd> all shortcuts
+          </div>
+          <div className="console-log-options">
+            <label className="console-log-option">
+              <input type="checkbox" checked={logRequest} onChange={(event) => setLogRequest(event.target.checked)} />
+              <span>Log request</span>
+            </label>
+            <label className={`console-log-option ${!logRequest ? 'disabled' : ''}`}>
+              <input type="checkbox" checked={logResults} disabled={!logRequest} onChange={(event) => setLogResults(event.target.checked)} />
+              <span>Capture result</span>
+            </label>
           </div>
           <div className="console-request-tabs">
             <button type="button" className={`console-request-tab ${effectiveRequestTab === 'query' ? 'active' : ''} ${queryDupes.length ? 'has-warning' : ''}`} onClick={() => setRequestTab('query')}>
