@@ -13,7 +13,7 @@ export {
   type TokenProvider
 } from './auth.js';
 
-export { PpClient, type PpClientOptions, type PpRequestInput } from './client.js';
+export { PpClient, type EnvelopeJqPpRequestInput, type PpClientOptions, type PpRequestInput } from './client.js';
 
 export {
   getBrowserProfilesRoot,
@@ -66,14 +66,16 @@ export {
   resourceForApi,
   type ApiKind,
   type DiscoveredEnvironment,
+  type EnvelopeJqRequestInput,
   type EnvironmentTokenApi,
+  type ExecuteRequestResult,
   type PreparedRequest,
   type RequestInput
 } from './request.js';
 
 export { checkAccountTokenStatus, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 
-export { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck, type ApiRequestResult } from './services/api.js';
+export { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck, type ApiRequestResult, type EnvelopeJqLoggedApiRequestInput } from './services/api.js';
 
 export {
   buildDataverseDerivedAttributeMetadataSpecs,
@@ -101,7 +103,7 @@ export {
 
 export { addConfiguredEnvironment, discoverAccessibleEnvironments, inspectConfiguredEnvironment, listConfiguredEnvironments, removeConfiguredEnvironment } from './services/environments.js';
 
-export { applyJqTransform, type JqTransformInput, type JqTransformOptions } from './jq-transform.js';
+export { applyJqTransform, normalizeJqTransform, type JqTransformInput, type JqTransformOptions, type JqTransformScope } from './jq-transform.js';
 
 export {
   analyzeFetchXml,

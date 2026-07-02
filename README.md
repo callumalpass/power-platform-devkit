@@ -201,9 +201,27 @@ Request commands can apply a jq expression to JSON responses before printing the
 
 ```sh
 pp dv /accounts --env dev --query '$select=name,accountid' --query '$top=50' --jq '.value | map({name, accountid})'
+pp dv /accounts --env dev --query-json '{"$select":"name,accountid","$top":50}' --jq '.value | map({name, accountid})'
 ```
 
-This runs jq in-process through WebAssembly instead of shelling out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned.
+This runs jq in-process through WebAssembly instead of shelling out to a local `jq` binary. Prefer API-native filters such as `$select`, `$filter`, and `$top` first, then use `--jq` to trim or reshape the JSON that is returned. Repeated `--query K=V` flags and `--query-json '{"key":"value"}'` both map to the MCP `query` object; repeated `--query` flags override matching keys from `--query-json`.
+
+By default, jq sees only the API response body and the pp result keeps its normal envelope with `response` replaced by the jq output. Use `--jq-scope envelope` when jq should see the whole pp result object (`request`, `response`, `status`, and `headers`) and return jq's output directly:
+
+```sh
+pp dv /accounts --env dev --query '$top=50' --jq-scope envelope --jq '{status, rows: (.response.value | length)}'
+pp dv /accounts --env dev --jq '.value[].name' --jq-raw --jq-timeout-ms 2000 --jq-max-output-bytes 50000
+```
+
+CLI and MCP request options use the same concepts:
+
+| Concept           | CLI                                                          | MCP                                                                      |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Query object      | `--query-json '{"$top":50}'` or `--query '$top=50'`          | `"query": {"$top":"50"}`                                                 |
+| jq response scope | `--jq '.value[]'`                                            | `"jq": ".value[]"`                                                       |
+| jq raw text       | `--jq '.value[].name' --jq-raw`                              | `"jq": {"expr": ".value[].name", "raw": true}`                           |
+| jq envelope scope | `--jq-scope envelope --jq '{status, rows: .response.value}'` | `"jq": {"expr": "{status, rows: .response.value}", "scope": "envelope"}` |
+| jq limits         | `--jq-timeout-ms 2000 --jq-max-output-bytes 50000`           | `"jq": {"expr": "...", "timeoutMs": 2000, "maxOutputBytes": 50000}`      |
 
 ## PP Desktop
 
@@ -282,19 +300,21 @@ The request tools accept `jq` to transform JSON responses before the MCP result 
 }
 ```
 
-For advanced limits, pass an object:
+For raw output, advanced limits, or envelope scope, pass an object:
 
 ```json
 {
   "jq": {
     "expr": ".value[] | {name, accountid}",
+    "raw": false,
     "maxOutputBytes": 50000,
-    "timeoutMs": 2000
+    "timeoutMs": 2000,
+    "scope": "response"
   }
 }
 ```
 
-Use `raw: true` when the jq expression intentionally returns text instead of JSON.
+Use `raw: true` when the jq expression intentionally returns text instead of JSON. By default, `scope` is `response`, so jq sees only the API response body and the tool keeps the pp request/status/header envelope. Use `scope: "envelope"` when jq should see the whole pp result object and return jq's output directly.
 
 ### Client setup
 

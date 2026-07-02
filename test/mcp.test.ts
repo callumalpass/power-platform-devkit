@@ -64,6 +64,30 @@ test('MCP request tools return MCP_AUTH_REQUIRED instead of starting hidden inte
   assert.equal(result?.structuredContent?.diagnostics?.[0]?.code, 'MCP_AUTH_REQUIRED');
 });
 
+test('MCP request tools accept structured jq envelope scope', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-mcp-jq-envelope-'));
+  await saveAccount({ name: 'work', kind: 'static-token', token: 'test-token' }, { configDir });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ displayName: 'Ada' }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+  try {
+    const tools = registeredTools();
+    const result = await tools['pp.graph_request']?.handler({
+      configDir,
+      account: 'work',
+      path: '/me',
+      jq: {
+        expr: '{status, name: .response.displayName, api: .request.api}',
+        scope: 'envelope'
+      }
+    });
+
+    assert.equal(result?.structuredContent?.success, true);
+    assert.deepEqual(result?.structuredContent?.data, { status: 200, name: 'Ada', api: 'graph' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function registeredTools(): Record<string, RegisteredTool> {
   return (createPpMcpServer() as unknown as McpServerWithTools)._registeredTools;
 }

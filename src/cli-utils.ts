@@ -3,6 +3,7 @@ import { isAbsolute, resolve as resolvePath } from 'node:path';
 import YAML from 'yaml';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import type { ConfigStoreOptions } from './config.js';
+import type { JqTransformInput, JqTransformScope } from './jq-transform.js';
 
 export type OutputFormat = 'json' | 'yaml' | 'text';
 
@@ -14,6 +15,7 @@ const BOOLEAN_FLAGS = new Set([
   '--lan',
   '--log',
   '--log-results',
+  '--jq-raw',
   '--no-interactive-auth',
   '--no-log',
   '--no-log-results',
@@ -151,6 +153,86 @@ export function readQueryFlags(args: string[]): Record<string, string> | undefin
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
+export function readRequestQuery(args: string[]): OperationResult<Record<string, string> | undefined> {
+  const queryJson = readFlag(args, '--query-json');
+  let parsedQuery: Record<string, string> | undefined;
+  if (queryJson !== undefined) {
+    try {
+      const value = JSON.parse(queryJson) as unknown;
+      if (!isPlainRecord(value)) {
+        return fail(createDiagnostic('error', 'QUERY_JSON_INVALID', '--query-json must be a JSON object.', { source: 'pp/cli' }));
+      }
+      parsedQuery = {};
+      for (const [key, item] of Object.entries(value)) {
+        if (typeof item !== 'string' && typeof item !== 'number' && typeof item !== 'boolean') {
+          return fail(createDiagnostic('error', 'QUERY_JSON_VALUE_INVALID', '--query-json values must be strings, numbers, or booleans.', { source: 'pp/cli', detail: key }));
+        }
+        parsedQuery[key] = String(item);
+      }
+    } catch (error) {
+      return fail(
+        createDiagnostic('error', 'QUERY_JSON_PARSE_FAILED', 'Failed to parse --query-json as JSON.', {
+          source: 'pp/cli',
+          detail: error instanceof Error ? error.message : String(error)
+        })
+      );
+    }
+  }
+
+  const query = { ...(parsedQuery ?? {}), ...(readQueryFlags(args) ?? {}) };
+  return ok(Object.keys(query).length ? query : undefined);
+}
+
+export function readJqTransform(args: string[]): OperationResult<JqTransformInput | undefined> {
+  const expr = readFlag(args, '--jq');
+  const raw = hasFlag(args, '--jq-raw');
+  const scope = readJqScopeFlag(args);
+  if (!scope.success) return fail(...scope.diagnostics);
+
+  const maxOutputBytes = readPositiveIntegerFlag(args, '--jq-max-output-bytes', 'JQ_MAX_OUTPUT_INVALID', 'jq maxOutputBytes must be a positive integer.');
+  if (!maxOutputBytes.success) return fail(...maxOutputBytes.diagnostics);
+
+  const timeoutMs = readPositiveIntegerFlag(args, '--jq-timeout-ms', 'JQ_TIMEOUT_INVALID', 'jq timeoutMs must be a positive integer.');
+  if (!timeoutMs.success) return fail(...timeoutMs.diagnostics);
+
+  if (expr === undefined) {
+    if (raw || scope.data || maxOutputBytes.data !== undefined || timeoutMs.data !== undefined) {
+      return fail(createDiagnostic('error', 'JQ_EXPRESSION_REQUIRED', 'Pass --jq EXPR when using jq options.', { source: 'pp/cli' }));
+    }
+    return ok(undefined);
+  }
+
+  if (!raw && scope.data === undefined && maxOutputBytes.data === undefined && timeoutMs.data === undefined) return ok(expr);
+  return ok({
+    expr,
+    ...(raw ? { raw } : {}),
+    ...(scope.data ? { scope: scope.data } : {}),
+    ...(maxOutputBytes.data !== undefined ? { maxOutputBytes: maxOutputBytes.data } : {}),
+    ...(timeoutMs.data !== undefined ? { timeoutMs: timeoutMs.data } : {})
+  });
+}
+
 export function argumentFailure(code: string, message: string): OperationResult<never> {
   return fail(createDiagnostic('error', code, message, { source: 'pp/cli' }));
+}
+
+function readJqScopeFlag(args: string[]): OperationResult<JqTransformScope | undefined> {
+  const scope = readFlag(args, '--jq-scope');
+  if (scope === undefined) return ok(undefined);
+  if (scope === 'response' || scope === 'envelope') return ok(scope);
+  return fail(createDiagnostic('error', 'JQ_SCOPE_INVALID', 'jq scope must be response or envelope.', { source: 'pp/cli' }));
+}
+
+function readPositiveIntegerFlag(args: string[], name: string, code: string, message: string): OperationResult<number | undefined> {
+  const value = readFlag(args, name);
+  if (value === undefined) return ok(undefined);
+  const numberValue = Number(value);
+  if (!Number.isInteger(numberValue) || numberValue <= 0) {
+    return fail(createDiagnostic('error', code, message, { source: 'pp/cli' }));
+  }
+  return ok(numberValue);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

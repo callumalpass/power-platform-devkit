@@ -12,6 +12,7 @@ export {
   REQUEST_ALIAS_API_KINDS,
   resourceForApi,
   type ApiKind,
+  type EnvelopeJqRequestInput,
   type EnvironmentTokenApi,
   type ExecuteRequestResult,
   type PreparedRequest,

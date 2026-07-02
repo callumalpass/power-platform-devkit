@@ -2,7 +2,7 @@ import { CANVAS_AUTHORING_PUBLIC_CLIENT_ID, createTokenProvider, DEFAULT_PUBLIC_
 import { ensureEnvironmentAccess, getAccount, getEnvironment, type Account, type ConfigStoreOptions, type Environment } from './config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from './diagnostics.js';
 import { HttpClient, type HttpResponseType } from './http.js';
-import { applyJqTransform, type JqTransformInput } from './jq-transform.js';
+import { applyJqTransform, normalizeJqTransform, type JqTransformInput, type JqTransformOptions } from './jq-transform.js';
 
 export const API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'powerautomate', 'canvas-authoring', 'sharepoint', 'custom'] as const;
 export const REQUEST_ALIAS_API_KINDS = ['dv', 'flow', 'graph', 'bap', 'powerapps', 'canvas-authoring', 'sharepoint'] as const;
@@ -32,6 +32,8 @@ export interface RequestInput {
   loginOptions?: PublicClientLoginOptions;
   tokenProviderOverride?: TokenProvider;
 }
+
+export type EnvelopeJqRequestInput = RequestInput & { jq: JqTransformOptions & { scope: 'envelope' } };
 
 export interface PreparedRequest {
   api: ApiKind;
@@ -262,7 +264,9 @@ export function resourceForApi(environment: Environment, api: EnvironmentTokenAp
   return resource(environment);
 }
 
-export async function executeRequest<T = unknown>(input: RequestInput): Promise<OperationResult<ExecuteRequestResult<T>>> {
+export async function executeRequest<T = unknown>(input: EnvelopeJqRequestInput): Promise<OperationResult<T>>;
+export async function executeRequest<T = unknown>(input: RequestInput): Promise<OperationResult<ExecuteRequestResult<T>>>;
+export async function executeRequest<T = unknown>(input: RequestInput): Promise<OperationResult<ExecuteRequestResult<T> | T>> {
   const method = (input.method ?? 'GET').toUpperCase();
   const configOptions = input.configOptions ?? {};
   const api = detectApi(input.path, input.api);
@@ -293,14 +297,26 @@ export async function executeRequest<T = unknown>(input: RequestInput): Promise<
     timeoutMs: input.timeoutMs
   });
   if (!response.success || !response.data) return fail(...response.diagnostics);
-  const responseData = input.jq !== undefined ? await applyJqTransform(response.data.data, input.jq) : ok(response.data.data);
-  if (!responseData.success) return fail(...responseData.diagnostics);
-  return ok({
+  const result: ExecuteRequestResult<unknown> = {
     request: request.data,
-    response: responseData.data as T,
+    response: response.data.data,
     status: response.data.status,
     headers: response.data.headers
-  });
+  };
+  if (input.jq === undefined) return ok(result as ExecuteRequestResult<T>);
+
+  const jqOptions = normalizeJqTransform(input.jq);
+  if (!jqOptions.success || !jqOptions.data) return fail(...jqOptions.diagnostics);
+
+  if (jqOptions.data.scope === 'envelope') {
+    const envelopeData = await applyJqTransform(result, jqOptions.data);
+    if (!envelopeData.success) return fail(...envelopeData.diagnostics);
+    return ok(envelopeData.data as T);
+  }
+
+  const responseData = await applyJqTransform(response.data.data, jqOptions.data);
+  if (!responseData.success) return fail(...responseData.diagnostics);
+  return ok({ ...result, response: responseData.data as T });
 }
 
 async function resolveRuntime(

@@ -287,7 +287,8 @@ function registerTools(server: McpServer, defaults: PpMcpServerOptions): void {
           expr: z.string(),
           raw: z.boolean().optional(),
           maxOutputBytes: z.number().int().positive().optional(),
-          timeoutMs: z.number().int().positive().optional()
+          timeoutMs: z.number().int().positive().optional(),
+          scope: z.enum(['response', 'envelope']).optional()
         })
       ])
       .optional(),

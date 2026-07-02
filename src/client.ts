@@ -1,6 +1,7 @@
 import type { LoginAccountInput, PublicClientLoginOptions } from './auth.js';
 import type { ConfigStoreOptions } from './config.js';
 import type { EnvironmentTokenApi, RequestInput } from './request.js';
+import type { JqTransformOptions } from './jq-transform.js';
 import { checkAccountTokenStatus, inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { type ApiRequestResult, executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
 import {
@@ -26,6 +27,7 @@ export type PpRequestInput = RequestInput & {
   env?: string;
   account?: string;
 };
+export type EnvelopeJqPpRequestInput = PpRequestInput & { jq: JqTransformOptions & { scope: 'envelope' } };
 
 export class PpClient {
   readonly accounts = {
@@ -57,8 +59,10 @@ export class PpClient {
 
   constructor(private readonly options: PpClientOptions = {}) {}
 
-  request<T = unknown>(input: PpRequestInput, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<ApiRequestResult<T>>> {
-    return executeApiRequest<T>(normalizeRequestInput(input), this.configOptions, this.loginOptions(loginOptions));
+  request<T = unknown>(input: EnvelopeJqPpRequestInput, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<T>>;
+  request<T = unknown>(input: PpRequestInput, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<ApiRequestResult<T>>>;
+  request<T = unknown>(input: PpRequestInput, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<ApiRequestResult<T> | T>> {
+    return executeApiRequest<T>(normalizeRequestInput(input), this.configOptions, this.loginOptions(loginOptions)) as Promise<OperationResult<ApiRequestResult<T> | T>>;
   }
 
   async whoami(input: { environmentAlias?: string; env?: string; accountName?: string; account?: string; allowInteractive?: boolean }): Promise<OperationResult<ApiRequestResult>> {

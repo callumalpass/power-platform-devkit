@@ -10,7 +10,7 @@ import { probeOsCredentialStore } from './credential-store.js';
 import { migrateLegacyConfig } from './migrate.js';
 import type { QueryLogIntent } from './query-log.js';
 import { detectApi, isAccountScopedApi, isApiKind, isEnvironmentTokenApi, type ApiKind, type EnvironmentTokenApi } from './request.js';
-import { argumentFailure, hasFlag, positionalArgs, printFailure, printResult, readBody, readConfigOptions, readFlag, readHeaderFlags, readQueryFlags } from './cli-utils.js';
+import { argumentFailure, hasFlag, positionalArgs, printFailure, printResult, readBody, readConfigOptions, readFlag, readHeaderFlags, readJqTransform, readRequestQuery } from './cli-utils.js';
 import { startPpMcpServer } from './mcp.js';
 import { inspectAccountSummary, listAccountSummaries, loginAccount, removeAccountByName } from './services/accounts.js';
 import { executeApiRequest, getEnvironmentToken, runConnectivityPing, runWhoAmICheck } from './services/api.js';
@@ -321,7 +321,7 @@ async function runRequest(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'REQUEST_USAGE',
-        'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read] [--no-log] [--log-results|--no-log-results]'
+        'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V|--query-json JSON] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--jq-scope response|envelope] [--read] [--no-log] [--log-results|--no-log-results]'
       ),
       args
     );
@@ -336,26 +336,30 @@ async function runRequest(args: string[]): Promise<number> {
     return printFailure(
       argumentFailure(
         'REQUEST_USAGE',
-        'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query k=v] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--read] [--no-log] [--log-results|--no-log-results]'
+        'Usage: pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V|--query-json JSON] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--jq EXPR] [--jq-scope response|envelope] [--read] [--no-log] [--log-results|--no-log-results]'
       ),
       args
     );
   }
   const body = await readBody(args);
   if (!body.success) return printFailure(body, args);
+  const query = readRequestQuery(args);
+  if (!query.success) return printFailure(query, args);
+  const jq = readJqTransform(args);
+  if (!jq.success) return printFailure(jq, args);
   const requestInput = {
     environmentAlias,
     accountName,
     path,
     method: readFlag(args, '--method') ?? 'GET',
     api: effectiveApi,
-    query: readQueryFlags(args),
+    query: query.data,
     headers: readHeaderFlags(args),
     body: body.data?.body,
     rawBody: body.data?.rawBody,
     responseType: (readFlag(args, '--response-type') as 'json' | 'text' | 'void' | undefined) ?? 'json',
     timeoutMs: readFlag(args, '--timeout-ms') ? Number(readFlag(args, '--timeout-ms')) : undefined,
-    jq: readFlag(args, '--jq'),
+    jq: jq.data,
     readIntent: hasFlag(args, '--read'),
     log: readCliQueryLogIntent(args)
   };
@@ -1057,7 +1061,7 @@ function printRequestHelp(): void {
       'Send an authenticated request. Environment-scoped APIs require --env; Graph and SharePoint may use --account.',
       '',
       'Usage:',
-      '  pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-log] [--log-results|--no-log-results] [--no-interactive-auth]'
+      '  pp request [dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] <path|url> [--env ALIAS|--account ACCOUNT] [--api dv|flow|graph|bap|powerapps|powerautomate|canvas-authoring|sharepoint|custom] [--method METHOD] [--query K=V] [--query-json JSON] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--jq-raw] [--jq-scope response|envelope] [--jq-timeout-ms MS] [--jq-max-output-bytes BYTES] [--read] [--no-log] [--log-results|--no-log-results] [--no-interactive-auth]'
     ].join('\n') + '\n'
   );
 }
@@ -1070,7 +1074,7 @@ function printRequestAliasHelp(api: Exclude<ApiKind, 'custom'>): void {
       `Shortcut for "pp request --api ${api}".`,
       '',
       'Usage:',
-      `  pp ${api} <path|url> ${api === 'graph' || api === 'sharepoint' ? '[--account ACCOUNT|--env ALIAS]' : '--env ALIAS [--account ACCOUNT]'} [--method METHOD] [--query K=V] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--read] [--no-log] [--log-results|--no-log-results] [--no-interactive-auth]`
+      `  pp ${api} <path|url> ${api === 'graph' || api === 'sharepoint' ? '[--account ACCOUNT|--env ALIAS]' : '--env ALIAS [--account ACCOUNT]'} [--method METHOD] [--query K=V] [--query-json JSON] [--header K:V] [--body JSON|--body-file FILE] [--raw-body TEXT|--raw-body-file FILE] [--response-type json|text|void] [--timeout-ms MS] [--jq EXPR] [--jq-raw] [--jq-scope response|envelope] [--jq-timeout-ms MS] [--jq-max-output-bytes BYTES] [--read] [--no-log] [--log-results|--no-log-results] [--no-interactive-auth]`
     ].join('\n') + '\n'
   );
 }

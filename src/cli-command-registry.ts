@@ -52,6 +52,9 @@ export const CLI_COMMANDS: CliCommandMetadata[] = [
     flags: [
       { name: '--api', valueName: 'API', description: 'API kind to use for request preparation' },
       { name: '--query', valueName: 'K=V', description: 'Add a query string value' },
+      { name: '--query-json', valueName: 'JSON', description: 'Add query string values from a JSON object' },
+      { name: '--jq', valueName: 'EXPR', description: 'Transform the response with jq' },
+      { name: '--jq-scope', valueName: 'SCOPE', description: 'Run jq against response or envelope' },
       { name: '--header', valueName: 'K:V', description: 'Add a request header' }
     ]
   },

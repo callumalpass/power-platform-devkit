@@ -6,8 +6,10 @@ export interface JqTransformOptions {
   raw?: boolean;
   maxOutputBytes?: number;
   timeoutMs?: number;
+  scope?: JqTransformScope;
 }
 
+export type JqTransformScope = 'response' | 'envelope';
 export type JqTransformInput = string | JqTransformOptions;
 
 const DEFAULT_MAX_OUTPUT_BYTES = 256 * 1024;
@@ -47,7 +49,7 @@ export async function applyJqTransform(input: unknown, transform: JqTransformInp
   }
 }
 
-function normalizeJqTransform(transform: JqTransformInput): OperationResult<JqTransformOptions> {
+export function normalizeJqTransform(transform: JqTransformInput): OperationResult<JqTransformOptions> {
   const options = typeof transform === 'string' ? { expr: transform } : transform;
   if (!options.expr.trim()) {
     return fail(createDiagnostic('error', 'JQ_EXPRESSION_REQUIRED', 'jq expression must not be empty.', { source: 'pp/jq' }));
@@ -57,6 +59,9 @@ function normalizeJqTransform(transform: JqTransformInput): OperationResult<JqTr
   }
   if (options.timeoutMs !== undefined && (!Number.isInteger(options.timeoutMs) || options.timeoutMs <= 0)) {
     return fail(createDiagnostic('error', 'JQ_TIMEOUT_INVALID', 'jq timeoutMs must be a positive integer.', { source: 'pp/jq' }));
+  }
+  if (options.scope !== undefined && options.scope !== 'response' && options.scope !== 'envelope') {
+    return fail(createDiagnostic('error', 'JQ_SCOPE_INVALID', 'jq scope must be response or envelope.', { source: 'pp/jq' }));
   }
   return ok(options);
 }

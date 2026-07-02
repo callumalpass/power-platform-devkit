@@ -166,6 +166,50 @@ test('executeRequest allows account-scoped Graph and SharePoint without an envir
   }
 });
 
+test('executeRequest applies jq to response scope by default', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-jq-response-scope-'));
+  await saveAccount({ name: 'work', kind: 'static-token', token: 'test-token' }, { configDir });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ value: [{ name: 'A' }, { name: 'B' }] }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+  try {
+    const result = await executeRequest({
+      accountName: 'work',
+      api: 'graph',
+      path: '/users',
+      jq: '.value | map({name})',
+      configOptions: { configDir }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.data?.status, 200);
+    assert.equal(result.data?.request.api, 'graph');
+    assert.deepEqual(result.data?.response, [{ name: 'A' }, { name: 'B' }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('executeRequest applies jq to the full envelope when requested', async () => {
+  const configDir = await mkdtemp(join(tmpdir(), 'pp-jq-envelope-scope-'));
+  await saveAccount({ name: 'work', kind: 'static-token', token: 'test-token' }, { configDir });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ value: [{ name: 'A' }, { name: 'B' }] }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+  try {
+    const result = await executeRequest({
+      accountName: 'work',
+      api: 'graph',
+      path: '/users',
+      jq: { expr: '{status, api: .request.api, count: (.response.value | length)}', scope: 'envelope' },
+      configOptions: { configDir }
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(result.data as unknown, { status: 200, api: 'graph', count: 2 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('executeRequest still requires an environment for environment-scoped APIs', async () => {
   const result = await executeRequest({
     accountName: 'work',

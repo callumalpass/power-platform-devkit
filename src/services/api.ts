@@ -2,16 +2,23 @@ import { createTokenProvider, type PublicClientLoginOptions } from '../auth.js';
 import { getAccount, getEnvironment, type ConfigStoreOptions } from '../config.js';
 import { createDiagnostic, fail, ok, type OperationResult } from '../diagnostics.js';
 import { queueApiRequestLog, type QueryLogIntent } from '../query-log.js';
-import { accountForApi, executeRequest, resourceForApi, type EnvironmentTokenApi, type ExecuteRequestResult, type RequestInput } from '../request.js';
+import { accountForApi, executeRequest, resourceForApi, type EnvelopeJqRequestInput, type EnvironmentTokenApi, type ExecuteRequestResult, type RequestInput } from '../request.js';
 
 export type ApiRequestResult<T = unknown> = ExecuteRequestResult<T>;
 export type LoggedApiRequestInput = RequestInput & { log?: QueryLogIntent };
+export type EnvelopeJqLoggedApiRequestInput = EnvelopeJqRequestInput & { log?: QueryLogIntent };
 
+export async function executeApiRequest<T = unknown>(input: EnvelopeJqLoggedApiRequestInput, configOptions?: ConfigStoreOptions, loginOptions?: PublicClientLoginOptions): Promise<OperationResult<T>>;
+export async function executeApiRequest<T = unknown>(
+  input: LoggedApiRequestInput,
+  configOptions?: ConfigStoreOptions,
+  loginOptions?: PublicClientLoginOptions
+): Promise<OperationResult<ApiRequestResult<T>>>;
 export async function executeApiRequest<T = unknown>(
   input: LoggedApiRequestInput,
   configOptions: ConfigStoreOptions = {},
   loginOptions: PublicClientLoginOptions = {}
-): Promise<OperationResult<ApiRequestResult<T>>> {
+): Promise<OperationResult<ApiRequestResult<T> | T>> {
   const started = Date.now();
   const result = await executeRequest<T>({
     ...input,
@@ -21,7 +28,7 @@ export async function executeApiRequest<T = unknown>(
   if (input.log) {
     queueApiRequestLog({
       input,
-      result,
+      result: result as OperationResult<ExecuteRequestResult<T>>,
       elapsedMs: Date.now() - started,
       configOptions,
       intent: input.log
